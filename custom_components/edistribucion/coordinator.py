@@ -18,6 +18,7 @@ from .const import (
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    POWER_TERM_KEYS,
     PRICE_PERIOD_KEYS,
 )
 from .costs import LLANO, PUNTA, VALLE
@@ -46,8 +47,19 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             LLANO: entry.options.get(PRICE_PERIOD_KEYS[1], 0) or 0,
             VALLE: entry.options.get(PRICE_PERIOD_KEYS[2], 0) or 0,
         }
+        # Término de potencia: kW contratados + €/kW/día para cada uno de los dos periodos (P1/P2).
+        self.contracted_power_p1: float = entry.options.get(POWER_TERM_KEYS[0], 0) or 0
+        self.contracted_power_p2: float = entry.options.get(POWER_TERM_KEYS[1], 0) or 0
+        self.price_power_p1: float = entry.options.get(POWER_TERM_KEYS[2], 0) or 0
+        self.price_power_p2: float = entry.options.get(POWER_TERM_KEYS[3], 0) or 0
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
+
+    @property
+    def daily_power_cost(self) -> float:
+        """Término de potencia fijo por día — se factura siempre, no depende de qué franja horaria
+        sea (a diferencia de la energía)."""
+        return round(self.contracted_power_p1 * self.price_power_p1 + self.contracted_power_p2 * self.price_power_p2, 4)
 
     async def _async_update_data(self) -> dict:
         try:

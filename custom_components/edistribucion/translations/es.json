@@ -26,12 +26,16 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución",
-        "description": "Intervalo de actualización, precios por franja horaria (opcionales, para el coste estimado — se calcula hora a hora según cuándo consumiste de verdad), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
+        "description": "Intervalo de actualización, precios de energía por franja horaria y término de potencia (todo opcional, para el coste estimado), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)",
-          "price_punta": "Precio en punta (€/kWh, opcional)",
-          "price_llano": "Precio en llano (€/kWh, opcional)",
-          "price_valle": "Precio en valle (€/kWh, opcional)"
+          "price_punta": "Precio energía en punta (€/kWh, opcional)",
+          "price_llano": "Precio energía en llano (€/kWh, opcional)",
+          "price_valle": "Precio energía en valle (€/kWh, opcional)",
+          "contracted_power_p1_kw": "Potencia contratada P1 (kW, opcional)",
+          "contracted_power_p2_kw": "Potencia contratada P2 (kW, opcional)",
+          "price_power_p1": "Precio potencia P1 (€/kW/día, opcional)",
+          "price_power_p2": "Precio potencia P2 (€/kW/día, opcional)"
         }
       }
     }
@@ -49,6 +53,8 @@
       "next_update": { "name": "Próxima actualización" },
       "estimated_cost_today": { "name": "Coste estimado hoy" },
       "estimated_cost_month": { "name": "Coste estimado (mes)" },
+      "power_cost_today": { "name": "Término de potencia (día)" },
+      "power_cost_month": { "name": "Término de potencia (mes)" },
       "month_vs_last_year": { "name": "Comparativa con el mismo mes del año anterior" }
     },
     "binary_sensor": {

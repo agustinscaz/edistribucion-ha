@@ -15,12 +15,15 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
+    CONF_CONTRACTED_POWER_P1,
+    CONF_CONTRACTED_POWER_P2,
     CONF_SUPPLY_POINTS,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     PRICE_PERIOD_KEYS,
+    POWER_TERM_KEYS,
 )
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -125,6 +128,12 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
         for price_key in PRICE_PERIOD_KEYS:
             current_price = self._config_entry.options.get(price_key, 0)
             schema_dict[vol.Optional(price_key, default=current_price)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=10))
+        for power_key in (CONF_CONTRACTED_POWER_P1, CONF_CONTRACTED_POWER_P2):
+            current_power = self._config_entry.options.get(power_key, 0)
+            schema_dict[vol.Optional(power_key, default=current_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
+        for price_power_key in POWER_TERM_KEYS[2:]:
+            current_price_power = self._config_entry.options.get(price_power_key, 0)
+            schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
         listing_lines = []
         for sp in self._supply_points:
             cont_id = sp["contId"]

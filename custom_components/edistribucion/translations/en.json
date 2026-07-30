@@ -26,12 +26,16 @@
     "step": {
       "init": {
         "title": "e-distribución options",
-        "description": "Update interval, prices per time-of-use period (optional, for the estimated cost sensors — calculated hour by hour based on when you actually consumed), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
+        "description": "Update interval, energy prices per time-of-use period and power (capacity) term (all optional, for the estimated cost sensors), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
         "data": {
           "scan_interval": "Update interval (minutes)",
-          "price_punta": "Peak price (€/kWh, optional)",
-          "price_llano": "Flat price (€/kWh, optional)",
-          "price_valle": "Off-peak price (€/kWh, optional)"
+          "price_punta": "Peak energy price (€/kWh, optional)",
+          "price_llano": "Flat energy price (€/kWh, optional)",
+          "price_valle": "Off-peak energy price (€/kWh, optional)",
+          "contracted_power_p1_kw": "Contracted power P1 (kW, optional)",
+          "contracted_power_p2_kw": "Contracted power P2 (kW, optional)",
+          "price_power_p1": "Power price P1 (€/kW/day, optional)",
+          "price_power_p2": "Power price P2 (€/kW/day, optional)"
         }
       }
     }
@@ -49,6 +53,8 @@
       "next_update": { "name": "Next update" },
       "estimated_cost_today": { "name": "Estimated cost today" },
       "estimated_cost_month": { "name": "Estimated cost (month)" },
+      "power_cost_today": { "name": "Power term (day)" },
+      "power_cost_month": { "name": "Power term (month)" },
       "month_vs_last_year": { "name": "Comparison vs. same month last year" }
     },
     "binary_sensor": {

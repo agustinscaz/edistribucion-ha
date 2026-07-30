@@ -61,6 +61,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if any(coordinator.prices.values()):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
+        if coordinator.daily_power_cost > 0:
+            entities.append(EdistribucionPowerCostTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
 
@@ -314,6 +317,70 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     @property
     def _consumption_source(self) -> dict | None:
         return self._bundle.get("month")
+
+
+class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
+    """Término de potencia fijo del día: kW contratados × precio €/kW/día, sumando P1 y P2 — se
+    factura siempre, no depende del consumo ni de la franja horaria."""
+
+    entity_description = SensorEntityDescription(
+        key="power_cost_today",
+        translation_key="power_cost_today",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR",
+        suggested_display_precision=2,
+        state_class=SensorStateClass.MEASUREMENT,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_power_cost_today"
+
+    @property
+    def native_value(self) -> float:
+        return self.coordinator.daily_power_cost
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "potencia_contratada_p1_kw": self.coordinator.contracted_power_p1,
+            "potencia_contratada_p2_kw": self.coordinator.contracted_power_p2,
+            "precio_p1_eur_kw_dia": self.coordinator.price_power_p1,
+            "precio_p2_eur_kw_dia": self.coordinator.price_power_p2,
+        }
+
+
+class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
+    """Término de potencia acumulado del mes: coste diario × días ya facturados (los mismos días
+    que ya tienen datos de energía, para cuadrar con el resto de sensores "mes")."""
+
+    entity_description = SensorEntityDescription(
+        key="power_cost_month",
+        translation_key="power_cost_month",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR",
+        suggested_display_precision=2,
+        state_class=SensorStateClass.TOTAL,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_power_cost_month"
+
+    @property
+    def _days_elapsed(self) -> int:
+        month = self._bundle.get("month")
+        if not month:
+            return 0
+        return len(month.get("dailyTotals", []))
+
+    @property
+    def native_value(self) -> float:
+        return round(self.coordinator.daily_power_cost * self._days_elapsed, 4)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"dias_facturados": self._days_elapsed, "coste_diario": self.coordinator.daily_power_cost}
 
 
 class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):
