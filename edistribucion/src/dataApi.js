@@ -123,4 +123,32 @@ async function getMaxPowerDemand(session, cupsId) {
   };
 }
 
-module.exports = { AuthError, getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand };
+function _parseSpanishFloat(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Detalle real del contrato ATR de un suministro: potencia contratada 1/2 (kW) = punta/valle en
+ * la 2.0TD, más metadatos del contrato — sacado de la propia distribuidora, no de lo que teclees
+ * tú. OJO: el `contId` que ya usa el resto del add-on (de `getListCups`) ES el propio identificador
+ * del contrato ATR (`atrId`) — confirmado en pruebas en vivo, no hace falta ningún mapeo aparte. */
+async function getContractedPower(session, contId) {
+  const rv = await callAuraAction(session, {
+    descriptor: "apex://WP_ContractATRDetail_CTRL/ACTION$getATRDetail",
+    callingDescriptor: "markup://c:WP_SuppliesATRDetailForm",
+    params: { atrId: contId, visSelected: session.visId },
+    pageURI: `/areaprivada/s/wp-atrcontractdetail?atrid=${contId}&vis=${session.visId}`,
+  });
+  const fields = Object.fromEntries((rv.data ?? []).map((f) => [f.title, f.value]));
+  return {
+    contractCode: fields["Código contrato"] || null,
+    status: fields["Estado"] || null,
+    marketer: fields["Comercializadora"] || null,
+    tariff: fields["Tarifa"] || null,
+    contractedPowerPuntaKw: _parseSpanishFloat(fields["Potencia contratada 1 (kW)"]),
+    contractedPowerValleKw: _parseSpanishFloat(fields["Potencia contratada 2 (kW)"]),
+  };
+}
+
+module.exports = { AuthError, getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand, getContractedPower };

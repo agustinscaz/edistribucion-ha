@@ -15,6 +15,8 @@ from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 from .const import (
+    CONF_CONTRACTED_POWER_PUNTA,
+    CONF_CONTRACTED_POWER_VALLE,
     CONF_SUPPLY_POINTS,
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     DEFAULT_SCAN_INTERVAL_MINUTES,
@@ -109,7 +111,17 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     "month": None,
                     "month_last_year": None,
                     "max_power_demand": None,
+                    "contract": None,
                 }
+
+                try:
+                    # Potencia contratada real (punta/valle) + metadatos del contrato — sacada de la
+                    # propia distribuidora, no de un valor que teclee el usuario (ver v1.11.0).
+                    bundle["contract"] = await self.client.async_get_contracted_power(cont_id)
+                    sp[CONF_CONTRACTED_POWER_PUNTA] = bundle["contract"].get("contractedPowerPuntaKw") or 0
+                    sp[CONF_CONTRACTED_POWER_VALLE] = bundle["contract"].get("contractedPowerValleKw") or 0
+                except EdistribucionApiError as err:
+                    _LOGGER.warning("No se pudo leer la potencia contratada real de %s: %s", sp.get("cups"), err)
 
                 try:
                     bundle["consumption"] = await self.client.async_get_consumption(cont_id)

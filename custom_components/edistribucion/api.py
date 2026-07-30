@@ -87,6 +87,11 @@ class EdistribucionApiClient:
     async def async_get_max_power_demand(self, cups_id: str) -> dict:
         return await self._get(f"/max-power-demand/{cups_id}")
 
+    async def async_get_contracted_power(self, cont_id: str) -> dict:
+        """Potencia contratada real (punta/valle, kW) + metadatos del contrato, sacados
+        directamente de e-distribución — no hace falta que el usuario los teclee."""
+        return await self._get(f"/contracted-power/{cont_id}")
+
     async def async_relogin(self) -> dict:
         """Fuerza un login fresco en el add-on (botón 'Forzar reconexión')."""
         return await self._request("POST", "/relogin")

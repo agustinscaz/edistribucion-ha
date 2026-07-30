@@ -1,5 +1,6 @@
 const fs = require("fs");
 const { loginAndCaptureSession } = require("./playwrightLogin");
+const { getContractedPower: fetchContractedPower } = require("./dataApi");
 const { AuthError, InvalidCredentialsError } = require("./errors");
 
 const SESSION_FILE = process.env.EDISTRIBUCION_SESSION_FILE || "/data/session.json";
@@ -98,6 +99,12 @@ class EdistribucionSession {
     if (forceRefresh) this.state = null;
     const state = await this.ensureLoggedIn();
     return state.supplyPoints;
+  }
+
+  /** Potencia contratada real (punta/valle, kW) + metadatos del contrato, sacados directamente de
+   * la distribuidora — no hace falta que el usuario los teclee. */
+  async getContractedPower(contId) {
+    return this.withSession((state) => fetchContractedPower(state, contId));
   }
 }
 

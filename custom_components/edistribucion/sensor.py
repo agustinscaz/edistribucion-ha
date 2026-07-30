@@ -67,6 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "imported", f"imported_energy_{period_label}"))
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
+        entities.append(EdistribucionContractedPowerSensor(coordinator, cont_id, sp))
         entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
         if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
@@ -274,6 +275,47 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
     @property
     def available(self) -> bool:
         return super().available and self._bundle.get("max_power_demand") is not None
+
+
+class EdistribucionContractedPowerSensor(_EdistribucionBaseSensor):
+    """Potencia contratada (punta) leída EN VIVO de e-distribución — no es un valor que teclees tú,
+    así que refleja cambios reales de contrato sin tener que enterarte por la factura. La de valle,
+    y los metadatos del contrato (código, estado, comercializadora, tarifa), van como atributos."""
+
+    entity_description = SensorEntityDescription(
+        key="contracted_power",
+        translation_key="contracted_power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        suggested_display_precision=2,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_contracted_power"
+
+    @property
+    def native_value(self) -> float | None:
+        contract = self._bundle.get("contract")
+        return contract.get("contractedPowerPuntaKw") if contract else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        contract = self._bundle.get("contract")
+        if not contract:
+            return {}
+        return {
+            "potencia_valle_kw": contract.get("contractedPowerValleKw"),
+            "codigo_contrato": contract.get("contractCode"),
+            "estado_contrato": contract.get("status"),
+            "comercializadora": contract.get("marketer"),
+            "tarifa": contract.get("tariff"),
+        }
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._bundle.get("contract") is not None
 
 
 class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):

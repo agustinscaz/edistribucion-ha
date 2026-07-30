@@ -79,6 +79,18 @@ app.get("/max-power-demand/:cupsId", async (req, res) => {
   }
 });
 
+/** Potencia contratada real (punta/valle, kW) + metadatos del contrato, sacados de la propia
+ * distribuidora — así la integración de Home Assistant no tiene que pedírselo al usuario. */
+app.get("/contracted-power/:contId", async (req, res) => {
+  const { contId } = req.params;
+  try {
+    const result = await session.getContractedPower(contId);
+    res.json(result);
+  } catch (e) {
+    respondError(res, e);
+  }
+});
+
 /** Fuerza un login fresco (aunque la sesión actual "parezca" válida) — útil para el botón
  * "Forzar reconexión" de la integración de Home Assistant. */
 app.post("/relogin", async (req, res) => {
@@ -128,7 +140,7 @@ app.get("/", (req, res) => {
 <tr><td>Procesos Chromium huérfanos eliminados</td><td>${watchdog.totalKilled}</td></tr>
 <tr><td>Última revisión del watchdog</td><td>${fmt(watchdog.lastCheckAt)}</td></tr>
 </table>
-<p style="margin-top:1.5rem;color:#789;font-size:.85rem">Endpoints JSON: <code>/health</code> <code>/info</code> <code>/supply-points</code> <code>/consumption/:contId</code> <code>/max-power-demand/:cupsId</code> <code>POST /relogin</code></p>
+<p style="margin-top:1.5rem;color:#789;font-size:.85rem">Endpoints JSON: <code>/health</code> <code>/info</code> <code>/supply-points</code> <code>/consumption/:contId</code> <code>/max-power-demand/:cupsId</code> <code>/contracted-power/:contId</code> <code>POST /relogin</code></p>
 </body></html>`);
 });
 

@@ -26,20 +26,18 @@
     "step": {
       "init": {
         "title": "e-distribución options: general settings",
-        "description": "Only the update interval is global. After this step, you'll configure each of your {num_supplies} supply points separately: tariff type, contracted power, energy and power prices, PVPC zone, and surplus compensation — all per supply point, since each contract can differ.",
+        "description": "Only the update interval is global. After this step, you'll configure each of your {num_supplies} supply points separately: tariff type, power and energy prices, PVPC zone, and surplus compensation — all per supply point, since each contract can differ. Contracted power (kW) isn't asked for: it's read automatically from your e-distribución contract.",
         "data": {
           "scan_interval": "Update interval (minutes)"
         }
       },
       "supply_point": {
         "title": "Supply point {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nChoose whether to track this supply point, an alias, the tariff type (fixed/time-of-use/pvpc), contracted power and its price, energy prices for the chosen tariff, surplus compensation, and (if using pvpc) the zone.\n\nTomorrow's pvpc prices are published around 20:15 the day before — no key or signup needed, it uses REE's public price file.",
+        "description": "{address} ({estado})\n\nChoose whether to track this supply point, an alias, the tariff type (fixed/time-of-use/pvpc), the power term price, energy prices for the chosen tariff, surplus compensation, and (if using pvpc) the zone. Contracted power (kW) is read automatically from e-distribución — no need to type it in.\n\nTomorrow's pvpc prices are published around 20:15 the day before — no key or signup needed, it uses REE's public price file.",
         "data": {
           "track": "Track this supply point",
           "alias": "Alias (optional)",
           "tariff_type": "Tariff type: fixed / time-of-use / pvpc",
-          "contracted_power_punta_kw": "Contracted power peak (kW)",
-          "contracted_power_valle_kw": "Contracted power off-peak (kW)",
           "price_power_punta": "Power price peak (€/kW/day)",
           "price_power_valle": "Power price off-peak (€/kW/day)",
           "fixed_price": "Fixed price (€/kWh, if tariff is 'fixed')",
@@ -62,6 +60,7 @@
       "imported_energy_month": { "name": "Imported energy (month)" },
       "exported_energy_month": { "name": "Exported energy (month)" },
       "max_power_demand": { "name": "Maximum power demand" },
+      "contracted_power": { "name": "Contracted power" },
       "last_update": { "name": "Last update" },
       "next_update": { "name": "Next update" },
       "estimated_cost_today": { "name": "Estimated cost today" },

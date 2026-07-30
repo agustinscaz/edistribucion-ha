@@ -10,11 +10,11 @@ DEFAULT_PORT = 8099
 DEFAULT_SCAN_INTERVAL_MINUTES = 15
 
 # Opciones: qué suministros seguir, con qué alias, y tarifa/precios de CADA UNO — dict
-# {contId: {"track": bool, "alias": str, "tariff_type": ..., "contracted_power_punta_kw": ...,
-#   "contracted_power_valle_kw": ..., "price_power_punta": ..., "price_power_valle": ...,
-#   "fixed_price": ..., "price_punta": ..., "price_llano": ..., "price_valle": ...,
-#   "surplus_compensation": bool, "surplus_price": ..., "pvpc_zone": ...}} — TODO esto es por CUPS,
-# incluida la potencia contratada y la zona PVPC, porque cada contrato puede ser distinto.
+# {contId: {"track": bool, "alias": str, "tariff_type": ..., "price_power_punta": ...,
+#   "price_power_valle": ..., "fixed_price": ..., "price_punta": ..., "price_llano": ...,
+#   "price_valle": ..., "surplus_compensation": bool, "surplus_price": ..., "pvpc_zone": ...}} —
+# esto es por CUPS, porque cada contrato puede ser distinto. La potencia contratada NO se pide
+# aquí — se lee en vivo de e-distribución (ver coordinator.py/CONF_CONTRACTED_POWER_PUNTA/VALLE).
 CONF_SUPPLY_POINTS = "supply_points"
 
 # Tipos de tarifa de energía, configurables por CUPS (no a nivel de toda la integración, distintos
@@ -36,13 +36,17 @@ CONF_PVPC_ZONE = "pvpc_zone"
 
 # Término de potencia: en la 2.0TD son solo DOS periodos (punta/valle, con horario distinto al de
 # energía), ambos se facturan siempre (no es "uno u otro" según la hora) — por eso no hace falta
-# clasificar horas, solo potencia contratada × precio por día, para cada periodo. Por CUPS, no a
-# nivel de la integración (distintos contratos pueden tener potencias contratadas distintas).
+# clasificar horas, solo potencia contratada × precio por día, para cada periodo.
+#
+# La potencia contratada (kW) se lee EN VIVO de e-distribución (endpoint /contracted-power/:contId
+# del add-on, ver coordinator.py) — no es una opción que rellene el usuario, así que estas dos
+# claves solo existen como claves de DATOS dentro del dict del suministro (bundle["supply_point"]),
+# nunca en CONF_SUPPLY_POINTS. El precio (€/kW/día) sí es comercial, no lo sabe la distribuidora, y
+# por tanto SÍ es una opción manual por CUPS.
 CONF_CONTRACTED_POWER_PUNTA = "contracted_power_punta_kw"
 CONF_CONTRACTED_POWER_VALLE = "contracted_power_valle_kw"
 CONF_PRICE_POWER_PUNTA = "price_power_punta"  # €/kW/día
 CONF_PRICE_POWER_VALLE = "price_power_valle"  # €/kW/día
-POWER_TERM_KEYS = (CONF_CONTRACTED_POWER_PUNTA, CONF_CONTRACTED_POWER_VALLE, CONF_PRICE_POWER_PUNTA, CONF_PRICE_POWER_VALLE)
 
 # Umbral de fallos consecutivos del coordinator antes de levantar un Repair issue (ver repairs.py)
 CONSECUTIVE_FAILURES_FOR_REPAIR = 3

@@ -26,20 +26,18 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución: ajustes generales",
-        "description": "Solo el intervalo de actualización es global. Después de este paso, configurarás cada uno de tus {num_supplies} suministros por separado: tipo de tarifa, potencia contratada, precios de energía y potencia, zona PVPC y compensación de excedentes — todo por CUPS, ya que cada contrato puede ser distinto.",
+        "description": "Solo el intervalo de actualización es global. Después de este paso, configurarás cada uno de tus {num_supplies} suministros por separado: tipo de tarifa, precio de potencia y de energía, zona PVPC y compensación de excedentes — todo por CUPS, ya que cada contrato puede ser distinto. La potencia contratada (kW) no se pide: se lee automáticamente de tu contrato con e-distribución.",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)"
         }
       },
       "supply_point": {
         "title": "Suministro {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nElige si seguir este suministro, un alias, el tipo de tarifa (fija/tramos/pvpc), la potencia contratada y su precio, los precios de energía según la tarifa elegida, la compensación de excedentes, y (si usas pvpc) la zona.\n\nLos precios de mañana con tarifa pvpc se publican sobre las 20:15h del día anterior — no hace falta clave ni registro, se usa el archivo público de REE.",
+        "description": "{address} ({estado})\n\nElige si seguir este suministro, un alias, el tipo de tarifa (fija/tramos/pvpc), el precio del término de potencia, los precios de energía según la tarifa elegida, la compensación de excedentes, y (si usas pvpc) la zona. La potencia contratada (kW) se lee sola de e-distribución — no hace falta que la escribas.\n\nLos precios de mañana con tarifa pvpc se publican sobre las 20:15h del día anterior — no hace falta clave ni registro, se usa el archivo público de REE.",
         "data": {
           "track": "Seguir este suministro",
           "alias": "Alias (opcional)",
           "tariff_type": "Tipo de tarifa: fija / tramos / pvpc",
-          "contracted_power_punta_kw": "Potencia contratada punta (kW)",
-          "contracted_power_valle_kw": "Potencia contratada valle (kW)",
           "price_power_punta": "Precio potencia punta (€/kW/día)",
           "price_power_valle": "Precio potencia valle (€/kW/día)",
           "fixed_price": "Precio fijo (€/kWh, si la tarifa es 'fija')",
@@ -62,6 +60,7 @@
       "imported_energy_month": { "name": "Energía importada (mes)" },
       "exported_energy_month": { "name": "Energía exportada (mes)" },
       "max_power_demand": { "name": "Potencia máxima demandada" },
+      "contracted_power": { "name": "Potencia contratada" },
       "last_update": { "name": "Última actualización" },
       "next_update": { "name": "Próxima actualización" },
       "estimated_cost_today": { "name": "Coste estimado hoy" },
