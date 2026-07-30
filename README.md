@@ -74,7 +74,7 @@ Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de t
 
 En **Configurar** (engranaje junto a "e-distribución" en Ajustes → Dispositivos y servicios) puedes ajustar:
 - El **intervalo de actualización** (15 min por defecto).
-- Un **precio por kWh** opcional, para tener sensores de coste estimado (0 = desactivado).
+- Un **precio por franja horaria** (punta/llano/valle, €/kWh, todos opcionales) para tener sensores de coste estimado — se calcula hora a hora según cuándo consumiste de verdad, no con una media diaria.
 - Qué **suministros seguir** (puedes desmarcar los históricos) y ponerles un **alias** a cada uno.
 
 ## Entidades
@@ -89,7 +89,7 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
 | `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
 | `sensor.<cups>_comparativa_con_el_mismo_mes_del_año_anterior` | % de cambio del consumo importado de este mes frente al mismo mes de hace un año (sin valor si el contrato es más nuevo que un año) |
-| `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has puesto un precio €/kWh en las opciones — importado × precio, una estimación simple, no una factura real |
+| `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has puesto algún precio en las opciones — calculado hora a hora según la franja horaria real (punta/llano/valle) de cada kWh importado, con el desglose por franja como atributos. Estimación simple (no festivos, ni potencia, ni excedentes), no una factura real |
 | `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
@@ -198,6 +198,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 - Facturas directas de e-distribución no están implementadas — solo aplican a una minoría de clientes con factura directa de la distribuidora (la mayoría paga a su comercializadora).
 - Sin autenticación propia en la API del add-on — no expongas el puerto 8099 a Internet.
 - El relleno de histórico en el Dashboard de Energía usa la Statistics API del `recorder`, una parte más avanzada y menos estable de Home Assistant — está pensado como "mejor esfuerzo": si falla, se registra un aviso en el log y el resto de la integración sigue funcionando con normalidad (solo te quedas sin el relleno retroactivo).
+- El coste estimado usa el horario estándar de punta/llano/valle de la tarifa 2.0TD peninsular (punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana) — **no tiene en cuenta festivos** (que cuentan como valle todo el día en la tarifa real), así que en un día festivo el estimado saldrá algo más caro de lo real.
 
 ## Soporte
 

@@ -14,7 +14,14 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
-from .const import CONF_PRICE_PER_KWH, CONF_SUPPLY_POINTS, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
+from .const import (
+    CONF_SUPPLY_POINTS,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+    PRICE_PERIOD_KEYS,
+)
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -112,11 +119,12 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(data=user_input)
 
         current_interval = self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
-        current_price = self._config_entry.options.get(CONF_PRICE_PER_KWH, 0)
         schema_dict: dict[Any, Any] = {
             vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(int, vol.Range(min=5, max=1440)),
-            vol.Optional(CONF_PRICE_PER_KWH, default=current_price): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
         }
+        for price_key in PRICE_PERIOD_KEYS:
+            current_price = self._config_entry.options.get(price_key, 0)
+            schema_dict[vol.Optional(price_key, default=current_price)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=10))
         listing_lines = []
         for sp in self._supply_points:
             cont_id = sp["contId"]

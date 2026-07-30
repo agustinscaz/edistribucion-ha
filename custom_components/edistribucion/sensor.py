@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
+from .costs import cost_breakdown
 from .device import hub_device_info
 
 
@@ -30,6 +31,15 @@ def _latest_daily_total(consumption: dict | None) -> dict | None:
         consumption["dailyTotals"],
         key=lambda d: datetime.strptime(d["date"], "%d/%m/%Y"),
     )
+
+
+def _latest_day_hourly(consumption: dict | None) -> dict | None:
+    """Como `_latest_daily_total` pero con el `hourlyByDate` recortado solo al día más reciente —
+    para que el coste "de hoy" no incluya el día extra que trae de más el consumo por defecto."""
+    if not consumption or not consumption.get("hourlyByDate"):
+        return None
+    latest_date = max(consumption["hourlyByDate"], key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
+    return {"hourlyByDate": {latest_date: consumption["hourlyByDate"][latest_date]}}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -48,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
         entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
-        if coordinator.price_per_kwh > 0:
+        if any(coordinator.prices.values()):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
 
@@ -251,8 +261,9 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
 
 
 class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
-    """Coste estimado = energía importada * precio fijo configurado en las opciones. Es una
-    estimación simple (no modela periodos ni excedentes), pensada para tener una idea aproximada,
+    """Coste estimado calculado hora a hora según la franja horaria real (punta/llano/valle) de
+    cada kWh importado, con los precios configurados en las opciones. Es una estimación (no
+    considera festivos, ni el término de potencia, ni excedentes) — para tener una idea aproximada,
     no para cuadrar con la factura real."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
@@ -264,15 +275,21 @@ class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
         self._attr_translation_key = translation_key
 
     @property
-    def _imported_kwh(self) -> float | None:
+    def _consumption_source(self) -> dict | None:
         raise NotImplementedError
 
     @property
+    def _breakdown(self) -> dict | None:
+        return cost_breakdown(self._consumption_source, self.coordinator.prices)
+
+    @property
     def native_value(self) -> float | None:
-        kwh = self._imported_kwh
-        if kwh is None:
-            return None
-        return round(kwh * self.coordinator.price_per_kwh, 4)
+        breakdown = self._breakdown
+        return breakdown["total"] if breakdown else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self._breakdown or {}
 
 
 class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
@@ -283,9 +300,8 @@ class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
         self._attr_unique_id = f"{cont_id}_estimated_cost_today"
 
     @property
-    def _imported_kwh(self) -> float | None:
-        day = _latest_daily_total(self._bundle.get("consumption"))
-        return day["importedKwh"] if day else None
+    def _consumption_source(self) -> dict | None:
+        return _latest_day_hourly(self._bundle.get("consumption"))
 
 
 class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
@@ -296,9 +312,8 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
         self._attr_unique_id = f"{cont_id}_estimated_cost_month"
 
     @property
-    def _imported_kwh(self) -> float | None:
-        month = self._bundle.get("month")
-        return month.get("totalImportedKwh") if month else None
+    def _consumption_source(self) -> dict | None:
+        return self._bundle.get("month")
 
 
 class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):

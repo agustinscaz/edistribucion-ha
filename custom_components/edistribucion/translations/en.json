@@ -26,10 +26,12 @@
     "step": {
       "init": {
         "title": "e-distribución options",
-        "description": "Update interval, price per kWh (optional, for the estimated cost sensors), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
+        "description": "Update interval, prices per time-of-use period (optional, for the estimated cost sensors — calculated hour by hour based on when you actually consumed), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
         "data": {
           "scan_interval": "Update interval (minutes)",
-          "price_per_kwh": "Price per kWh (€, optional — 0 disables the estimated cost sensors)"
+          "price_punta": "Peak price (€/kWh, optional)",
+          "price_llano": "Flat price (€/kWh, optional)",
+          "price_valle": "Off-peak price (€/kWh, optional)"
         }
       }
     }

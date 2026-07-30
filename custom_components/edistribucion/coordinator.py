@@ -14,12 +14,13 @@ from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 from .const import (
-    CONF_PRICE_PER_KWH,
     CONF_SUPPLY_POINTS,
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    PRICE_PERIOD_KEYS,
 )
+from .costs import LLANO, PUNTA, VALLE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,7 +41,11 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.client = client
         self.entry_id = entry.entry_id
         self.supply_point_options: dict[str, dict] = entry.options.get(CONF_SUPPLY_POINTS, {})
-        self.price_per_kwh: float = entry.options.get(CONF_PRICE_PER_KWH, 0) or 0
+        self.prices: dict[str, float] = {
+            PUNTA: entry.options.get(PRICE_PERIOD_KEYS[0], 0) or 0,
+            LLANO: entry.options.get(PRICE_PERIOD_KEYS[1], 0) or 0,
+            VALLE: entry.options.get(PRICE_PERIOD_KEYS[2], 0) or 0,
+        }
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
 

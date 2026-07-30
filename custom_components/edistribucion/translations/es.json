@@ -26,10 +26,12 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución",
-        "description": "Intervalo de actualización, precio por kWh (opcional, para el coste estimado), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
+        "description": "Intervalo de actualización, precios por franja horaria (opcionales, para el coste estimado — se calcula hora a hora según cuándo consumiste de verdad), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)",
-          "price_per_kwh": "Precio por kWh (€, opcional — 0 desactiva el coste estimado)"
+          "price_punta": "Precio en punta (€/kWh, opcional)",
+          "price_llano": "Precio en llano (€/kWh, opcional)",
+          "price_valle": "Precio en valle (€/kWh, opcional)"
         }
       }
     }
