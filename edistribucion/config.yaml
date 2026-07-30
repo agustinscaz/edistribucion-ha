@@ -1,5 +1,5 @@
 name: "e-distribución"
-version: "1.0.1"
+version: "1.0.2"
 slug: "edistribucion"
 description: "API local (sin depender de ningún servidor externo) para tus datos de consumo, potencia y suministros de e-distribución (Zona Privada)."
 url: "https://github.com/agustinscaz/edistribucion-ha"
