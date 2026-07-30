@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
@@ -149,7 +150,12 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
 
         current_pvpc_zone = self._config_entry.options.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)
-        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = vol.In(PVPC_ZONES)
+        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=key, label=label) for key, label in PVPC_ZONES.items()],
+                mode=selector.SelectSelectorMode.LIST,
+            )
+        )
 
         return self.async_show_form(
             step_id="init",
