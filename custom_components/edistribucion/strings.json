@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar con el add-on de e-distribución",
+        "description": "Introduce la dirección del add-on `edistribucion` (por defecto, en el mismo Home Assistant).",
+        "data": {
+          "host": "Host",
+          "port": "Puerto"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se pudo conectar con el add-on. Comprueba que está iniciado y que el host/puerto son correctos."
+    },
+    "abort": {
+      "already_configured": "Ese add-on ya está configurado."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Energía importada hoy" },
+      "exported_energy_today": { "name": "Energía exportada hoy" },
+      "max_power_demand": { "name": "Potencia máxima demandada" }
+    }
+  }
+}

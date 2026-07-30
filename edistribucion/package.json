@@ -1,0 +1,14 @@
+{
+  "name": "edistribucion-ha",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Add-on de Home Assistant: API local para tus datos de e-distribución (Zona Privada).",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "playwright": "^1.62.0"
+  }
+}

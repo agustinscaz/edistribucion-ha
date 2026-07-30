@@ -1,0 +1,3 @@
+build_from:
+  amd64: node:20-bookworm-slim
+  aarch64: node:20-bookworm-slim
