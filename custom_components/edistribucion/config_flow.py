@@ -149,7 +149,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
 
         current_pvpc_zone = self._config_entry.options.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)
-        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = vol.In(list(PVPC_ZONES))
+        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = vol.In(PVPC_ZONES)
 
         return self.async_show_form(
             step_id="init",
