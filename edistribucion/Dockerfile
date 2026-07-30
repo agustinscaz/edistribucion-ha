@@ -1,5 +1,4 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM node:20-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
