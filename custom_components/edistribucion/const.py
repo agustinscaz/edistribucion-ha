@@ -12,7 +12,7 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 15
 # Opciones: qué suministros seguir, con qué alias, y tarifa/precios de CADA UNO — dict
 # {contId: {"track": bool, "alias": str, "tariff_type": ..., "fixed_price": ..., "price_punta": ...,
 #   "price_llano": ..., "price_valle": ..., "surplus_compensation": bool,
-#   "surplus_price": ...}} — el precio PVPC NO va aquí: es global (ver CONF_ESIOS_API_KEY/CONF_ESIOS_GEO_ID)
+#   "surplus_price": ...}} — el precio PVPC NO va aquí: es global (ver CONF_PVPC_ZONE)
 CONF_SUPPLY_POINTS = "supply_points"
 
 # Tipos de tarifa de energía, configurables por CUPS (no a nivel de toda la integración, distintos
@@ -28,18 +28,10 @@ TARIFF_TRAMOS = "tramos"
 TARIFF_PVPC = "pvpc"
 TARIFF_TYPES = (TARIFF_FIJA, TARIFF_TRAMOS, TARIFF_PVPC)
 
-# ESIOS/REE (PVPC): clave gratuita solicitada por email a la propia REE, y región (geo_id) — es lo
-# mismo para todos los suministros que usen tarifa "pvpc", así que va a nivel de la integración.
-CONF_ESIOS_API_KEY = "esios_api_key"
-CONF_ESIOS_GEO_ID = "esios_geo_id"
-ESIOS_GEO_IDS = {
-    "8741": "Península",
-    "8742": "Canarias",
-    "8743": "Baleares",
-    "8744": "Ceuta",
-    "8745": "Melilla",
-}
-DEFAULT_ESIOS_GEO_ID = "8741"
+# ESIOS/REE (PVPC): zona de precio (ver esios.py — PCB para Península/Baleares/Canarias, CYM para
+# Ceuta/Melilla), sin clave/API key: se usa el archivo público de PVPC. Es lo mismo para todos los
+# suministros que usen tarifa "pvpc", así que va a nivel de la integración, no por CUPS.
+CONF_PVPC_ZONE = "pvpc_zone"
 
 # Término de potencia: en la 2.0TD son solo DOS periodos (P1/P2, con horario distinto al de
 # energía), ambos se facturan siempre (no es "uno u otro" según la hora) — por eso no hace falta

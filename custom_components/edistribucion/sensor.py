@@ -42,13 +42,13 @@ def _latest_day_hourly(consumption: dict | None) -> dict | None:
     return {"hourlyByDate": {latest_date: consumption["hourlyByDate"][latest_date]}}
 
 
-def _energy_cost_configured(sp: dict, coordinator: EdistribucionCoordinator) -> bool:
-    """¿Hay suficiente configurado como para que el coste de energía pueda dar algo?"""
+def _energy_cost_configured(sp: dict) -> bool:
+    """¿Hay suficiente configurado en este CUPS como para que el coste de energía pueda dar algo?"""
     tariff_type = sp.get("tariff_type")
     if tariff_type == TARIFF_FIJA:
         return bool(sp.get("fixed_price"))
     if tariff_type == TARIFF_PVPC:
-        return bool(coordinator.esios_api_key)
+        return True  # no hace falta configurar nada más — el precio PVPC es público, sin clave
     return bool(sp.get("price_punta") or sp.get("price_llano") or sp.get("price_valle"))
 
 
@@ -68,7 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
         entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
-        if _energy_cost_configured(sp, coordinator):
+        if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
         if coordinator.daily_power_cost > 0:

@@ -17,19 +17,17 @@ from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
     CONF_CONTRACTED_POWER_P1,
     CONF_CONTRACTED_POWER_P2,
-    CONF_ESIOS_API_KEY,
-    CONF_ESIOS_GEO_ID,
+    CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
-    DEFAULT_ESIOS_GEO_ID,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
-    ESIOS_GEO_IDS,
     POWER_TERM_KEYS,
     TARIFF_TRAMOS,
     TARIFF_TYPES,
 )
+from .esios import DEFAULT_PVPC_ZONE, PVPC_ZONES
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -150,16 +148,13 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             current_price_power = self._config_entry.options.get(price_power_key, 0)
             schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
 
-        current_esios_key = self._config_entry.options.get(CONF_ESIOS_API_KEY, "")
-        current_geo_id = self._config_entry.options.get(CONF_ESIOS_GEO_ID, DEFAULT_ESIOS_GEO_ID)
-        schema_dict[vol.Optional(CONF_ESIOS_API_KEY, default=current_esios_key)] = str
-        schema_dict[vol.Optional(CONF_ESIOS_GEO_ID, default=current_geo_id)] = vol.In(list(ESIOS_GEO_IDS))
+        current_pvpc_zone = self._config_entry.options.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)
+        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = vol.In(list(PVPC_ZONES))
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema_dict),
             description_placeholders={
-                "geo_ids": ", ".join(f"{k}={v}" for k, v in ESIOS_GEO_IDS.items()),
                 "num_supplies": str(len(self._supply_points)),
             },
         )

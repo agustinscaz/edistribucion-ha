@@ -8,9 +8,10 @@ Horario de tramos usado (2.0TD peninsular, el más común en residencial):
 
 OJO — limitaciones conocidas:
 - "tramos" no tiene en cuenta festivos (cuentan como valle todo el día en la tarifa real).
-- "pvpc" usa precios reales hora a hora de la API de ESIOS/REE (ver esios.py) — necesita una clave
-  de ESIOS configurada a nivel de la integración. Sin esa clave (o sin precio para alguna hora
-  concreta, p.ej. si aún no se ha publicado), esa hora queda sin coste.
+- "pvpc" usa precios reales hora a hora del archivo público de PVPC de ESIOS/REE (ver esios.py) —
+  no hace falta ninguna clave, solo la zona (Península/Baleares/Canarias o Ceuta/Melilla)
+  configurada a nivel de la integración. Sin precio para alguna hora concreta (p.ej. si aún no se
+  ha publicado), esa hora queda sin coste.
 """
 
 from __future__ import annotations

@@ -15,16 +15,15 @@ from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 from .const import (
-    CONF_ESIOS_API_KEY,
-    CONF_ESIOS_GEO_ID,
+    CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
     CONSECUTIVE_FAILURES_FOR_REPAIR,
-    DEFAULT_ESIOS_GEO_ID,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     POWER_TERM_KEYS,
+    TARIFF_PVPC,
 )
-from .esios import EsiosError, async_get_pvpc_prices
+from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,31 +49,40 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.contracted_power_p2: float = entry.options.get(POWER_TERM_KEYS[1], 0) or 0
         self.price_power_p1: float = entry.options.get(POWER_TERM_KEYS[2], 0) or 0
         self.price_power_p2: float = entry.options.get(POWER_TERM_KEYS[3], 0) or 0
-        self.esios_api_key: str = entry.options.get(CONF_ESIOS_API_KEY) or ""
-        self.esios_geo_id: str = entry.options.get(CONF_ESIOS_GEO_ID) or DEFAULT_ESIOS_GEO_ID
+        self.pvpc_zone: str = entry.options.get(CONF_PVPC_ZONE) or DEFAULT_PVPC_ZONE
         self.pvpc_prices: dict[str, float] = {}
         self._pvpc_fetched_date: str | None = None
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
 
+    def _any_supply_point_uses_pvpc(self) -> bool:
+        return any(opts.get("tariff_type") == TARIFF_PVPC for opts in self.supply_point_options.values())
+
     async def _async_update_pvpc_prices(self) -> None:
         """Los precios PVPC solo cambian una vez al día (se publican ~20:15 para el día
-        siguiente) — se pide un rango de todo el mes (para el coste "mes") una sola vez por día,
-        no en cada ciclo de actualización, para no reventar la API pública de ESIOS sin necesidad."""
-        if not self.esios_api_key:
+        siguiente) — se pide como mucho una vez por día, no en cada ciclo de actualización, para no
+        pedir de más a la API pública de ESIOS sin necesidad. El archivo público solo da UN día por
+        petición, así que se piden uno a uno los días del mes que aún no tengamos en caché."""
+        if not self._any_supply_point_uses_pvpc():
             return
-        today = dt_util.now()
+        today = dt_util.now().date()
         today_key = today.strftime("%Y-%m-%d")
         if self._pvpc_fetched_date == today_key:
             return
-        try:
-            session = async_get_clientsession(self.hass)
-            start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            end = today.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
-            self.pvpc_prices = await async_get_pvpc_prices(session, self.esios_api_key, self.esios_geo_id, start, end)
-            self._pvpc_fetched_date = today_key
-        except EsiosError as err:
-            _LOGGER.warning("No se pudieron obtener precios PVPC de ESIOS: %s", err)
+
+        session = async_get_clientsession(self.hass)
+        day = today.replace(day=1)
+        tomorrow = today + timedelta(days=1)
+        while day <= tomorrow:
+            day_key_prefix = f"{day.strftime('%d/%m/%Y')} "
+            if not any(k.startswith(day_key_prefix) for k in self.pvpc_prices):
+                try:
+                    self.pvpc_prices.update(await async_get_pvpc_prices_for_day(session, self.pvpc_zone, day))
+                except EsiosError as err:
+                    _LOGGER.warning("No se pudieron obtener precios PVPC de ESIOS para %s: %s", day, err)
+                    break  # si ESIOS falla (red, baneo...), se reintenta en el próximo ciclo
+            day += timedelta(days=1)
+        self._pvpc_fetched_date = today_key
 
     @property
     def daily_power_cost(self) -> float:

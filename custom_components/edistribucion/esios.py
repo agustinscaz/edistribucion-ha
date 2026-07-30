@@ -1,79 +1,79 @@
-"""Cliente para la API de ESIOS/REE (indicador 1001 = PVPC), para el tipo de tarifa "pvpc".
+"""Precio PVPC hora a hora para la tarifa "pvpc", sacado del archivo público de PVPC de ESIOS/REE
+(archivo nº 70) — el mismo JSON que usa la propia web de REE para publicar el precio, así que NO
+hace falta pedir ninguna clave/API key: es un endpoint público, un día por petición.
 
 Los precios de mañana se publican sobre las 20:15h (hora peninsular) del día anterior — el
 coordinator solo pide datos nuevos una vez al día (no cada 15 min), ya que el precio no cambia más
-a menudo y ESIOS es una API pública que conviene no machacar sin necesidad.
+a menudo y conviene no pedir de más a una API pública sin necesidad.
 
-Referencia: https://api.esios.ree.es/indicators/1001 (necesita una clave gratuita, solicitada por
-email a REE — no hay alta instantánea como en Datadis).
+OJO: ESIOS devuelve 403 si detecta un user-agent "de librería" (p.ej. "aiohttp/..."), así que se
+manda un user-agent de navegador normal — es un comportamiento conocido y documentado en otras
+integraciones que usan este mismo endpoint (p.ej. aiopvpc, la librería tras la integración oficial
+`pvpc_hourly_pricing` de Home Assistant).
+
+Referencia: https://api.esios.ree.es/archives/70/download_json?locale=es&date=YYYY-MM-DD
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date
 
 from aiohttp import ClientError, ClientSession
-from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
-INDICATOR_PVPC = 1001
-BASE_URL = "https://api.esios.ree.es"
+ARCHIVE_URL = "https://api.esios.ree.es/archives/70/download_json"
 TIMEOUT = 20
+
+_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+# El PVPC es el mismo para Península/Baleares/Canarias desde la reforma 2.0TD — solo Ceuta y
+# Melilla tienen un precio distinto (coste extra de generación/interconexión).
+ZONE_PENINSULA_BALEARES_CANARIAS = "PCB"
+ZONE_CEUTA_MELILLA = "CYM"
+PVPC_ZONES = {
+    ZONE_PENINSULA_BALEARES_CANARIAS: "Península / Baleares / Canarias",
+    ZONE_CEUTA_MELILLA: "Ceuta y Melilla",
+}
+DEFAULT_PVPC_ZONE = ZONE_PENINSULA_BALEARES_CANARIAS
 
 
 class EsiosError(Exception):
-    """Error hablando con la API de ESIOS."""
+    """Error hablando con el archivo público de ESIOS, o baneo por user-agent."""
 
 
-def _hourly_key(date_str: str, hour: int) -> str:
-    """Misma forma de clave que usa `costs.hour_period`: 'DD/MM/YYYY' + hora, para poder cruzar
-    directamente con el `hourlyByDate` que devuelve el add-on."""
-    return f"{date_str} {hour}"
-
-
-async def async_get_pvpc_prices(
-    session: ClientSession, api_key: str, geo_id: str, start: datetime, end: datetime
-) -> dict[str, float]:
-    """Precios PVPC (€/kWh) hora a hora entre `start` y `end`, para la región `geo_id`.
+async def async_get_pvpc_prices_for_day(session: ClientSession, zone: str, day: date) -> dict[str, float]:
+    """Precios PVPC (€/kWh) de UN día, para la zona `zone` ("PCB" o "CYM").
 
     Devuelve un dict {"DD/MM/YYYY H": precio}, con H la hora SIN ceros a la izquierda (0-23), para
     cruzar directamente con las horas que trae `hourlyByDate` del add-on de e-distribución.
     """
-    headers = {
-        "Accept": "application/json; application/vnd.esios-api-v2+json",
-        "Content-Type": "application/json",
-        "Authorization": f'Token token="{api_key}"',
-    }
-    params = {
-        "start_date": start.strftime("%Y-%m-%dT%H:%M:%S"),
-        "end_date": end.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
+    headers = {"Accept": "application/json", "User-Agent": _USER_AGENT}
+    params = {"locale": "es", "date": day.strftime("%Y-%m-%d")}
     try:
         async with asyncio.timeout(TIMEOUT):
-            resp = await session.get(f"{BASE_URL}/indicators/{INDICATOR_PVPC}", headers=headers, params=params)
+            resp = await session.get(ARCHIVE_URL, headers=headers, params=params)
             if resp.status >= 400:
                 body = await resp.text()
                 raise EsiosError(f"HTTP {resp.status} de ESIOS: {body[:300]}")
-            data = await resp.json()
+            data = await resp.json(content_type=None)
     except (ClientError, TimeoutError) as err:
         raise EsiosError(f"No se pudo conectar con ESIOS: {err}") from err
 
     prices: dict[str, float] = {}
-    for entry in data.get("indicator", {}).get("values", []):
-        if str(entry.get("geo_id")) != str(geo_id):
-            continue
-        raw_dt = entry.get("datetime")
-        value = entry.get("value")
-        if raw_dt is None or value is None:
+    for row in data.get("PVPC") or []:
+        date_str = row.get("Dia")
+        hour_label = row.get("Hora")  # tipo "13-14"
+        raw_value = row.get(zone)
+        if not date_str or not hour_label or raw_value is None:
             continue
         try:
-            parsed = datetime.fromisoformat(raw_dt.replace("Z", "+00:00"))
-        except ValueError:
+            hour = int(hour_label.split("-")[0])
+            price = round(float(str(raw_value).replace(",", ".")) / 1000.0, 5)  # €/MWh -> €/kWh
+        except (ValueError, IndexError):
             continue
-        local_dt = dt_util.as_local(parsed) if parsed.tzinfo else parsed
-        prices[_hourly_key(local_dt.strftime("%d/%m/%Y"), local_dt.hour)] = float(value)
+        prices[f"{date_str} {hour}"] = price
 
     return prices

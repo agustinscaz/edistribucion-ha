@@ -26,15 +26,14 @@
     "step": {
       "init": {
         "title": "e-distribución options: general settings",
-        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day), and your ESIOS/REE API key if you'll use the PVPC tariff on any supply point (requested for free by email — indicator 1001, geo_id for your region: {geo_ids}). Tomorrow's prices are published around 20:15 the day before.\n\nAfter this step, you'll configure each of your {num_supplies} supply points separately.",
+        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day), and the PVPC zone if you'll use that tariff on any supply point (no key or signup needed — it uses REE's public price file). Tomorrow's prices are published around 20:15 the day before.\n\nAfter this step, you'll configure each of your {num_supplies} supply points separately.",
         "data": {
           "scan_interval": "Update interval (minutes)",
           "contracted_power_p1_kw": "Contracted power P1 (kW, optional)",
           "contracted_power_p2_kw": "Contracted power P2 (kW, optional)",
           "price_power_p1": "Power price P1 (€/kW/day, optional)",
           "price_power_p2": "Power price P2 (€/kW/day, optional)",
-          "esios_api_key": "ESIOS API key (optional, only if using the PVPC tariff)",
-          "esios_geo_id": "Region (for PVPC pricing)"
+          "pvpc_zone": "PVPC zone (for 'pvpc' tariff): Peninsula/Balearic Islands/Canary Islands, or Ceuta and Melilla"
         }
       },
       "supply_point": {
