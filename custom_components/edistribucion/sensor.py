@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
+from .device import hub_device_info
 
 
 def _latest_daily_total(consumption: dict | None) -> dict | None:
@@ -34,7 +35,7 @@ def _latest_daily_total(consumption: dict | None) -> dict | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: EdistribucionCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities: list[SensorEntity] = []
+    entities: list[SensorEntity] = [EdistribucionLastUpdateSensor(coordinator, entry.entry_id)]
     for cont_id, bundle in coordinator.data.items():
         sp = bundle["supply_point"]
         entities.append(EdistribucionImportedEnergySensor(coordinator, cont_id, sp))
@@ -45,6 +46,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
+
+
+class EdistribucionLastUpdateSensor(CoordinatorEntity[EdistribucionCoordinator], SensorEntity):
+    """Marca de tiempo de la última vez que se pudo hablar con el add-on sin error."""
+
+    _attr_has_entity_name = True
+    entity_description = SensorEntityDescription(
+        key="last_update",
+        translation_key="last_update",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    )
+
+    def __init__(self, coordinator: EdistribucionCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_last_update"
+        self._attr_device_info = hub_device_info(entry_id)
+
+    @property
+    def native_value(self):
+        return self.coordinator.last_success_time
+
+    @property
+    def available(self) -> bool:
+        return True
 
 
 class _EdistribucionBaseSensor(CoordinatorEntity[EdistribucionCoordinator], SensorEntity):
@@ -61,6 +86,7 @@ class _EdistribucionBaseSensor(CoordinatorEntity[EdistribucionCoordinator], Sens
             name=f"e-distribución {cups}",
             manufacturer="e-distribución",
             model=supply_point.get("tariff"),
+            via_device=(DOMAIN, coordinator.entry_id),
         )
 
     @property
@@ -75,6 +101,7 @@ class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
     )
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
@@ -94,6 +121,7 @@ class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=2,
     )
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
@@ -113,6 +141,7 @@ class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
     _attr_state_class = SensorStateClass.TOTAL
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 2
 
     def __init__(self, coordinator, cont_id, supply_point, period_key: str, flow: str, translation_key: str) -> None:
         super().__init__(coordinator, cont_id, supply_point)
@@ -152,6 +181,7 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        suggested_display_precision=3,
         entity_registry_enabled_default=True,
     )
 
@@ -166,6 +196,20 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
         if not points:
             return None
         return points[-1].get("valueKw")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        power = self._bundle.get("max_power_demand")
+        points = power.get("points") if power else None
+        if not points:
+            return {}
+        last = points[-1]
+        return {
+            "date": last.get("date"),
+            "hour": last.get("hour"),
+            "periods": last.get("periods"),
+            "max_value_reported": power.get("maxValue"),
+        }
 
     @property
     def available(self) -> bool:

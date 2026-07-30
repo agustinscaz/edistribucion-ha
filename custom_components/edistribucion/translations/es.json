@@ -17,6 +17,17 @@
       "already_configured": "Ese add-on ya está configurado."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de e-distribución",
+        "description": "Cada cuántos minutos se piden datos nuevos al add-on.",
+        "data": {
+          "scan_interval": "Intervalo de actualización (minutos)"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "imported_energy_today": { "name": "Energía importada hoy" },
@@ -25,7 +36,8 @@
       "exported_energy_week": { "name": "Energía exportada (semana)" },
       "imported_energy_month": { "name": "Energía importada (mes)" },
       "exported_energy_month": { "name": "Energía exportada (mes)" },
-      "max_power_demand": { "name": "Potencia máxima demandada" }
+      "max_power_demand": { "name": "Potencia máxima demandada" },
+      "last_update": { "name": "Última actualización" }
     },
     "binary_sensor": {
       "connected": { "name": "Conectado" }

@@ -5,12 +5,12 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
+from .device import hub_device_info
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -28,11 +28,7 @@ class _EdistribucionHubButton(CoordinatorEntity[EdistribucionCoordinator], Butto
 
     def __init__(self, coordinator: EdistribucionCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="e-distribución (add-on)",
-            manufacturer="e-distribución (no oficial)",
-        )
+        self._attr_device_info = hub_device_info(entry.entry_id)
 
 
 class EdistribucionRefreshButton(_EdistribucionHubButton):

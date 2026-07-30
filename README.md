@@ -69,11 +69,13 @@ HACS instala integraciones en Python que corren dentro del propio proceso de Hom
 
 [![Add Integration to your Home Assistant instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=edistribucion)
 
-Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de tu cuenta.
+Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de tu cuenta, más un dispositivo adicional **"e-distribución (add-on)"** (ver más abajo).
+
+Para cambiar el intervalo de actualización (15 min por defecto): en la propia integración, botón **Configurar** (engranaje) junto a "e-distribución" en Ajustes → Dispositivos y servicios.
 
 ## Entidades
 
-Por cada punto de suministro (CUPS):
+Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 
 | Entidad | Descripción |
 |---|---|
@@ -81,19 +83,20 @@ Por cada punto de suministro (CUPS):
 | `sensor.<cups>_energia_exportada_hoy` | Energía exportada a la red hoy (kWh, si tienes autoconsumo con excedentes) |
 | `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
-| `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados |
+| `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
 
-Además, a nivel de la propia integración (no por CUPS) hay un dispositivo **"e-distribución (add-on)"** con:
+Además, agrupadas bajo el dispositivo **"e-distribución (add-on)"** (no ligado a ningún CUPS concreto):
 
 | Entidad | Descripción |
 |---|---|
 | `binary_sensor.conectado` | ON si la última actualización pudo hablar con el add-on sin error |
-| `button.actualizar_ahora` | Vuelve a pedir los datos ya, sin esperar a los 15 minutos |
+| `sensor.ultima_actualizacion` | Marca de tiempo de la última actualización correcta |
+| `button.actualizar_ahora` | Vuelve a pedir los datos ya, sin esperar al próximo ciclo |
 | `button.forzar_reconexion` | Fuerza un login fresco en el add-on (por si la sesión "se queda rara") y actualiza |
 
-Actualización cada 15 minutos por defecto (o al pulsar "Actualizar ahora").
+**¿No ves el `binary_sensor`/los `button`?** Comprueba en **Ajustes → Dispositivos y servicios → e-distribución** que aparezca el dispositivo **"e-distribución (add-on)"** en la lista de dispositivos (no solo los dispositivos por CUPS) — a veces hace falta una **recarga completa** de la integración (menú ⋮ → Recargar) o un **reinicio de Home Assistant** tras actualizar por HACS para que se registren plataformas nuevas (`binary_sensor`/`button`) en una integración ya instalada previamente. Si tras recargar/reiniciar siguen sin aparecer, revisa **Ajustes → Sistema → Registros** filtrando por `edistribucion` para ver si hay algún error de configuración.
 
 ## Cómo funciona
 

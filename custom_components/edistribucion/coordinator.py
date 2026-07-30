@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import DEFAULT_SCAN_INTERVAL_MINUTES
@@ -20,14 +21,22 @@ RANGE_MONTH = "3"
 class EdistribucionCoordinator(DataUpdateCoordinator):
     """Mantiene: lista de suministros + consumo (hoy/semana/mes) y potencia de cada uno."""
 
-    def __init__(self, hass: HomeAssistant, client: EdistribucionApiClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: EdistribucionApiClient,
+        entry_id: str,
+        update_interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name="edistribucion",
-            update_interval=timedelta(minutes=DEFAULT_SCAN_INTERVAL_MINUTES),
+            update_interval=timedelta(minutes=update_interval_minutes),
         )
         self.client = client
+        self.entry_id = entry_id
+        self.last_success_time: datetime | None = None
 
     async def _async_update_data(self) -> dict:
         try:
@@ -56,6 +65,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
 
                 data[cont_id] = bundle
+            self.last_success_time = dt_util.utcnow()
             return data
         except EdistribucionApiError as err:
             raise UpdateFailed(f"Error hablando con el add-on de e-distribución: {err}") from err
