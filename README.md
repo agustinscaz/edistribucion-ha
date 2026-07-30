@@ -79,9 +79,21 @@ Por cada punto de suministro (CUPS):
 |---|---|
 | `sensor.<cups>_energia_importada_hoy` | Energía importada de la red hoy (kWh) — compatible con el Dashboard de Energía |
 | `sensor.<cups>_energia_exportada_hoy` | Energía exportada a la red hoy (kWh, si tienes autoconsumo con excedentes) |
+| `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
+| `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
 | `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados |
 
-Actualización cada 15 minutos por defecto.
+Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
+
+Además, a nivel de la propia integración (no por CUPS) hay un dispositivo **"e-distribución (add-on)"** con:
+
+| Entidad | Descripción |
+|---|---|
+| `binary_sensor.conectado` | ON si la última actualización pudo hablar con el add-on sin error |
+| `button.actualizar_ahora` | Vuelve a pedir los datos ya, sin esperar a los 15 minutos |
+| `button.forzar_reconexion` | Fuerza un login fresco en el add-on (por si la sesión "se queda rara") y actualiza |
+
+Actualización cada 15 minutos por defecto (o al pulsar "Actualizar ahora").
 
 ## Cómo funciona
 
@@ -103,6 +115,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 | `GET /consumption/:contId` | Consumo importado/exportado del periodo por defecto (~2 días) |
 | `GET /consumption/:contId?range=1\|2\|3` | Consumo por rango: 1=día, 2=semana, 3=mes |
 | `GET /max-power-demand/:cupsId` | Histórico de potencia máxima demandada (~12 meses) |
+| `POST /relogin` | Fuerza un login fresco (ignora la sesión cacheada) |
 
 `contId` y `cupsId` salen de `/supply-points`.
 

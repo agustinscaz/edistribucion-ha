@@ -21,7 +21,18 @@
     "sensor": {
       "imported_energy_today": { "name": "Imported energy today" },
       "exported_energy_today": { "name": "Exported energy today" },
+      "imported_energy_week": { "name": "Imported energy (week)" },
+      "exported_energy_week": { "name": "Exported energy (week)" },
+      "imported_energy_month": { "name": "Imported energy (month)" },
+      "exported_energy_month": { "name": "Exported energy (month)" },
       "max_power_demand": { "name": "Maximum power demand" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connected" }
+    },
+    "button": {
+      "refresh": { "name": "Refresh now" },
+      "relogin": { "name": "Force reconnect" }
     }
   }
 }

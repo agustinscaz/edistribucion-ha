@@ -11,7 +11,7 @@ from .api import EdistribucionApiClient
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

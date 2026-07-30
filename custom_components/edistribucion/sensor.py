@@ -1,4 +1,4 @@
-"""Sensores de e-distribución: importado/exportado de hoy y potencia máxima demandada."""
+"""Sensores de e-distribución: importado/exportado (hoy/semana/mes) y potencia máxima demandada."""
 
 from __future__ import annotations
 
@@ -39,6 +39,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         sp = bundle["supply_point"]
         entities.append(EdistribucionImportedEnergySensor(coordinator, cont_id, sp))
         entities.append(EdistribucionExportedEnergySensor(coordinator, cont_id, sp))
+        for period_key, period_label in (("week", "week"), ("month", "month")):
+            entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "imported", f"imported_energy_{period_label}"))
+            entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
@@ -101,6 +104,45 @@ class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
     def native_value(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["exportedKwh"] if day else None
+
+
+class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
+    """Total importado/exportado de un periodo (semana/mes). El detalle día a día del periodo
+    queda disponible como atributo `daily_totals` (fecha + kWh de ese día)."""
+
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, coordinator, cont_id, supply_point, period_key: str, flow: str, translation_key: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._period_key = period_key  # "week" | "month"
+        self._flow = flow  # "imported" | "exported"
+        self._attr_unique_id = f"{cont_id}_{flow}_energy_{period_key}"
+        self._attr_translation_key = translation_key
+
+    @property
+    def _period(self) -> dict | None:
+        return self._bundle.get(self._period_key)
+
+    @property
+    def native_value(self) -> float | None:
+        period = self._period
+        if not period:
+            return None
+        return period.get(f"total{self._flow.capitalize()}Kwh")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        period = self._period
+        if not period:
+            return {}
+        field = f"{self._flow}Kwh"
+        return {"daily_totals": [{"date": d["date"], "kwh": d.get(field)} for d in period.get("dailyTotals", [])]}
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._period is not None
 
 
 class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):

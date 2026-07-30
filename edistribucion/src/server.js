@@ -65,6 +65,17 @@ app.get("/max-power-demand/:cupsId", async (req, res) => {
   }
 });
 
+/** Fuerza un login fresco (aunque la sesión actual "parezca" válida) — útil para el botón
+ * "Forzar reconexión" de la integración de Home Assistant. */
+app.post("/relogin", async (req, res) => {
+  try {
+    await session.getSupplyPoints({ forceRefresh: true });
+    res.json(await session.getInfo());
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`API local de e-distribución escuchando en :${PORT}`);
 });

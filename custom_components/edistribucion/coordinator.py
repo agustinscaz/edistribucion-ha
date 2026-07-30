@@ -13,9 +13,12 @@ from .const import DEFAULT_SCAN_INTERVAL_MINUTES
 
 _LOGGER = logging.getLogger(__name__)
 
+RANGE_WEEK = "2"
+RANGE_MONTH = "3"
+
 
 class EdistribucionCoordinator(DataUpdateCoordinator):
-    """Mantiene: lista de suministros + consumo/potencia de cada uno."""
+    """Mantiene: lista de suministros + consumo (hoy/semana/mes) y potencia de cada uno."""
 
     def __init__(self, hass: HomeAssistant, client: EdistribucionApiClient) -> None:
         super().__init__(
@@ -33,17 +36,26 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             for sp in supply_points:
                 cont_id = sp["contId"]
                 cups_id = sp["cupsId"]
-                consumption = None
-                power = None
+                bundle: dict = {"supply_point": sp, "consumption": None, "week": None, "month": None, "max_power_demand": None}
+
                 try:
-                    consumption = await self.client.async_get_consumption(cont_id)
+                    bundle["consumption"] = await self.client.async_get_consumption(cont_id)
                 except EdistribucionApiError as err:
-                    _LOGGER.warning("No se pudo leer consumo de %s: %s", sp.get("cups"), err)
+                    _LOGGER.warning("No se pudo leer consumo de hoy de %s: %s", sp.get("cups"), err)
                 try:
-                    power = await self.client.async_get_max_power_demand(cups_id)
+                    bundle["week"] = await self.client.async_get_consumption(cont_id, RANGE_WEEK)
+                except EdistribucionApiError as err:
+                    _LOGGER.warning("No se pudo leer consumo semanal de %s: %s", sp.get("cups"), err)
+                try:
+                    bundle["month"] = await self.client.async_get_consumption(cont_id, RANGE_MONTH)
+                except EdistribucionApiError as err:
+                    _LOGGER.warning("No se pudo leer consumo mensual de %s: %s", sp.get("cups"), err)
+                try:
+                    bundle["max_power_demand"] = await self.client.async_get_max_power_demand(cups_id)
                 except EdistribucionApiError as err:
                     _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
-                data[cont_id] = {"supply_point": sp, "consumption": consumption, "max_power_demand": power}
+
+                data[cont_id] = bundle
             return data
         except EdistribucionApiError as err:
             raise UpdateFailed(f"Error hablando con el add-on de e-distribución: {err}") from err
