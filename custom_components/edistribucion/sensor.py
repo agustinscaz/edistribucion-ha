@@ -81,9 +81,10 @@ class _EdistribucionBaseSensor(CoordinatorEntity[EdistribucionCoordinator], Sens
         super().__init__(coordinator)
         self._cont_id = cont_id
         cups = supply_point.get("cups", cont_id)
+        name = supply_point.get("alias") or f"e-distribución {cups}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, cont_id)},
-            name=f"e-distribución {cups}",
+            name=name,
             manufacturer="e-distribución",
             model=supply_point.get("tariff"),
             via_device=(DOMAIN, coordinator.entry_id),

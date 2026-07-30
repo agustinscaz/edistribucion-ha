@@ -5,38 +5,36 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError
-from .const import DEFAULT_SCAN_INTERVAL_MINUTES
+from .const import CONF_SUPPLY_POINTS, CONSECUTIVE_FAILURES_FOR_REPAIR, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 RANGE_WEEK = "2"
 RANGE_MONTH = "3"
 
+ISSUE_CONNECTION = "addon_connection_failed"
+
 
 class EdistribucionCoordinator(DataUpdateCoordinator):
-    """Mantiene: lista de suministros + consumo (hoy/semana/mes) y potencia de cada uno."""
+    """Mantiene: lista de suministros (filtrados/con alias según opciones) + consumo (hoy/semana/mes)
+    y potencia de cada uno."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        client: EdistribucionApiClient,
-        entry_id: str,
-        update_interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
-    ) -> None:
-        super().__init__(
-            hass,
-            _LOGGER,
-            name="edistribucion",
-            update_interval=timedelta(minutes=update_interval_minutes),
-        )
+    def __init__(self, hass: HomeAssistant, client: EdistribucionApiClient, entry: ConfigEntry) -> None:
+        interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
+        super().__init__(hass, _LOGGER, name="edistribucion", update_interval=timedelta(minutes=interval))
         self.client = client
-        self.entry_id = entry_id
+        self.entry_id = entry.entry_id
+        self.supply_point_options: dict[str, dict] = entry.options.get(CONF_SUPPLY_POINTS, {})
         self.last_success_time: datetime | None = None
+        self._consecutive_failures = 0
 
     async def _async_update_data(self) -> dict:
         try:
@@ -44,6 +42,12 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             data: dict[str, dict] = {}
             for sp in supply_points:
                 cont_id = sp["contId"]
+                opts = self.supply_point_options.get(cont_id, {})
+                if opts.get("track", True) is False:
+                    continue  # el usuario decidió no seguir este suministro (opciones de la integración)
+                if opts.get("alias"):
+                    sp = {**sp, "alias": opts["alias"]}
+
                 cups_id = sp["cupsId"]
                 bundle: dict = {"supply_point": sp, "consumption": None, "week": None, "month": None, "max_power_demand": None}
 
@@ -65,7 +69,20 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
 
                 data[cont_id] = bundle
+
             self.last_success_time = dt_util.utcnow()
+            self._consecutive_failures = 0
+            ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_CONNECTION}_{self.entry_id}")
             return data
         except EdistribucionApiError as err:
+            self._consecutive_failures += 1
+            if self._consecutive_failures == CONSECUTIVE_FAILURES_FOR_REPAIR:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    f"{ISSUE_CONNECTION}_{self.entry_id}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.ERROR,
+                    translation_key="addon_connection_failed",
+                )
             raise UpdateFailed(f"Error hablando con el add-on de e-distribución: {err}") from err

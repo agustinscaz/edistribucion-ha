@@ -21,7 +21,7 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución",
-        "description": "Cada cuántos minutos se piden datos nuevos al add-on.",
+        "description": "Intervalo de actualización, y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)"
         }
@@ -45,6 +45,12 @@
     "button": {
       "refresh": { "name": "Actualizar ahora" },
       "relogin": { "name": "Forzar reconexión" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "No se puede conectar con el add-on de e-distribución",
+      "description": "Llevan varios intentos seguidos fallando las llamadas al add-on. Comprueba en Ajustes → Complementos → e-distribución que está iniciado, revisa su pestaña Registro, y confirma que el host/puerto configurados en esta integración son correctos."
     }
   }
 }

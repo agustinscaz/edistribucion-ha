@@ -6,6 +6,7 @@
     <img src="https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5?logo=home-assistant&logoColor=white" alt="Home Assistant Add-on">
     <img src="https://img.shields.io/badge/HACS-Custom-orange" alt="HACS Custom">
     <img src="https://img.shields.io/badge/arch-amd64%20%7C%20aarch64-blue" alt="amd64 | aarch64">
+    <a href="https://github.com/agustinscaz/edistribucion-ha/actions/workflows/validate.yml"><img src="https://github.com/agustinscaz/edistribucion-ha/actions/workflows/validate.yml/badge.svg" alt="Validación"></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/agustinscaz/edistribucion-ha" alt="MIT license"></a>
   </p>
 
@@ -103,8 +104,18 @@ Además, agrupadas bajo el dispositivo **"e-distribución (add-on)"** (no ligado
 1. Al arrancar el add-on (o cuando la sesión caduca), lanza Chromium en segundo plano, hace login real en `zonaprivada.edistribucion.com`, y captura la cookie de sesión (`sid`) y el token de la aplicación (`aura.token`) de una llamada real de la propia web — **después cierra el navegador por completo**.
 2. Con ese token y esa cookie, las llamadas de datos siguientes (consumo, potencia máxima, suministros) se hacen por HTTP puro, sin navegador — típicamente en menos de 1-2 segundos en vez de los 10-15 que tarda un login completo.
 3. Si una llamada falla porque la sesión ya caducó, el add-on lo detecta solo y repite el login automáticamente — no hace falta reiniciar nada a mano.
+4. La sesión (cookies + token) se guarda en `/data/session.json` tras cada login, así que un reinicio normal del add-on (actualización, reinicio del host) **no obliga a volver a pasar por Chromium** — se reutiliza la sesión guardada y solo se relogin si de verdad ya caducó.
+5. Un vigilante interno revisa cada minuto si ha quedado algún proceso de Chromium colgado (p.ej. por quedarse sin memoria a medio login) y lo cierra si lleva vivo más de 3 minutos — un login normal tarda ~15s, así que nunca debería afectar a uno legítimo.
 
-Esto significa que el navegador (la parte pesada) solo se enciende ocasionalmente, no en cada consulta — importante para que funcione bien en hardware modesto (Raspberry Pi 4/5 de 64 bits).
+Esto significa que el navegador (la parte pesada) solo se enciende ocasionalmente, no en cada consulta ni en cada reinicio — importante para que funcione bien en hardware modesto (Raspberry Pi 4/5 de 64 bits).
+
+## Funcionalidades avanzadas de la integración
+
+- **Opciones configurables** (botón "Configurar" junto a la integración): intervalo de actualización, y qué suministros seguir — puedes desmarcar los históricos que ya no te interesan, y ponerle un **alias** a cada uno (p.ej. "Casa" en vez del CUPS) para que el nombre del dispositivo sea más legible.
+- **Diagnósticos descargables**: Ajustes → Dispositivos y servicios → e-distribución → menú (⋮) → Descargar diagnósticos. Útil para adjuntar a un issue sin tener que copiar nada a mano (la dirección postal se redacta automáticamente).
+- **Reparaciones (Repairs)**: si el add-on falla varias veces seguidas, aparece un aviso en Ajustes → Sistema → Reparaciones en vez de solo marcar los sensores como "no disponible" en silencio.
+- **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro, se intenta rellenar como estadística externa el consumo del último mes ya disponible, para no empezar con el gráfico completamente vacío.
+- **Servicio `edistribucion.consultar_consumo`**: consulta bajo demanda un rango y fecha de referencia concretos (día/semana/mes de un mes anterior, por ejemplo), no solo el periodo actual que ya cachean los sensores — útil desde Herramientas de desarrollo → Acciones, o en tus propias automatizaciones/scripts.
 
 ## Endpoints de la API del add-on
 
@@ -136,6 +147,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 
 - Facturas directas de e-distribución no están implementadas — solo aplican a una minoría de clientes con factura directa de la distribuidora (la mayoría paga a su comercializadora).
 - Sin autenticación propia en la API del add-on — no expongas el puerto 8099 a Internet.
+- El relleno de histórico en el Dashboard de Energía usa la Statistics API del `recorder`, una parte más avanzada y menos estable de Home Assistant — está pensado como "mejor esfuerzo": si falla, se registra un aviso en el log y el resto de la integración sigue funcionando con normalidad (solo te quedas sin el relleno retroactivo).
 
 ## Soporte
 

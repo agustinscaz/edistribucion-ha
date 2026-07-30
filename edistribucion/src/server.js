@@ -2,6 +2,7 @@ const fs = require("fs");
 const express = require("express");
 const { EdistribucionSession } = require("./session");
 const { getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand } = require("./dataApi");
+const { startChromiumWatchdog } = require("./chromiumWatchdog");
 
 const OPTIONS_PATH = "/data/options.json";
 let options = {};
@@ -79,3 +80,5 @@ app.post("/relogin", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`API local de e-distribución escuchando en :${PORT}`);
 });
+
+startChromiumWatchdog();

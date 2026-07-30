@@ -1,0 +1,28 @@
+consultar_consumo:
+  name: Consultar consumo
+  description: Consulta el consumo importado/exportado de un suministro para un rango y fecha de referencia concretos (no solo el actual).
+  fields:
+    device_id:
+      name: Suministro
+      description: Dispositivo del suministro (CUPS) a consultar.
+      required: true
+      selector:
+        device:
+          integration: edistribucion
+    range:
+      name: Rango
+      description: "1 = día, 2 = semana, 3 = mes."
+      required: false
+      default: "3"
+      selector:
+        select:
+          options:
+            - "1"
+            - "2"
+            - "3"
+    fecha:
+      name: Fecha de referencia
+      description: Fecha (AAAA-MM-DD) respecto a la que calcular el rango. Si se omite, se usa hoy.
+      required: false
+      selector:
+        date:

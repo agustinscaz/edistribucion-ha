@@ -21,7 +21,7 @@
     "step": {
       "init": {
         "title": "e-distribución options",
-        "description": "How often (in minutes) to poll the add-on for new data.",
+        "description": "Update interval, and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
         "data": {
           "scan_interval": "Update interval (minutes)"
         }
@@ -45,6 +45,12 @@
     "button": {
       "refresh": { "name": "Refresh now" },
       "relogin": { "name": "Force reconnect" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "Can't connect to the e-distribución add-on",
+      "description": "Several calls to the add-on have failed in a row. Check under Settings → Add-ons → e-distribución that it's running, review its Log tab, and confirm the host/port configured in this integration are correct."
     }
   }
 }

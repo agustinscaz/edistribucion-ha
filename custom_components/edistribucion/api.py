@@ -44,10 +44,15 @@ class EdistribucionApiClient:
     async def async_get_supply_points(self) -> list[dict]:
         return await self._get("/supply-points")
 
-    async def async_get_consumption(self, cont_id: str, range_type: str | None = None) -> dict:
+    async def async_get_consumption(self, cont_id: str, range_type: str | None = None, date: str | None = None) -> dict:
         path = f"/consumption/{cont_id}"
+        params = []
         if range_type:
-            path += f"?range={range_type}"
+            params.append(f"range={range_type}")
+        if date:
+            params.append(f"date={date}")
+        if params:
+            path += "?" + "&".join(params)
         return await self._get(path)
 
     async def async_get_max_power_demand(self, cups_id: str) -> dict:
