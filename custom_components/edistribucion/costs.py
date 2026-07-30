@@ -10,8 +10,8 @@ OJO — limitaciones conocidas:
 - "tramos" no tiene en cuenta festivos (cuentan como valle todo el día en la tarifa real).
 - "pvpc" usa precios reales hora a hora del archivo público de PVPC de ESIOS/REE (ver esios.py) —
   no hace falta ninguna clave, solo la zona (Península/Baleares/Canarias o Ceuta/Melilla)
-  configurada a nivel de la integración. Sin precio para alguna hora concreta (p.ej. si aún no se
-  ha publicado), esa hora queda sin coste.
+  configurada en el propio CUPS. Sin precio para alguna hora concreta (p.ej. si aún no se ha
+  publicado), esa hora queda sin coste.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import re
 from datetime import datetime
 
 from .const import TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS
+from .esios import DEFAULT_PVPC_ZONE
 
 PUNTA = "punta"
 LLANO = "llano"
@@ -111,9 +112,14 @@ def pvpc_cost_breakdown(consumption: dict | None, pvpc_prices: dict[str, float] 
 
 
 def estimate_energy_cost(
-    sp_opts: dict, imported_kwh: float | None, hourly_source: dict | None, pvpc_prices: dict[str, float] | None = None
+    sp_opts: dict,
+    imported_kwh: float | None,
+    hourly_source: dict | None,
+    pvpc_prices_by_zone: dict[str, dict[str, float]] | None = None,
 ) -> dict | None:
-    """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto)."""
+    """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto). Para "pvpc",
+    `pvpc_prices_by_zone` es {zona: {"DD/MM/YYYY H": precio}} (ver coordinator.py) y se usa la zona
+    configurada en `sp_opts["pvpc_zone"]` de ESTE CUPS."""
     tariff_type = sp_opts.get("tariff_type") or TARIFF_TRAMOS
 
     if tariff_type == TARIFF_FIJA:
@@ -123,7 +129,9 @@ def estimate_energy_cost(
         return {"tariff_type": TARIFF_FIJA, "precio_eur_kwh": price, "total": round(imported_kwh * price, 4)}
 
     if tariff_type == TARIFF_PVPC:
-        breakdown = pvpc_cost_breakdown(hourly_source, pvpc_prices)
+        zone = sp_opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+        zone_prices = (pvpc_prices_by_zone or {}).get(zone)
+        breakdown = pvpc_cost_breakdown(hourly_source, zone_prices)
         if breakdown:
             breakdown["tariff_type"] = TARIFF_PVPC
         return breakdown
@@ -138,6 +146,16 @@ def estimate_energy_cost(
     if breakdown:
         breakdown["tariff_type"] = TARIFF_TRAMOS
     return breakdown
+
+
+def power_cost(sp_opts: dict) -> float:
+    """Término de potencia de ESTE CUPS: kW contratados (punta/valle) × precio €/kW/día — se
+    factura siempre, sea cual sea la tarifa de energía elegida (fija/tramos/pvpc)."""
+    punta_kw = sp_opts.get("contracted_power_punta_kw") or 0
+    valle_kw = sp_opts.get("contracted_power_valle_kw") or 0
+    price_punta = sp_opts.get("price_power_punta") or 0
+    price_valle = sp_opts.get("price_power_valle") or 0
+    return round(punta_kw * price_punta + valle_kw * price_valle, 4)
 
 
 def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> float | None:

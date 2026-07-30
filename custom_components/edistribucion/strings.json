@@ -26,29 +26,29 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución: ajustes generales",
-        "description": "Intervalo de actualización, término de potencia (kW contratados P1/P2 + precio €/kW/día), y zona PVPC si vas a usar esa tarifa en algún suministro (no hace falta clave ni registro: se usa el archivo público de precios de REE). Los precios de mañana se publican sobre las 20:15h del día anterior.\n\nDespués de este paso, configurarás cada uno de tus {num_supplies} suministros por separado.",
+        "description": "Solo el intervalo de actualización es global. Después de este paso, configurarás cada uno de tus {num_supplies} suministros por separado: tipo de tarifa, potencia contratada, precios de energía y potencia, zona PVPC y compensación de excedentes — todo por CUPS, ya que cada contrato puede ser distinto.",
         "data": {
-          "scan_interval": "Intervalo de actualización (minutos)",
-          "contracted_power_p1_kw": "Potencia contratada P1 (kW, opcional)",
-          "contracted_power_p2_kw": "Potencia contratada P2 (kW, opcional)",
-          "price_power_p1": "Precio potencia P1 (€/kW/día, opcional)",
-          "price_power_p2": "Precio potencia P2 (€/kW/día, opcional)",
-          "pvpc_zone": "Zona PVPC (para tarifa 'pvpc'): Península/Baleares/Canarias, o Ceuta y Melilla"
+          "scan_interval": "Intervalo de actualización (minutos)"
         }
       },
       "supply_point": {
         "title": "Suministro {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nElige si seguir este suministro, un alias, el tipo de tarifa de energía y sus precios, y si tienes compensación de excedentes.",
+        "description": "{address} ({estado})\n\nElige si seguir este suministro, un alias, el tipo de tarifa (fija/tramos/pvpc), la potencia contratada y su precio, los precios de energía según la tarifa elegida, la compensación de excedentes, y (si usas pvpc) la zona.\n\nLos precios de mañana con tarifa pvpc se publican sobre las 20:15h del día anterior — no hace falta clave ni registro, se usa el archivo público de REE.",
         "data": {
           "track": "Seguir este suministro",
           "alias": "Alias (opcional)",
           "tariff_type": "Tipo de tarifa: fija / tramos / pvpc",
+          "contracted_power_punta_kw": "Potencia contratada punta (kW)",
+          "contracted_power_valle_kw": "Potencia contratada valle (kW)",
+          "price_power_punta": "Precio potencia punta (€/kW/día)",
+          "price_power_valle": "Precio potencia valle (€/kW/día)",
           "fixed_price": "Precio fijo (€/kWh, si la tarifa es 'fija')",
           "price_punta": "Precio en punta (€/kWh, si la tarifa es 'tramos')",
           "price_llano": "Precio en llano (€/kWh, si la tarifa es 'tramos')",
           "price_valle": "Precio en valle (€/kWh, si la tarifa es 'tramos')",
           "surplus_compensation": "Compensación de excedentes",
-          "surplus_price": "Precio de la compensación (€/kWh, si está activada)"
+          "surplus_price": "Precio de la compensación (€/kWh, si está activada)",
+          "pvpc_zone": "Zona PVPC (si la tarifa es 'pvpc'): Península/Baleares/Canarias, o Ceuta y Melilla"
         }
       }
     }

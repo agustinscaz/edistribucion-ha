@@ -19,7 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, TARIFF_FIJA, TARIFF_PVPC
 from .coordinator import EdistribucionCoordinator
-from .costs import estimate_energy_cost, surplus_compensation_value
+from .costs import estimate_energy_cost, power_cost, surplus_compensation_value
 from .device import hub_device_info
 
 
@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
-        if coordinator.daily_power_cost > 0:
+        if power_cost(sp) > 0:
             entities.append(EdistribucionPowerCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
         if sp.get("surplus_compensation") and sp.get("surplus_price"):
@@ -396,7 +396,7 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
 
 
 class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
-    """Término de potencia fijo del día: kW contratados × precio €/kW/día, sumando P1 y P2 — se
+    """Término de potencia fijo del día de ESTE CUPS: kW contratados × precio €/kW/día, sumando punta y valle — se
     factura siempre, no depende del consumo ni de la franja horaria."""
 
     entity_description = SensorEntityDescription(
@@ -414,15 +414,16 @@ class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
 
     @property
     def native_value(self) -> float:
-        return self.coordinator.daily_power_cost
+        return power_cost(self._bundle.get("supply_point") or {})
 
     @property
     def extra_state_attributes(self) -> dict:
+        sp = self._bundle.get("supply_point") or {}
         return {
-            "potencia_contratada_p1_kw": self.coordinator.contracted_power_p1,
-            "potencia_contratada_p2_kw": self.coordinator.contracted_power_p2,
-            "precio_p1_eur_kw_dia": self.coordinator.price_power_p1,
-            "precio_p2_eur_kw_dia": self.coordinator.price_power_p2,
+            "potencia_contratada_punta_kw": sp.get("contracted_power_punta_kw") or 0,
+            "potencia_contratada_valle_kw": sp.get("contracted_power_valle_kw") or 0,
+            "precio_punta_eur_kw_dia": sp.get("price_power_punta") or 0,
+            "precio_valle_eur_kw_dia": sp.get("price_power_valle") or 0,
         }
 
 
@@ -452,11 +453,13 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
 
     @property
     def native_value(self) -> float:
-        return round(self.coordinator.daily_power_cost * self._days_elapsed, 4)
+        daily_cost = power_cost(self._bundle.get("supply_point") or {})
+        return round(daily_cost * self._days_elapsed, 4)
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"dias_facturados": self._days_elapsed, "coste_diario": self.coordinator.daily_power_cost}
+        daily_cost = power_cost(self._bundle.get("supply_point") or {})
+        return {"dias_facturados": self._days_elapsed, "coste_diario": daily_cost}
 
 
 class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):

@@ -26,29 +26,29 @@
     "step": {
       "init": {
         "title": "e-distribución options: general settings",
-        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day), and the PVPC zone if you'll use that tariff on any supply point (no key or signup needed — it uses REE's public price file). Tomorrow's prices are published around 20:15 the day before.\n\nAfter this step, you'll configure each of your {num_supplies} supply points separately.",
+        "description": "Only the update interval is global. After this step, you'll configure each of your {num_supplies} supply points separately: tariff type, contracted power, energy and power prices, PVPC zone, and surplus compensation — all per supply point, since each contract can differ.",
         "data": {
-          "scan_interval": "Update interval (minutes)",
-          "contracted_power_p1_kw": "Contracted power P1 (kW, optional)",
-          "contracted_power_p2_kw": "Contracted power P2 (kW, optional)",
-          "price_power_p1": "Power price P1 (€/kW/day, optional)",
-          "price_power_p2": "Power price P2 (€/kW/day, optional)",
-          "pvpc_zone": "PVPC zone (for 'pvpc' tariff): Peninsula/Balearic Islands/Canary Islands, or Ceuta and Melilla"
+          "scan_interval": "Update interval (minutes)"
         }
       },
       "supply_point": {
         "title": "Supply point {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nChoose whether to track this supply point, an alias, the energy tariff type and its prices, and whether you have surplus compensation.",
+        "description": "{address} ({estado})\n\nChoose whether to track this supply point, an alias, the tariff type (fixed/time-of-use/pvpc), contracted power and its price, energy prices for the chosen tariff, surplus compensation, and (if using pvpc) the zone.\n\nTomorrow's pvpc prices are published around 20:15 the day before — no key or signup needed, it uses REE's public price file.",
         "data": {
           "track": "Track this supply point",
           "alias": "Alias (optional)",
           "tariff_type": "Tariff type: fixed / time-of-use / pvpc",
+          "contracted_power_punta_kw": "Contracted power peak (kW)",
+          "contracted_power_valle_kw": "Contracted power off-peak (kW)",
+          "price_power_punta": "Power price peak (€/kW/day)",
+          "price_power_valle": "Power price off-peak (€/kW/day)",
           "fixed_price": "Fixed price (€/kWh, if tariff is 'fixed')",
           "price_punta": "Peak price (€/kWh, if tariff is 'time-of-use')",
           "price_llano": "Flat price (€/kWh, if tariff is 'time-of-use')",
           "price_valle": "Off-peak price (€/kWh, if tariff is 'time-of-use')",
           "surplus_compensation": "Surplus compensation",
-          "surplus_price": "Compensation price (€/kWh, if enabled)"
+          "surplus_price": "Compensation price (€/kWh, if enabled)",
+          "pvpc_zone": "PVPC zone (if tariff is 'pvpc'): Peninsula/Balearic Islands/Canary Islands, or Ceuta and Melilla"
         }
       }
     }

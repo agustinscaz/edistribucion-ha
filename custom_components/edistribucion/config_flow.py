@@ -16,15 +16,16 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
-    CONF_CONTRACTED_POWER_P1,
-    CONF_CONTRACTED_POWER_P2,
+    CONF_CONTRACTED_POWER_PUNTA,
+    CONF_CONTRACTED_POWER_VALLE,
+    CONF_PRICE_POWER_PUNTA,
+    CONF_PRICE_POWER_VALLE,
     CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
-    POWER_TERM_KEYS,
     TARIFF_TRAMOS,
     TARIFF_TYPES,
 )
@@ -99,20 +100,26 @@ _SUPPLY_POINT_FIELD_DEFAULTS = {
     "track": True,
     "alias": "",
     "tariff_type": TARIFF_TRAMOS,
+    CONF_CONTRACTED_POWER_PUNTA: 0,
+    CONF_CONTRACTED_POWER_VALLE: 0,
+    CONF_PRICE_POWER_PUNTA: 0,
+    CONF_PRICE_POWER_VALLE: 0,
     "fixed_price": 0,
     "price_punta": 0,
     "price_llano": 0,
     "price_valle": 0,
     "surplus_compensation": False,
     "surplus_price": 0,
+    CONF_PVPC_ZONE: DEFAULT_PVPC_ZONE,
 }
 
 
 class EdistribucionOptionsFlow(config_entries.OptionsFlow):
-    """Paso 1: intervalo de actualización + término de potencia + ESIOS (todo global). Un paso más
-    por cada suministro, uno detrás de otro: si seguirlo, alias, tipo de tarifa (fija/tramos/pvpc)
-    con sus precios, y compensación de excedentes — cada CUPS en su propia pantalla, en vez de un
-    formulario gigante con todos mezclados."""
+    """Paso 1: solo el intervalo de actualización (global). Un paso más por cada suministro, uno
+    detrás de otro: si seguirlo, alias, tipo de tarifa (fija/tramos/pvpc) con sus precios, término
+    de potencia, zona PVPC y compensación de excedentes — TODO por CUPS (distintos contratos pueden
+    tener potencias/tarifas distintas), cada uno en su propia pantalla en vez de un formulario
+    gigante con todos mezclados."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -139,27 +146,13 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_supply_point()
 
         current_interval = self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
-        schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(int, vol.Range(min=5, max=1440)),
-        }
-        for power_key in (CONF_CONTRACTED_POWER_P1, CONF_CONTRACTED_POWER_P2):
-            current_power = self._config_entry.options.get(power_key, 0)
-            schema_dict[vol.Optional(power_key, default=current_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
-        for price_power_key in POWER_TERM_KEYS[2:]:
-            current_price_power = self._config_entry.options.get(price_power_key, 0)
-            schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
-
-        current_pvpc_zone = self._config_entry.options.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)
-        schema_dict[vol.Optional(CONF_PVPC_ZONE, default=current_pvpc_zone)] = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[selector.SelectOptionDict(value=key, label=label) for key, label in PVPC_ZONES.items()],
-                mode=selector.SelectSelectorMode.LIST,
-            )
+        schema = vol.Schema(
+            {vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(int, vol.Range(min=5, max=1440))}
         )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(schema_dict),
+            data_schema=schema,
             description_placeholders={
                 "num_supplies": str(len(self._supply_points)),
             },
@@ -175,12 +168,17 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 "track": user_input.get("track", True),
                 "alias": user_input.get("alias", "").strip(),
                 "tariff_type": user_input.get("tariff_type", TARIFF_TRAMOS),
+                CONF_CONTRACTED_POWER_PUNTA: user_input.get(CONF_CONTRACTED_POWER_PUNTA, 0),
+                CONF_CONTRACTED_POWER_VALLE: user_input.get(CONF_CONTRACTED_POWER_VALLE, 0),
+                CONF_PRICE_POWER_PUNTA: user_input.get(CONF_PRICE_POWER_PUNTA, 0),
+                CONF_PRICE_POWER_VALLE: user_input.get(CONF_PRICE_POWER_VALLE, 0),
                 "fixed_price": user_input.get("fixed_price", 0),
                 "price_punta": user_input.get("price_punta", 0),
                 "price_llano": user_input.get("price_llano", 0),
                 "price_valle": user_input.get("price_valle", 0),
                 "surplus_compensation": user_input.get("surplus_compensation", False),
                 "surplus_price": user_input.get("surplus_price", 0),
+                CONF_PVPC_ZONE: user_input.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE),
             }
             self._current_index += 1
 
@@ -198,12 +196,30 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("track", default=prev.get("track", True)): bool,
                 vol.Optional("alias", default=prev.get("alias", "")): str,
                 vol.Optional("tariff_type", default=prev.get("tariff_type", TARIFF_TRAMOS)): vol.In(TARIFF_TYPES),
+                vol.Optional(CONF_CONTRACTED_POWER_PUNTA, default=prev.get(CONF_CONTRACTED_POWER_PUNTA, 0)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=100)
+                ),
+                vol.Optional(CONF_CONTRACTED_POWER_VALLE, default=prev.get(CONF_CONTRACTED_POWER_VALLE, 0)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=100)
+                ),
+                vol.Optional(CONF_PRICE_POWER_PUNTA, default=prev.get(CONF_PRICE_POWER_PUNTA, 0)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=5)
+                ),
+                vol.Optional(CONF_PRICE_POWER_VALLE, default=prev.get(CONF_PRICE_POWER_VALLE, 0)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=5)
+                ),
                 vol.Optional("fixed_price", default=prev.get("fixed_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("price_punta", default=prev.get("price_punta", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("price_llano", default=prev.get("price_llano", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("price_valle", default=prev.get("price_valle", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("surplus_compensation", default=prev.get("surplus_compensation", False)): bool,
                 vol.Optional("surplus_price", default=prev.get("surplus_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional(CONF_PVPC_ZONE, default=prev.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=k, label=v) for k, v in PVPC_ZONES.items()],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
             }
         )
         estado = "activo" if sp.get("active") else "histórico"

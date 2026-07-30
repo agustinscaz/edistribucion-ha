@@ -15,12 +15,10 @@ from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 from .const import (
-    CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
-    POWER_TERM_KEYS,
     TARIFF_PVPC,
 )
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
@@ -44,26 +42,29 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.client = client
         self.entry_id = entry.entry_id
         self.supply_point_options: dict[str, dict] = entry.options.get(CONF_SUPPLY_POINTS, {})
-        # Término de potencia: kW contratados + €/kW/día para cada uno de los dos periodos (P1/P2).
-        self.contracted_power_p1: float = entry.options.get(POWER_TERM_KEYS[0], 0) or 0
-        self.contracted_power_p2: float = entry.options.get(POWER_TERM_KEYS[1], 0) or 0
-        self.price_power_p1: float = entry.options.get(POWER_TERM_KEYS[2], 0) or 0
-        self.price_power_p2: float = entry.options.get(POWER_TERM_KEYS[3], 0) or 0
-        self.pvpc_zone: str = entry.options.get(CONF_PVPC_ZONE) or DEFAULT_PVPC_ZONE
-        self.pvpc_prices: dict[str, float] = {}
+        # Término de potencia (kW contratados + €/kW/día) y zona PVPC son por CUPS — ver
+        # supply_point_options. Los precios PVPC se cachean por zona, porque distintos CUPS podrían
+        # usar zonas distintas (poco habitual, pero posible).
+        self.pvpc_prices: dict[str, dict[str, float]] = {}
         self._pvpc_fetched_date: str | None = None
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
 
-    def _any_supply_point_uses_pvpc(self) -> bool:
-        return any(opts.get("tariff_type") == TARIFF_PVPC for opts in self.supply_point_options.values())
+    def _pvpc_zones_needed(self) -> set[str]:
+        return {
+            opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+            for opts in self.supply_point_options.values()
+            if opts.get("track", True) is not False and opts.get("tariff_type") == TARIFF_PVPC
+        }
 
     async def _async_update_pvpc_prices(self) -> None:
         """Los precios PVPC solo cambian una vez al día (se publican ~20:15 para el día
         siguiente) — se pide como mucho una vez por día, no en cada ciclo de actualización, para no
         pedir de más a la API pública de ESIOS sin necesidad. El archivo público solo da UN día por
-        petición, así que se piden uno a uno los días del mes que aún no tengamos en caché."""
-        if not self._any_supply_point_uses_pvpc():
+        petición, así que se piden uno a uno los días del mes que aún no tengamos en caché, para
+        cada zona que use algún CUPS con tarifa pvpc."""
+        zones = self._pvpc_zones_needed()
+        if not zones:
             return
         today = dt_util.now().date()
         today_key = today.strftime("%Y-%m-%d")
@@ -71,24 +72,20 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             return
 
         session = async_get_clientsession(self.hass)
-        day = today.replace(day=1)
         tomorrow = today + timedelta(days=1)
-        while day <= tomorrow:
-            day_key_prefix = f"{day.strftime('%d/%m/%Y')} "
-            if not any(k.startswith(day_key_prefix) for k in self.pvpc_prices):
-                try:
-                    self.pvpc_prices.update(await async_get_pvpc_prices_for_day(session, self.pvpc_zone, day))
-                except EsiosError as err:
-                    _LOGGER.warning("No se pudieron obtener precios PVPC de ESIOS para %s: %s", day, err)
-                    break  # si ESIOS falla (red, baneo...), se reintenta en el próximo ciclo
-            day += timedelta(days=1)
+        for zone in zones:
+            zone_prices = self.pvpc_prices.setdefault(zone, {})
+            day = today.replace(day=1)
+            while day <= tomorrow:
+                day_key_prefix = f"{day.strftime('%d/%m/%Y')} "
+                if not any(k.startswith(day_key_prefix) for k in zone_prices):
+                    try:
+                        zone_prices.update(await async_get_pvpc_prices_for_day(session, zone, day))
+                    except EsiosError as err:
+                        _LOGGER.warning("No se pudieron obtener precios PVPC de ESIOS (zona %s) para %s: %s", zone, day, err)
+                        break  # si ESIOS falla (red, baneo...), se reintenta en el próximo ciclo
+                day += timedelta(days=1)
         self._pvpc_fetched_date = today_key
-
-    @property
-    def daily_power_cost(self) -> float:
-        """Término de potencia fijo por día — se factura siempre, no depende de qué franja horaria
-        sea (a diferencia de la energía)."""
-        return round(self.contracted_power_p1 * self.price_power_p1 + self.contracted_power_p2 * self.price_power_p2, 4)
 
     async def _async_update_data(self) -> dict:
         try:
