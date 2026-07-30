@@ -172,6 +172,7 @@ El add-on tiene un panel de estado en HTML (`GET /`, en vez de JSON) con: si hay
 
 ## Funcionalidades avanzadas de la integración
 
+- **Panel "e-distribución" en el menú lateral**: un dashboard de solo lectura con una tarjeta por suministro (energía de hoy/mes, coste estimado, potencia contratada, término de potencia, compensación de excedentes) — se añade solo al configurar la integración, no hay que montar nada a mano. Reutiliza directamente el mismo cálculo que los sensores (no hay lógica duplicada en el propio panel).
 - **Opciones configurables** (botón "Configurar" junto a la integración): intervalo de actualización, y qué suministros seguir — puedes desmarcar los históricos que ya no te interesan, y ponerle un **alias** a cada uno (p.ej. "Casa" en vez del CUPS) para que el nombre del dispositivo sea más legible.
 - **Diagnósticos descargables**: Ajustes → Dispositivos y servicios → e-distribución → menú (⋮) → Descargar diagnósticos. Útil para adjuntar a un issue sin tener que copiar nada a mano (la dirección postal se redacta automáticamente).
 - **Reparaciones (Repairs)**: si el add-on falla varias veces seguidas, aparece un aviso en Ajustes → Sistema → Reparaciones en vez de solo marcar los sensores como "no disponible" en silencio. Si el fallo es concretamente por **credenciales incorrectas**, el aviso lo dice explícitamente en vez de un genérico "no se puede conectar".
@@ -191,6 +192,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 | `GET /consumption/:contId` | Consumo importado/exportado del periodo por defecto (~2 días) |
 | `GET /consumption/:contId?range=1\|2\|3` | Consumo por rango: 1=día, 2=semana, 3=mes |
 | `GET /max-power-demand/:cupsId` | Histórico de potencia máxima demandada (~12 meses) |
+| `GET /contracted-power/:contId` | Potencia contratada real (punta/valle, kW) + metadatos del contrato |
 | `POST /relogin` | Fuerza un login fresco (ignora la sesión cacheada) |
 
 `contId` y `cupsId` salen de `/supply-points`.
