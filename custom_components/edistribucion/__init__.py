@@ -15,7 +15,7 @@ from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
 from .statistics import async_backfill_energy_statistics
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.CALENDAR]
 
 SERVICE_CONSULTAR_CONSUMO = "consultar_consumo"
 SERVICE_CONSULTAR_CONSUMO_SCHEMA = vol.Schema(

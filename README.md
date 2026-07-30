@@ -85,6 +85,7 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
 | `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
+| `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
 
@@ -97,7 +98,44 @@ Además, agrupadas bajo el dispositivo **"e-distribución (add-on)"** (no ligado
 | `button.actualizar_ahora` | Vuelve a pedir los datos ya, sin esperar al próximo ciclo |
 | `button.forzar_reconexion` | Fuerza un login fresco en el add-on (por si la sesión "se queda rara") y actualiza |
 
-**¿No ves el `binary_sensor`/los `button`?** Comprueba en **Ajustes → Dispositivos y servicios → e-distribución** que aparezca el dispositivo **"e-distribución (add-on)"** en la lista de dispositivos (no solo los dispositivos por CUPS) — a veces hace falta una **recarga completa** de la integración (menú ⋮ → Recargar) o un **reinicio de Home Assistant** tras actualizar por HACS para que se registren plataformas nuevas (`binary_sensor`/`button`) en una integración ya instalada previamente. Si tras recargar/reiniciar siguen sin aparecer, revisa **Ajustes → Sistema → Registros** filtrando por `edistribucion` para ver si hay algún error de configuración.
+**¿No ves el `binary_sensor`/los `button`/el `calendar`?** Comprueba en **Ajustes → Dispositivos y servicios → e-distribución** que aparezca el dispositivo correspondiente en la lista de dispositivos — a veces hace falta una **recarga completa** de la integración (menú ⋮ → Recargar) o un **reinicio de Home Assistant** tras actualizar por HACS para que se registren plataformas nuevas en una integración ya instalada previamente. Si tras recargar/reiniciar siguen sin aparecer, revisa **Ajustes → Sistema → Registros** filtrando por `edistribucion` para ver si hay algún error de configuración.
+
+## Ejemplo de dashboard
+
+La integración por sí sola no crea ninguna tarjeta — como cualquier integración de HA, las entidades quedan disponibles pero el dashboard hay que montarlo. Esto es un punto de partida razonable (ajusta `<cups>` a tu CUPS real, con guiones bajos en vez de letras especiales, tal como lo genere Home Assistant):
+
+```yaml
+type: vertical-stack
+cards:
+  - type: calendar
+    entities:
+      - calendar.<cups>_calendario_de_consumo
+    initial_view: dayGridMonth
+  - type: statistics-graph
+    title: Importado vs. exportado (mes)
+    entities:
+      - sensor.<cups>_energia_importada_mes
+      - sensor.<cups>_energia_exportada_mes
+    stat_types:
+      - sum
+  - type: history-graph
+    title: Últimas 48h (hoy)
+    entities:
+      - sensor.<cups>_energia_importada_hoy
+      - sensor.<cups>_energia_exportada_hoy
+  - type: gauge
+    entity: sensor.<cups>_potencia_maxima_demandada
+    name: Potencia máxima demandada
+  - type: entities
+    title: Estado del add-on
+    entities:
+      - binary_sensor.conectado
+      - sensor.ultima_actualizacion
+      - button.actualizar_ahora
+      - button.forzar_reconexion
+```
+
+Si además añades los sensores de energía al **Dashboard de Energía** (Ajustes → Dashboards → Energía → Añadir consumo de la red), tienes gráficas ya hechas sin montar nada a mano.
 
 ## Cómo funciona
 

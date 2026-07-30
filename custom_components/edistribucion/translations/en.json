@@ -45,6 +45,9 @@
     "button": {
       "refresh": { "name": "Refresh now" },
       "relogin": { "name": "Force reconnect" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Consumption calendar" }
     }
   },
   "issues": {

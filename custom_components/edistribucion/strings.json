@@ -45,6 +45,9 @@
     "button": {
       "refresh": { "name": "Actualizar ahora" },
       "relogin": { "name": "Forzar reconexión" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Calendario de consumo" }
     }
   },
   "issues": {
