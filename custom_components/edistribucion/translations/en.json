@@ -26,12 +26,9 @@
     "step": {
       "init": {
         "title": "e-distribución options",
-        "description": "Update interval, energy prices per time-of-use period and power (capacity) term (all optional, for the estimated cost sensors), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
+        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day, for the whole installation), and for each supply point: whether to track it, alias, energy tariff type (fija/tramos/pvpc) with its prices, and surplus compensation.\n\nEach supply point's fields are suffixed with its CUPS — use 'fija' + a single price, 'tramos' + peak/flat/off-peak prices, or 'pvpc' + the entity_id of an existing price sensor (e.g. from the official ESIOS integration — note: this uses that sensor's CURRENT price, not a real hour-by-hour history).\n\nYour supply points:\n{supply_points_list}",
         "data": {
           "scan_interval": "Update interval (minutes)",
-          "price_punta": "Peak energy price (€/kWh, optional)",
-          "price_llano": "Flat energy price (€/kWh, optional)",
-          "price_valle": "Off-peak energy price (€/kWh, optional)",
           "contracted_power_p1_kw": "Contracted power P1 (kW, optional)",
           "contracted_power_p2_kw": "Contracted power P2 (kW, optional)",
           "price_power_p1": "Power price P1 (€/kW/day, optional)",
@@ -55,6 +52,8 @@
       "estimated_cost_month": { "name": "Estimated cost (month)" },
       "power_cost_today": { "name": "Power term (day)" },
       "power_cost_month": { "name": "Power term (month)" },
+      "surplus_compensation_today": { "name": "Surplus compensation today" },
+      "surplus_compensation_month": { "name": "Surplus compensation (month)" },
       "month_vs_last_year": { "name": "Comparison vs. same month last year" }
     },
     "binary_sensor": {

@@ -22,8 +22,9 @@ from .const import (
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
-    PRICE_PERIOD_KEYS,
     POWER_TERM_KEYS,
+    TARIFF_TRAMOS,
+    TARIFF_TYPES,
 )
 
 STEP_USER_SCHEMA = vol.Schema(
@@ -92,7 +93,9 @@ class EdistribucionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class EdistribucionOptionsFlow(config_entries.OptionsFlow):
-    """Intervalo de actualización + qué suministros seguir y con qué alias."""
+    """Intervalo de actualización, término de potencia (global), y por cada suministro: si
+    seguirlo, alias, tipo de tarifa de energía (fija/tramos/pvpc) con sus precios, y compensación
+    de excedentes."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -117,6 +120,14 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 supply_points_opt[cont_id] = {
                     "track": user_input.pop(f"track_{cups}", True),
                     "alias": user_input.pop(f"alias_{cups}", "").strip(),
+                    "tariff_type": user_input.pop(f"tariff_type_{cups}", TARIFF_TRAMOS),
+                    "fixed_price": user_input.pop(f"fixed_price_{cups}", 0),
+                    "price_punta": user_input.pop(f"price_punta_{cups}", 0),
+                    "price_llano": user_input.pop(f"price_llano_{cups}", 0),
+                    "price_valle": user_input.pop(f"price_valle_{cups}", 0),
+                    "pvpc_entity": user_input.pop(f"pvpc_entity_{cups}", None),
+                    "surplus_compensation": user_input.pop(f"surplus_compensation_{cups}", False),
+                    "surplus_price": user_input.pop(f"surplus_price_{cups}", 0),
                 }
             user_input[CONF_SUPPLY_POINTS] = supply_points_opt
             return self.async_create_entry(data=user_input)
@@ -125,22 +136,40 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
         schema_dict: dict[Any, Any] = {
             vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(int, vol.Range(min=5, max=1440)),
         }
-        for price_key in PRICE_PERIOD_KEYS:
-            current_price = self._config_entry.options.get(price_key, 0)
-            schema_dict[vol.Optional(price_key, default=current_price)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=10))
         for power_key in (CONF_CONTRACTED_POWER_P1, CONF_CONTRACTED_POWER_P2):
             current_power = self._config_entry.options.get(power_key, 0)
             schema_dict[vol.Optional(power_key, default=current_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=100))
         for price_power_key in POWER_TERM_KEYS[2:]:
             current_price_power = self._config_entry.options.get(price_power_key, 0)
             schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
+
         listing_lines = []
         for sp in self._supply_points:
             cont_id = sp["contId"]
             cups = sp["cups"]
             prev = current_supply_opts.get(cont_id, {})
+
             schema_dict[vol.Required(f"track_{cups}", default=prev.get("track", True))] = bool
             schema_dict[vol.Optional(f"alias_{cups}", default=prev.get("alias", ""))] = str
+            schema_dict[vol.Optional(f"tariff_type_{cups}", default=prev.get("tariff_type", TARIFF_TRAMOS))] = vol.In(TARIFF_TYPES)
+            schema_dict[vol.Optional(f"fixed_price_{cups}", default=prev.get("fixed_price", 0))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=10)
+            )
+            schema_dict[vol.Optional(f"price_punta_{cups}", default=prev.get("price_punta", 0))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=10)
+            )
+            schema_dict[vol.Optional(f"price_llano_{cups}", default=prev.get("price_llano", 0))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=10)
+            )
+            schema_dict[vol.Optional(f"price_valle_{cups}", default=prev.get("price_valle", 0))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=10)
+            )
+            schema_dict[vol.Optional(f"pvpc_entity_{cups}", default=prev.get("pvpc_entity") or "")] = str
+            schema_dict[vol.Optional(f"surplus_compensation_{cups}", default=prev.get("surplus_compensation", False))] = bool
+            schema_dict[vol.Optional(f"surplus_price_{cups}", default=prev.get("surplus_price", 0))] = vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=10)
+            )
+
             estado = "activo" if sp.get("active") else "histórico"
             listing_lines.append(f"- {cups} ({estado}): {sp.get('address', '')}")
 

@@ -26,12 +26,9 @@
     "step": {
       "init": {
         "title": "Opciones de e-distribución",
-        "description": "Intervalo de actualización, precios de energía por franja horaria y término de potencia (todo opcional, para el coste estimado), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
+        "description": "Intervalo de actualización, término de potencia (kW contratados P1/P2 + precio €/kW/día, para toda la instalación), y por cada suministro: si seguirlo, alias, tipo de tarifa de energía (fija/tramos/pvpc) con sus precios, y compensación de excedentes.\n\nPara cada suministro verás campos con el sufijo de su CUPS — usa 'fija' + un precio único, 'tramos' + precios de punta/llano/valle, o 'pvpc' + el entity_id de un sensor de precio ya existente (p.ej. de la integración oficial ESIOS — OJO: usa el precio ACTUAL de ese sensor, no un histórico real hora a hora).\n\nTus suministros:\n{supply_points_list}",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)",
-          "price_punta": "Precio energía en punta (€/kWh, opcional)",
-          "price_llano": "Precio energía en llano (€/kWh, opcional)",
-          "price_valle": "Precio energía en valle (€/kWh, opcional)",
           "contracted_power_p1_kw": "Potencia contratada P1 (kW, opcional)",
           "contracted_power_p2_kw": "Potencia contratada P2 (kW, opcional)",
           "price_power_p1": "Precio potencia P1 (€/kW/día, opcional)",
@@ -55,6 +52,8 @@
       "estimated_cost_month": { "name": "Coste estimado (mes)" },
       "power_cost_today": { "name": "Término de potencia (día)" },
       "power_cost_month": { "name": "Término de potencia (mes)" },
+      "surplus_compensation_today": { "name": "Compensación por excedentes hoy" },
+      "surplus_compensation_month": { "name": "Compensación por excedentes (mes)" },
       "month_vs_last_year": { "name": "Comparativa con el mismo mes del año anterior" }
     },
     "binary_sensor": {

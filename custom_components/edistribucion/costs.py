@@ -1,20 +1,25 @@
-"""Coste estimado por franja horaria (punta/llano/valle), calculado hora a hora a partir del
-consumo real (`hourlyByDate`) — no una media diaria, así que un mismo kWh cuenta distinto según a
-qué hora se consumió de verdad.
+"""Coste estimado de energía, según el tipo de tarifa configurado por CUPS (fija/tramos/pvpc), y
+compensación por excedentes exportados.
 
-Horario usado (2.0TD peninsular, el más común en residencial):
+Horario de tramos usado (2.0TD peninsular, el más común en residencial):
 - Punta: 10-14h y 18-22h, de lunes a viernes.
 - Llano: 8-10h, 14-18h y 22-24h, de lunes a viernes.
 - Valle: 0-8h todos los días, y todo el fin de semana.
 
-OJO — limitación conocida: no tiene en cuenta festivos (que cuentan como valle todo el día en la
-tarifa real). Es una aproximación pensada para tener una idea, no para cuadrar con la factura.
+OJO — limitaciones conocidas:
+- "tramos" no tiene en cuenta festivos (cuentan como valle todo el día en la tarifa real).
+- "pvpc" usa el precio ACTUAL del sensor referenciado (p.ej. de la integración oficial ESIOS) para
+  todo el periodo — no hay aquí un histórico de precios PVPC hora a hora, así que el coste de "hoy"
+  o "el mes" con PVPC es una aproximación con el precio de ahora mismo, no el real de cada hora
+  pasada. Para eso haría falta un histórico de precios que esta integración no guarda.
 """
 
 from __future__ import annotations
 
 import re
 from datetime import datetime
+
+from .const import TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS
 
 PUNTA = "punta"
 LLANO = "llano"
@@ -65,3 +70,54 @@ def cost_breakdown(consumption: dict | None, prices: dict[str, float]) -> dict[s
         "coste_valle": cost_by_period[VALLE],
         "total": round(sum(cost_by_period.values()), 4),
     }
+
+
+def estimate_energy_cost(sp_opts: dict, imported_kwh: float | None, hourly_source: dict | None, hass) -> dict | None:
+    """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto)."""
+    tariff_type = sp_opts.get("tariff_type") or TARIFF_TRAMOS
+
+    if tariff_type == TARIFF_FIJA:
+        price = sp_opts.get("fixed_price") or 0
+        if not price or imported_kwh is None:
+            return None
+        return {"tariff_type": TARIFF_FIJA, "precio_eur_kwh": price, "total": round(imported_kwh * price, 4)}
+
+    if tariff_type == TARIFF_PVPC:
+        entity_id = sp_opts.get("pvpc_entity")
+        if not entity_id or imported_kwh is None or hass is None:
+            return None
+        state = hass.states.get(entity_id)
+        if state is None:
+            return None
+        try:
+            price = float(state.state)
+        except (TypeError, ValueError):
+            return None
+        return {
+            "tariff_type": TARIFF_PVPC,
+            "precio_actual_eur_kwh": price,
+            "fuente": entity_id,
+            "total": round(imported_kwh * price, 4),
+        }
+
+    # tramos (por defecto)
+    prices = {
+        PUNTA: sp_opts.get("price_punta") or 0,
+        LLANO: sp_opts.get("price_llano") or 0,
+        VALLE: sp_opts.get("price_valle") or 0,
+    }
+    breakdown = cost_breakdown(hourly_source, prices)
+    if breakdown:
+        breakdown["tariff_type"] = TARIFF_TRAMOS
+    return breakdown
+
+
+def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> float | None:
+    """Cuánto se compensaría por los kWh exportados, si el suministro tiene activada la
+    compensación de excedentes con un precio configurado."""
+    if not sp_opts.get("surplus_compensation"):
+        return None
+    price = sp_opts.get("surplus_price") or 0
+    if not price or exported_kwh is None:
+        return None
+    return round(exported_kwh * price, 4)

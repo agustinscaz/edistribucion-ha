@@ -19,9 +19,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     POWER_TERM_KEYS,
-    PRICE_PERIOD_KEYS,
 )
-from .costs import LLANO, PUNTA, VALLE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,11 +40,6 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.client = client
         self.entry_id = entry.entry_id
         self.supply_point_options: dict[str, dict] = entry.options.get(CONF_SUPPLY_POINTS, {})
-        self.prices: dict[str, float] = {
-            PUNTA: entry.options.get(PRICE_PERIOD_KEYS[0], 0) or 0,
-            LLANO: entry.options.get(PRICE_PERIOD_KEYS[1], 0) or 0,
-            VALLE: entry.options.get(PRICE_PERIOD_KEYS[2], 0) or 0,
-        }
         # Término de potencia: kW contratados + €/kW/día para cada uno de los dos periodos (P1/P2).
         self.contracted_power_p1: float = entry.options.get(POWER_TERM_KEYS[0], 0) or 0
         self.contracted_power_p2: float = entry.options.get(POWER_TERM_KEYS[1], 0) or 0
@@ -70,8 +63,9 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 opts = self.supply_point_options.get(cont_id, {})
                 if opts.get("track", True) is False:
                     continue  # el usuario decidió no seguir este suministro (opciones de la integración)
-                if opts.get("alias"):
-                    sp = {**sp, "alias": opts["alias"]}
+                # Se mezclan alias + tarifa/precios/excedentes configurados para ESTE CUPS en el
+                # propio dict del suministro, para que sensor.py los tenga a mano sin plumbing extra.
+                sp = {**sp, **{k: v for k, v in opts.items() if k != "track"}}
 
                 cups_id = sp["cupsId"]
                 bundle: dict = {
