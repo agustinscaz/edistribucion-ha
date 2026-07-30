@@ -12,20 +12,27 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import EdistribucionApiClient, EdistribucionApiError
-from .const import CONF_SUPPLY_POINTS, CONSECUTIVE_FAILURES_FOR_REPAIR, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
+from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
+from .const import (
+    CONF_PRICE_PER_KWH,
+    CONF_SUPPLY_POINTS,
+    CONSECUTIVE_FAILURES_FOR_REPAIR,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-RANGE_WEEK = "2"
 RANGE_MONTH = "3"
+RANGE_WEEK = "2"
 
 ISSUE_CONNECTION = "addon_connection_failed"
+ISSUE_INVALID_CREDENTIALS = "invalid_credentials"
 
 
 class EdistribucionCoordinator(DataUpdateCoordinator):
-    """Mantiene: lista de suministros (filtrados/con alias según opciones) + consumo (hoy/semana/mes)
-    y potencia de cada uno."""
+    """Mantiene: lista de suministros (filtrados/con alias según opciones) + consumo (hoy/semana/mes),
+    comparativa con el mismo mes del año anterior, y potencia de cada uno."""
 
     def __init__(self, hass: HomeAssistant, client: EdistribucionApiClient, entry: ConfigEntry) -> None:
         interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
@@ -33,6 +40,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.client = client
         self.entry_id = entry.entry_id
         self.supply_point_options: dict[str, dict] = entry.options.get(CONF_SUPPLY_POINTS, {})
+        self.price_per_kwh: float = entry.options.get(CONF_PRICE_PER_KWH, 0) or 0
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
 
@@ -49,7 +57,14 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     sp = {**sp, "alias": opts["alias"]}
 
                 cups_id = sp["cupsId"]
-                bundle: dict = {"supply_point": sp, "consumption": None, "week": None, "month": None, "max_power_demand": None}
+                bundle: dict = {
+                    "supply_point": sp,
+                    "consumption": None,
+                    "week": None,
+                    "month": None,
+                    "month_last_year": None,
+                    "max_power_demand": None,
+                }
 
                 try:
                     bundle["consumption"] = await self.client.async_get_consumption(cont_id)
@@ -64,6 +79,12 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 except EdistribucionApiError as err:
                     _LOGGER.warning("No se pudo leer consumo mensual de %s: %s", sp.get("cups"), err)
                 try:
+                    a_year_ago = (dt_util.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+                    bundle["month_last_year"] = await self.client.async_get_consumption(cont_id, RANGE_MONTH, a_year_ago)
+                except EdistribucionApiError as err:
+                    # Normal si el contrato es más nuevo que un año — no hay nada que comparar todavía.
+                    _LOGGER.debug("Sin histórico de hace un año para %s: %s", sp.get("cups"), err)
+                try:
                     bundle["max_power_demand"] = await self.client.async_get_max_power_demand(cups_id)
                 except EdistribucionApiError as err:
                     _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
@@ -73,7 +94,20 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             self.last_success_time = dt_util.utcnow()
             self._consecutive_failures = 0
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_CONNECTION}_{self.entry_id}")
+            ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}")
             return data
+        except InvalidCredentialsError as err:
+            # Caso inequívoco: no tiene sentido esperar a varios fallos seguidos como con un fallo de
+            # red genérico — se avisa ya de que hace falta corregir dni/password en el add-on.
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="invalid_credentials",
+            )
+            raise UpdateFailed(f"Credenciales incorrectas en el add-on: {err}") from err
         except EdistribucionApiError as err:
             self._consecutive_failures += 1
             if self._consecutive_failures == CONSECUTIVE_FAILURES_FOR_REPAIR:

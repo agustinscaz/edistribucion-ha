@@ -1,5 +1,5 @@
 name: "e-distribución"
-version: "1.0.3"
+version: "1.0.4"
 slug: "edistribucion"
 description: "API local (sin depender de ningún servidor externo) para tus datos de consumo, potencia y suministros de e-distribución (Zona Privada)."
 url: "https://github.com/agustinscaz/edistribucion-ha"
@@ -10,6 +10,10 @@ init: false
 startup: application
 boot: auto
 host_network: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:transmission-tower
+panel_title: e-distribución
 options:
   dni: ""
   password: ""

@@ -1,6 +1,6 @@
 const fs = require("fs");
 const { loginAndCaptureSession } = require("./playwrightLogin");
-const { AuthError } = require("./dataApi");
+const { AuthError, InvalidCredentialsError } = require("./errors");
 
 const SESSION_FILE = process.env.EDISTRIBUCION_SESSION_FILE || "/data/session.json";
 
@@ -23,6 +23,9 @@ class EdistribucionSession {
     this.baseUrl = baseUrl;
     this.state = this._loadPersisted();
     this._loginPromise = null;
+    this.loginCount = 0;
+    this.lastLoginAt = null;
+    this.lastLoginError = null; // { message, invalidCredentials } — para el panel de estado
   }
 
   _loadPersisted() {
@@ -52,7 +55,14 @@ class EdistribucionSession {
         .then((captured) => {
           this.state = { ...captured, baseUrl: this.baseUrl };
           this._persist(this.state);
+          this.loginCount += 1;
+          this.lastLoginAt = new Date();
+          this.lastLoginError = null;
           return this.state;
+        })
+        .catch((err) => {
+          this.lastLoginError = { message: err.message, invalidCredentials: err instanceof InvalidCredentialsError };
+          throw err;
         })
         .finally(() => {
           this._loginPromise = null;

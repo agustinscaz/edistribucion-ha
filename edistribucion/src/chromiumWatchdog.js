@@ -3,6 +3,8 @@ const fs = require("fs");
 const CHECK_INTERVAL_MS = 60_000; // cada minuto
 const MAX_AGE_MS = 3 * 60_000; // un login normal tarda ~15s; 3 min es margen de sobra antes de considerarlo huérfano
 
+const stats = { totalKilled: 0, lastCheckAt: null };
+
 /**
  * Vigilante de procesos Chromium huérfanos. `playwrightLogin.js` siempre cierra el navegador en un
  * `finally`, así que en condiciones normales no debería quedar ninguno vivo entre logins — pero si
@@ -29,6 +31,7 @@ function processAgeMs(pid) {
 }
 
 function sweepOrphanChromiumProcesses() {
+  stats.lastCheckAt = new Date();
   let pids;
   try {
     pids = fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name));
@@ -48,12 +51,18 @@ function sweepOrphanChromiumProcesses() {
     }
   }
   if (killed > 0) {
+    stats.totalKilled += killed;
     console.warn(`Watchdog: ${killed} proceso(s) de Chromium huérfano(s) (>${MAX_AGE_MS / 60_000} min vivos) eliminado(s).`);
   }
 }
 
 function startChromiumWatchdog() {
+  sweepOrphanChromiumProcesses(); // primera pasada inmediata, no esperar 1 min para el primer dato
   setInterval(sweepOrphanChromiumProcesses, CHECK_INTERVAL_MS).unref();
 }
 
-module.exports = { startChromiumWatchdog, sweepOrphanChromiumProcesses };
+function getWatchdogStats() {
+  return { ...stats };
+}
+
+module.exports = { startChromiumWatchdog, sweepOrphanChromiumProcesses, getWatchdogStats };

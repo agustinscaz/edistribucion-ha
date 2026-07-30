@@ -66,13 +66,16 @@ HACS instala integraciones en Python que corren dentro del propio proceso de Hom
 ## Configuración
 
 1. **Ajustes → Dispositivos y servicios → Añadir integración** → busca **e-distribución**.
-2. Indica el host y puerto del add-on (por defecto `localhost` y `8099`, correcto si el add-on corre en el mismo Home Assistant).
+2. Si el add-on ya está arrancado en la misma red, debería aparecer solo (descubrimiento automático por mDNS) y solo hará falta confirmar. Si no, indica el host y puerto a mano (por defecto `localhost` y `8099`, correcto si el add-on corre en el mismo Home Assistant).
 
 [![Add Integration to your Home Assistant instance.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=edistribucion)
 
 Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de tu cuenta, más un dispositivo adicional **"e-distribución (add-on)"** (ver más abajo).
 
-Para cambiar el intervalo de actualización (15 min por defecto): en la propia integración, botón **Configurar** (engranaje) junto a "e-distribución" en Ajustes → Dispositivos y servicios.
+En **Configurar** (engranaje junto a "e-distribución" en Ajustes → Dispositivos y servicios) puedes ajustar:
+- El **intervalo de actualización** (15 min por defecto).
+- Un **precio por kWh** opcional, para tener sensores de coste estimado (0 = desactivado).
+- Qué **suministros seguir** (puedes desmarcar los históricos) y ponerles un **alias** a cada uno.
 
 ## Entidades
 
@@ -85,6 +88,8 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
 | `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
+| `sensor.<cups>_comparativa_con_el_mismo_mes_del_año_anterior` | % de cambio del consumo importado de este mes frente al mismo mes de hace un año (sin valor si el contrato es más nuevo que un año) |
+| `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has puesto un precio €/kWh en las opciones — importado × precio, una estimación simple, no una factura real |
 | `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
@@ -95,6 +100,7 @@ Además, agrupadas bajo el dispositivo **"e-distribución (add-on)"** (no ligado
 |---|---|
 | `binary_sensor.conectado` | ON si la última actualización pudo hablar con el add-on sin error |
 | `sensor.ultima_actualizacion` | Marca de tiempo de la última actualización correcta |
+| `sensor.proxima_actualizacion` | Estimación de cuándo tocará la siguiente (última correcta + intervalo configurado) |
 | `button.actualizar_ahora` | Vuelve a pedir los datos ya, sin esperar al próximo ciclo |
 | `button.forzar_reconexion` | Fuerza un login fresco en el add-on (por si la sesión "se queda rara") y actualiza |
 
@@ -144,14 +150,20 @@ Si además añades los sensores de energía al **Dashboard de Energía** (Ajuste
 3. Si una llamada falla porque la sesión ya caducó, el add-on lo detecta solo y repite el login automáticamente — no hace falta reiniciar nada a mano.
 4. La sesión (cookies + token) se guarda en `/data/session.json` tras cada login, así que un reinicio normal del add-on (actualización, reinicio del host) **no obliga a volver a pasar por Chromium** — se reutiliza la sesión guardada y solo se relogin si de verdad ya caducó.
 5. Un vigilante interno revisa cada minuto si ha quedado algún proceso de Chromium colgado (p.ej. por quedarse sin memoria a medio login) y lo cierra si lleva vivo más de 3 minutos — un login normal tarda ~15s, así que nunca debería afectar a uno legítimo.
+6. El add-on se anuncia por mDNS (`_edistribucion._tcp.local`) para que la integración pueda encontrarlo sola en la configuración inicial.
 
 Esto significa que el navegador (la parte pesada) solo se enciende ocasionalmente, no en cada consulta ni en cada reinicio — importante para que funcione bien en hardware modesto (Raspberry Pi 4/5 de 64 bits).
+
+### Panel de estado y acceso vía Ingress
+
+El add-on tiene un panel de estado en HTML (`GET /`, en vez de JSON) con: si hay sesión activa, cuántos logins se han hecho, el último error si lo hay (y si es de credenciales incorrectas, te lo dice explícitamente), y estadísticas del vigilante de Chromium. Puedes abrirlo directamente en `http://<host>:8099`, o desde el propio menú lateral de Home Assistant (el add-on usa **Ingress**, así que aparece ahí sin tener que exponer ni recordar ningún puerto).
 
 ## Funcionalidades avanzadas de la integración
 
 - **Opciones configurables** (botón "Configurar" junto a la integración): intervalo de actualización, y qué suministros seguir — puedes desmarcar los históricos que ya no te interesan, y ponerle un **alias** a cada uno (p.ej. "Casa" en vez del CUPS) para que el nombre del dispositivo sea más legible.
 - **Diagnósticos descargables**: Ajustes → Dispositivos y servicios → e-distribución → menú (⋮) → Descargar diagnósticos. Útil para adjuntar a un issue sin tener que copiar nada a mano (la dirección postal se redacta automáticamente).
-- **Reparaciones (Repairs)**: si el add-on falla varias veces seguidas, aparece un aviso en Ajustes → Sistema → Reparaciones en vez de solo marcar los sensores como "no disponible" en silencio.
+- **Reparaciones (Repairs)**: si el add-on falla varias veces seguidas, aparece un aviso en Ajustes → Sistema → Reparaciones en vez de solo marcar los sensores como "no disponible" en silencio. Si el fallo es concretamente por **credenciales incorrectas**, el aviso lo dice explícitamente en vez de un genérico "no se puede conectar".
+- **Reintentos automáticos**: un fallo de red puntual entre la integración y el add-on se reintenta un par de veces (con espera creciente) antes de darse por vencido.
 - **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro, se intenta rellenar como estadística externa el consumo del último mes ya disponible, para no empezar con el gráfico completamente vacío.
 - **Servicio `edistribucion.consultar_consumo`**: consulta bajo demanda un rango y fecha de referencia concretos (día/semana/mes de un mes anterior, por ejemplo), no solo el periodo actual que ya cachean los sensores — útil desde Herramientas de desarrollo → Acciones, o en tus propias automatizaciones/scripts.
 

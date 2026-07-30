@@ -8,22 +8,28 @@
           "host": "Host",
           "port": "Puerto"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Add-on de e-distribución encontrado en la red",
+        "description": "Se ha encontrado un add-on de e-distribución en {host}:{port}. ¿Quieres añadirlo?"
       }
     },
     "error": {
       "cannot_connect": "No se pudo conectar con el add-on. Comprueba que está iniciado y que el host/puerto son correctos."
     },
     "abort": {
-      "already_configured": "Ese add-on ya está configurado."
+      "already_configured": "Ese add-on ya está configurado.",
+      "cannot_connect": "No se pudo conectar con el add-on encontrado en la red."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Opciones de e-distribución",
-        "description": "Intervalo de actualización, y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
+        "description": "Intervalo de actualización, precio por kWh (opcional, para el coste estimado), y qué suministros seguir (con un alias si quieres).\n\nTus suministros:\n{supply_points_list}",
         "data": {
-          "scan_interval": "Intervalo de actualización (minutos)"
+          "scan_interval": "Intervalo de actualización (minutos)",
+          "price_per_kwh": "Precio por kWh (€, opcional — 0 desactiva el coste estimado)"
         }
       }
     }
@@ -37,7 +43,11 @@
       "imported_energy_month": { "name": "Energía importada (mes)" },
       "exported_energy_month": { "name": "Energía exportada (mes)" },
       "max_power_demand": { "name": "Potencia máxima demandada" },
-      "last_update": { "name": "Última actualización" }
+      "last_update": { "name": "Última actualización" },
+      "next_update": { "name": "Próxima actualización" },
+      "estimated_cost_today": { "name": "Coste estimado hoy" },
+      "estimated_cost_month": { "name": "Coste estimado (mes)" },
+      "month_vs_last_year": { "name": "Comparativa con el mismo mes del año anterior" }
     },
     "binary_sensor": {
       "connected": { "name": "Conectado" }
@@ -54,6 +64,10 @@
     "addon_connection_failed": {
       "title": "No se puede conectar con el add-on de e-distribución",
       "description": "Llevan varios intentos seguidos fallando las llamadas al add-on. Comprueba en Ajustes → Complementos → e-distribución que está iniciado, revisa su pestaña Registro, y confirma que el host/puerto configurados en esta integración son correctos."
+    },
+    "invalid_credentials": {
+      "title": "Credenciales incorrectas en el add-on de e-distribución",
+      "description": "El add-on ha rechazado el login por DNI/contraseña incorrectos. Corrígelos en Ajustes → Complementos → e-distribución → Configuración, y reinicia el add-on."
     }
   }
 }

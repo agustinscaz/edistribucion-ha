@@ -8,22 +8,28 @@
           "host": "Host",
           "port": "Port"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "e-distribución add-on found on the network",
+        "description": "An e-distribución add-on was found at {host}:{port}. Do you want to add it?"
       }
     },
     "error": {
       "cannot_connect": "Could not connect to the add-on. Check that it's started and the host/port are correct."
     },
     "abort": {
-      "already_configured": "That add-on is already configured."
+      "already_configured": "That add-on is already configured.",
+      "cannot_connect": "Could not connect to the add-on found on the network."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "e-distribución options",
-        "description": "Update interval, and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
+        "description": "Update interval, price per kWh (optional, for the estimated cost sensors), and which supply points to track (with an optional alias).\n\nYour supply points:\n{supply_points_list}",
         "data": {
-          "scan_interval": "Update interval (minutes)"
+          "scan_interval": "Update interval (minutes)",
+          "price_per_kwh": "Price per kWh (€, optional — 0 disables the estimated cost sensors)"
         }
       }
     }
@@ -37,7 +43,11 @@
       "imported_energy_month": { "name": "Imported energy (month)" },
       "exported_energy_month": { "name": "Exported energy (month)" },
       "max_power_demand": { "name": "Maximum power demand" },
-      "last_update": { "name": "Last update" }
+      "last_update": { "name": "Last update" },
+      "next_update": { "name": "Next update" },
+      "estimated_cost_today": { "name": "Estimated cost today" },
+      "estimated_cost_month": { "name": "Estimated cost (month)" },
+      "month_vs_last_year": { "name": "Comparison vs. same month last year" }
     },
     "binary_sensor": {
       "connected": { "name": "Connected" }
@@ -54,6 +64,10 @@
     "addon_connection_failed": {
       "title": "Can't connect to the e-distribución add-on",
       "description": "Several calls to the add-on have failed in a row. Check under Settings → Add-ons → e-distribución that it's running, review its Log tab, and confirm the host/port configured in this integration are correct."
+    },
+    "invalid_credentials": {
+      "title": "Invalid credentials in the e-distribución add-on",
+      "description": "The add-on rejected the login due to an incorrect DNI/password. Fix them under Settings → Add-ons → e-distribución → Configuration, and restart the add-on."
     }
   }
 }

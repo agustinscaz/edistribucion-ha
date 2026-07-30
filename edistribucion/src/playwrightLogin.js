@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { InvalidCredentialsError } = require("./errors");
 
 /**
  * Hace login real contra la Zona Privada de e-distribución usando un navegador Chromium real
@@ -33,24 +34,71 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
     await page.locator("#input-8").fill(dni);
     await page.locator("#input-9").fill(password);
 
-    const loginInfoPromise = page.waitForResponse(
-      (res) => res.request().method() === "POST" && res.url().includes("WP_Monitor_CTRL.getLoginInfo"),
-      { timeout: 20000 }
-    );
+    // La acción de login, si tiene éxito, dispara casi al instante una navegación (frontdoor.jsp)
+    // que descarta el cuerpo de la respuesta antes de poder leerlo con la API normal de Playwright
+    // (`response.json()` falla con "Response body is not available for a response that was
+    // navigated away from"). Por eso se intercepta por CDP (`Fetch` domain, pausando la respuesta
+    // ANTES de que la página pueda navegar), igual que se resolvió este mismo problema durante la
+    // investigación inicial — ver README, sección "Cómo funciona".
+    const client = await context.newCDPSession(page);
+    await client.send("Network.enable");
+    await client.send("Fetch.enable", { patterns: [{ urlPattern: "*LightningLoginForm.login*", requestStage: "Response" }] });
+
+    let resolveLoginCapture;
+    const loginCapturePromise = new Promise((resolve) => {
+      resolveLoginCapture = resolve;
+    });
+    client.on("Fetch.requestPaused", async (e) => {
+      try {
+        const body = await client.send("Fetch.getResponseBody", { requestId: e.requestId });
+        const text = body.base64Encoded ? Buffer.from(body.body, "base64").toString() : body.body;
+        resolveLoginCapture({ json: JSON.parse(text) });
+      } catch (err) {
+        resolveLoginCapture({ error: err });
+      } finally {
+        await client.send("Fetch.continueRequest", { requestId: e.requestId }).catch(() => {});
+      }
+    });
+
+    // getLoginInfo solo se dispara DESPUÉS de un login realmente correcto (la propia página
+    // autenticada la pide) — con credenciales incorrectas nunca llega, así que se convierte el
+    // rechazo en una resolución con el error para no dejar una unhandled rejection si nunca la
+    // llegamos a esperar (login rechazado antes de llegar a este punto).
+    const loginInfoPromise = page
+      .waitForResponse((res) => res.request().method() === "POST" && res.url().includes("WP_Monitor_CTRL.getLoginInfo"), {
+        timeout: 20000,
+      })
+      .catch((e) => e);
+
     await page.getByRole("button", { name: /entrar/i }).click();
-    const loginRes = await loginInfoPromise;
-    const loginJson = await loginRes.json();
-    const loginAction = loginJson.actions?.[0];
-    if (!loginAction || loginAction.state !== "SUCCESS") {
-      throw new Error(`Login fallido: ${JSON.stringify(loginAction?.error ?? loginJson).slice(0, 400)}`);
+
+    const loginCapture = await loginCapturePromise;
+    if (loginCapture.error) throw loginCapture.error;
+    const loginActionResult = loginCapture.json.actions?.[0];
+    if (!loginActionResult || loginActionResult.state !== "SUCCESS") {
+      throw new Error(`Login rechazado: ${JSON.stringify(loginActionResult?.error ?? loginCapture.json).slice(0, 400)}`);
     }
-    const loginInfo = loginAction.returnValue;
+    // Con credenciales incorrectas, e-distribución responde state:"SUCCESS" pero con returnValue
+    // como STRING de error (p.ej. "Usuario o contraseña no válidos"), no como el objeto de datos
+    // esperado — se distingue explícitamente para poder avisar del motivo real.
+    if (typeof loginActionResult.returnValue === "string" && loginActionResult.returnValue) {
+      throw new InvalidCredentialsError(loginActionResult.returnValue);
+    }
+
+    const loginInfoRes = await loginInfoPromise;
+    if (loginInfoRes instanceof Error) throw loginInfoRes;
+    const loginInfoJson = await loginInfoRes.json();
+    const loginInfoAction = loginInfoJson.actions?.[0];
+    if (!loginInfoAction || loginInfoAction.state !== "SUCCESS") {
+      throw new Error(`No se pudo leer la info de cuenta tras el login: ${JSON.stringify(loginInfoAction?.error ?? loginInfoJson).slice(0, 400)}`);
+    }
+    const loginInfo = loginInfoAction.returnValue;
     const visId = loginInfo?.WP_LastLoginAs__c ?? loginInfo?.authList?.[0]?.value ?? null;
     if (!visId) throw new Error("Login OK pero no se pudo determinar 'visId' (¿cambió la respuesta de getLoginInfo?)");
 
     await page.waitForTimeout(500);
     if (page.url().includes("/login")) {
-      throw new Error("Login fallido: credenciales incorrectas o la web cambió de formato");
+      throw new InvalidCredentialsError("Credenciales incorrectas (sigue en la página de login tras enviar el formulario)");
     }
 
     // Capturamos el aura.token/aura.context reales interceptando el POST que la propia página hace

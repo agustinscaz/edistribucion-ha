@@ -11,9 +11,10 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
-from .const import CONF_SUPPLY_POINTS, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
+from .const import CONF_PRICE_PER_KWH, CONF_SUPPLY_POINTS, DEFAULT_HOST, DEFAULT_PORT, DEFAULT_SCAN_INTERVAL_MINUTES, DOMAIN
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -46,6 +47,33 @@ class EdistribucionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=title, data=user_input)
 
         return self.async_show_form(step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors)
+
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> FlowResult:
+        """El add-on se anuncia por mDNS (_edistribucion._tcp.local) — si aparece uno en la red,
+        no hace falta teclear host/puerto a mano, solo confirmar."""
+        host = discovery_info.host
+        port = discovery_info.port
+        await self.async_set_unique_id(f"{host}:{port}")
+        self._abort_if_unique_id_configured()
+        self._discovered_data = {CONF_HOST: host, CONF_PORT: port}
+        self.context["title_placeholders"] = {"host": host}
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        if user_input is not None:
+            session = async_get_clientsession(self.hass)
+            client = EdistribucionApiClient(session, self._discovered_data[CONF_HOST], self._discovered_data[CONF_PORT])
+            try:
+                info = await client.async_get_info()
+            except EdistribucionApiError:
+                return self.async_abort(reason="cannot_connect")
+            title = info.get("name") or "e-distribución"
+            return self.async_create_entry(title=title, data=self._discovered_data)
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            description_placeholders={"host": self._discovered_data[CONF_HOST], "port": str(self._discovered_data[CONF_PORT])},
+        )
 
     @staticmethod
     @callback
@@ -84,8 +112,10 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(data=user_input)
 
         current_interval = self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
+        current_price = self._config_entry.options.get(CONF_PRICE_PER_KWH, 0)
         schema_dict: dict[Any, Any] = {
             vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(int, vol.Range(min=5, max=1440)),
+            vol.Optional(CONF_PRICE_PER_KWH, default=current_price): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
         }
         listing_lines = []
         for sp in self._supply_points:

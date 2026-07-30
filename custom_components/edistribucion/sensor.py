@@ -35,7 +35,10 @@ def _latest_daily_total(consumption: dict | None) -> dict | None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: EdistribucionCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    entities: list[SensorEntity] = [EdistribucionLastUpdateSensor(coordinator, entry.entry_id)]
+    entities: list[SensorEntity] = [
+        EdistribucionLastUpdateSensor(coordinator, entry.entry_id),
+        EdistribucionNextUpdateSensor(coordinator, entry.entry_id),
+    ]
     for cont_id, bundle in coordinator.data.items():
         sp = bundle["supply_point"]
         entities.append(EdistribucionImportedEnergySensor(coordinator, cont_id, sp))
@@ -44,6 +47,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "imported", f"imported_energy_{period_label}"))
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
         entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
+        entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
+        if coordinator.price_per_kwh > 0:
+            entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
 
@@ -66,6 +73,32 @@ class EdistribucionLastUpdateSensor(CoordinatorEntity[EdistribucionCoordinator],
     @property
     def native_value(self):
         return self.coordinator.last_success_time
+
+    @property
+    def available(self) -> bool:
+        return True
+
+
+class EdistribucionNextUpdateSensor(CoordinatorEntity[EdistribucionCoordinator], SensorEntity):
+    """Estimación de cuándo tocará la siguiente actualización (última correcta + intervalo)."""
+
+    _attr_has_entity_name = True
+    entity_description = SensorEntityDescription(
+        key="next_update",
+        translation_key="next_update",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    )
+
+    def __init__(self, coordinator: EdistribucionCoordinator, entry_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry_id}_next_update"
+        self._attr_device_info = hub_device_info(entry_id)
+
+    @property
+    def native_value(self):
+        if not self.coordinator.last_success_time:
+            return None
+        return self.coordinator.last_success_time + self.coordinator.update_interval
 
     @property
     def available(self) -> bool:
@@ -215,3 +248,95 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
     @property
     def available(self) -> bool:
         return super().available and self._bundle.get("max_power_demand") is not None
+
+
+class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
+    """Coste estimado = energía importada * precio fijo configurado en las opciones. Es una
+    estimación simple (no modela periodos ni excedentes), pensada para tener una idea aproximada,
+    no para cuadrar con la factura real."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator, cont_id, supply_point, translation_key: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_translation_key = translation_key
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        raise NotImplementedError
+
+    @property
+    def native_value(self) -> float | None:
+        kwh = self._imported_kwh
+        if kwh is None:
+            return None
+        return round(kwh * self.coordinator.price_per_kwh, 4)
+
+
+class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "estimated_cost_today")
+        self._attr_unique_id = f"{cont_id}_estimated_cost_today"
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        day = _latest_daily_total(self._bundle.get("consumption"))
+        return day["importedKwh"] if day else None
+
+
+class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "estimated_cost_month")
+        self._attr_unique_id = f"{cont_id}_estimated_cost_month"
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        month = self._bundle.get("month")
+        return month.get("totalImportedKwh") if month else None
+
+
+class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):
+    """% de cambio del consumo importado de este mes frente al mismo mes del año anterior. Sin
+    valor si el contrato es más nuevo que un año (no hay nada que comparar todavía)."""
+
+    entity_description = SensorEntityDescription(
+        key="month_vs_last_year",
+        translation_key="month_vs_last_year",
+        native_unit_of_measurement="%",
+        suggested_display_precision=1,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_month_vs_last_year"
+
+    @property
+    def native_value(self) -> float | None:
+        this_year = self._bundle.get("month")
+        last_year = self._bundle.get("month_last_year")
+        if not this_year or not last_year:
+            return None
+        previous = last_year.get("totalImportedKwh")
+        current = this_year.get("totalImportedKwh")
+        if not previous:
+            return None
+        return round((current - previous) / previous * 100, 2)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        this_year = self._bundle.get("month")
+        last_year = self._bundle.get("month_last_year")
+        return {
+            "importado_este_mes_kwh": this_year.get("totalImportedKwh") if this_year else None,
+            "importado_mismo_mes_año_anterior_kwh": last_year.get("totalImportedKwh") if last_year else None,
+        }
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._bundle.get("month") is not None and self._bundle.get("month_last_year") is not None

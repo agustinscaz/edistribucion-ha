@@ -1,6 +1,6 @@
-const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36";
+const { AuthError } = require("./errors");
 
-class AuthError extends Error {}
+const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36";
 
 /**
  * Construye y ejecuta manualmente una acción Apex vía el endpoint Aura, reusando el `aura.token` +
