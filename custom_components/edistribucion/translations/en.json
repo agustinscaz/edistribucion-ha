@@ -25,14 +25,31 @@
   "options": {
     "step": {
       "init": {
-        "title": "e-distribución options",
-        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day, for the whole installation), and for each supply point: whether to track it, alias, energy tariff type (fija/tramos/pvpc) with its prices, and surplus compensation.\n\nEach supply point's fields are suffixed with its CUPS — use 'fija' + a single price, 'tramos' + peak/flat/off-peak prices, or 'pvpc' + the entity_id of an existing price sensor (e.g. from the official ESIOS integration — note: this uses that sensor's CURRENT price, not a real hour-by-hour history).\n\nYour supply points:\n{supply_points_list}",
+        "title": "e-distribución options: general settings",
+        "description": "Update interval, power (capacity) term (contracted kW for P1/P2 + €/kW/day), and your ESIOS/REE API key if you'll use the PVPC tariff on any supply point (requested for free by email — indicator 1001, geo_id for your region: {geo_ids}). Tomorrow's prices are published around 20:15 the day before.\n\nAfter this step, you'll configure each of your {num_supplies} supply points separately.",
         "data": {
           "scan_interval": "Update interval (minutes)",
           "contracted_power_p1_kw": "Contracted power P1 (kW, optional)",
           "contracted_power_p2_kw": "Contracted power P2 (kW, optional)",
           "price_power_p1": "Power price P1 (€/kW/day, optional)",
-          "price_power_p2": "Power price P2 (€/kW/day, optional)"
+          "price_power_p2": "Power price P2 (€/kW/day, optional)",
+          "esios_api_key": "ESIOS API key (optional, only if using the PVPC tariff)",
+          "esios_geo_id": "Region (for PVPC pricing)"
+        }
+      },
+      "supply_point": {
+        "title": "Supply point {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nChoose whether to track this supply point, an alias, the energy tariff type and its prices, and whether you have surplus compensation.",
+        "data": {
+          "track": "Track this supply point",
+          "alias": "Alias (optional)",
+          "tariff_type": "Tariff type: fixed / time-of-use / pvpc",
+          "fixed_price": "Fixed price (€/kWh, if tariff is 'fixed')",
+          "price_punta": "Peak price (€/kWh, if tariff is 'time-of-use')",
+          "price_llano": "Flat price (€/kWh, if tariff is 'time-of-use')",
+          "price_valle": "Off-peak price (€/kWh, if tariff is 'time-of-use')",
+          "surplus_compensation": "Surplus compensation",
+          "surplus_price": "Compensation price (€/kWh, if enabled)"
         }
       }
     }

@@ -8,10 +8,9 @@ Horario de tramos usado (2.0TD peninsular, el más común en residencial):
 
 OJO — limitaciones conocidas:
 - "tramos" no tiene en cuenta festivos (cuentan como valle todo el día en la tarifa real).
-- "pvpc" usa el precio ACTUAL del sensor referenciado (p.ej. de la integración oficial ESIOS) para
-  todo el periodo — no hay aquí un histórico de precios PVPC hora a hora, así que el coste de "hoy"
-  o "el mes" con PVPC es una aproximación con el precio de ahora mismo, no el real de cada hora
-  pasada. Para eso haría falta un histórico de precios que esta integración no guarda.
+- "pvpc" usa precios reales hora a hora de la API de ESIOS/REE (ver esios.py) — necesita una clave
+  de ESIOS configurada a nivel de la integración. Sin esa clave (o sin precio para alguna hora
+  concreta, p.ej. si aún no se ha publicado), esa hora queda sin coste.
 """
 
 from __future__ import annotations
@@ -48,6 +47,11 @@ def hour_period(date_str: str, hour_label: str) -> str:
     return VALLE
 
 
+def _leading_hour(hour_label: str) -> int | None:
+    match = re.match(r"(\d+)", hour_label or "")
+    return int(match.group(1)) if match else None
+
+
 def cost_breakdown(consumption: dict | None, prices: dict[str, float]) -> dict[str, float] | None:
     """kWh importados y coste, desglosados por periodo, para un consumo con `hourlyByDate`.
     None si no hay datos horarios."""
@@ -72,7 +76,42 @@ def cost_breakdown(consumption: dict | None, prices: dict[str, float]) -> dict[s
     }
 
 
-def estimate_energy_cost(sp_opts: dict, imported_kwh: float | None, hourly_source: dict | None, hass) -> dict | None:
+def pvpc_cost_breakdown(consumption: dict | None, pvpc_prices: dict[str, float] | None) -> dict | None:
+    """Coste real hora a hora usando precios PVPC de ESIOS. `pvpc_prices` es un dict
+    {"DD/MM/YYYY H": precio_eur_kwh} (ver esios.py). Las horas sin precio disponible (todavía no
+    publicado, o clave sin configurar) se ignoran y quedan reflejadas en `horas_sin_precio`."""
+    if not consumption or not consumption.get("hourlyByDate") or not pvpc_prices:
+        return None
+
+    total = 0.0
+    total_kwh = 0.0
+    missing_hours = 0
+    for date_str, hours in consumption["hourlyByDate"].items():
+        for h in hours:
+            hour = _leading_hour(h.get("hour", ""))
+            if hour is None:
+                continue
+            kwh = h.get("importedKwh") or 0
+            price = pvpc_prices.get(f"{date_str} {hour}")
+            if price is None:
+                if kwh:
+                    missing_hours += 1
+                continue
+            total += kwh * price
+            total_kwh += kwh
+
+    if total_kwh == 0 and missing_hours == 0:
+        return None
+    return {
+        "kwh_con_precio": round(total_kwh, 3),
+        "horas_sin_precio": missing_hours,
+        "total": round(total, 4),
+    }
+
+
+def estimate_energy_cost(
+    sp_opts: dict, imported_kwh: float | None, hourly_source: dict | None, pvpc_prices: dict[str, float] | None = None
+) -> dict | None:
     """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto)."""
     tariff_type = sp_opts.get("tariff_type") or TARIFF_TRAMOS
 
@@ -83,22 +122,10 @@ def estimate_energy_cost(sp_opts: dict, imported_kwh: float | None, hourly_sourc
         return {"tariff_type": TARIFF_FIJA, "precio_eur_kwh": price, "total": round(imported_kwh * price, 4)}
 
     if tariff_type == TARIFF_PVPC:
-        entity_id = sp_opts.get("pvpc_entity")
-        if not entity_id or imported_kwh is None or hass is None:
-            return None
-        state = hass.states.get(entity_id)
-        if state is None:
-            return None
-        try:
-            price = float(state.state)
-        except (TypeError, ValueError):
-            return None
-        return {
-            "tariff_type": TARIFF_PVPC,
-            "precio_actual_eur_kwh": price,
-            "fuente": entity_id,
-            "total": round(imported_kwh * price, 4),
-        }
+        breakdown = pvpc_cost_breakdown(hourly_source, pvpc_prices)
+        if breakdown:
+            breakdown["tariff_type"] = TARIFF_PVPC
+        return breakdown
 
     # tramos (por defecto)
     prices = {

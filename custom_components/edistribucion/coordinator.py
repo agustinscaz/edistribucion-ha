@@ -9,17 +9,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 from .const import (
+    CONF_ESIOS_API_KEY,
+    CONF_ESIOS_GEO_ID,
     CONF_SUPPLY_POINTS,
     CONSECUTIVE_FAILURES_FOR_REPAIR,
+    DEFAULT_ESIOS_GEO_ID,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
     POWER_TERM_KEYS,
 )
+from .esios import EsiosError, async_get_pvpc_prices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,8 +50,31 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.contracted_power_p2: float = entry.options.get(POWER_TERM_KEYS[1], 0) or 0
         self.price_power_p1: float = entry.options.get(POWER_TERM_KEYS[2], 0) or 0
         self.price_power_p2: float = entry.options.get(POWER_TERM_KEYS[3], 0) or 0
+        self.esios_api_key: str = entry.options.get(CONF_ESIOS_API_KEY) or ""
+        self.esios_geo_id: str = entry.options.get(CONF_ESIOS_GEO_ID) or DEFAULT_ESIOS_GEO_ID
+        self.pvpc_prices: dict[str, float] = {}
+        self._pvpc_fetched_date: str | None = None
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
+
+    async def _async_update_pvpc_prices(self) -> None:
+        """Los precios PVPC solo cambian una vez al día (se publican ~20:15 para el día
+        siguiente) — se pide un rango de todo el mes (para el coste "mes") una sola vez por día,
+        no en cada ciclo de actualización, para no reventar la API pública de ESIOS sin necesidad."""
+        if not self.esios_api_key:
+            return
+        today = dt_util.now()
+        today_key = today.strftime("%Y-%m-%d")
+        if self._pvpc_fetched_date == today_key:
+            return
+        try:
+            session = async_get_clientsession(self.hass)
+            start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            end = today.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+            self.pvpc_prices = await async_get_pvpc_prices(session, self.esios_api_key, self.esios_geo_id, start, end)
+            self._pvpc_fetched_date = today_key
+        except EsiosError as err:
+            _LOGGER.warning("No se pudieron obtener precios PVPC de ESIOS: %s", err)
 
     @property
     def daily_power_cost(self) -> float:
@@ -56,6 +84,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict:
         try:
+            await self._async_update_pvpc_prices()
             supply_points = await self.client.async_get_supply_points()
             data: dict[str, dict] = {}
             for sp in supply_points:

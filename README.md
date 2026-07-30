@@ -72,13 +72,20 @@ HACS instala integraciones en Python que corren dentro del propio proceso de Hom
 
 Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de tu cuenta, más un dispositivo adicional **"e-distribución (add-on)"** (ver más abajo).
 
-En **Configurar** (engranaje junto a "e-distribución" en Ajustes → Dispositivos y servicios) puedes ajustar:
+En **Configurar** (engranaje junto a "e-distribución" en Ajustes → Dispositivos y servicios) el asistente va **paso a paso**: primero un paso de ajustes generales, y luego un paso por cada uno de tus suministros (CUPS), uno detrás de otro.
+
+**Paso 1 — ajustes generales:**
 - El **intervalo de actualización** (15 min por defecto).
 - El **término de potencia** (potencia contratada en kW + precio €/kW/día, para los periodos P1 y P2 — distintos de punta/llano/valle), para toda la instalación.
-- Por cada **suministro** (los campos llevan el CUPS como sufijo):
-  - Si **seguirlo** (puedes desmarcar los históricos) y un **alias**.
-  - El **tipo de tarifa de energía**: `fija` (un único precio €/kWh), `tramos` (precios de punta/llano/valle, calculado hora a hora con tu consumo real) o `pvpc` (referencia el entity_id de un sensor de precio que ya tengas en HA, p.ej. de la integración oficial ESIOS — **OJO**: usa el precio ACTUAL de ese sensor, no guarda un histórico real hora a hora, así que el coste de "hoy"/"mes" con PVPC es una aproximación con el precio de ahora mismo).
-  - La **compensación de excedentes**: si tu comercializadora te paga por lo exportado, actívala y pon el precio €/kWh para tener un sensor de esa compensación estimada.
+- Tu **clave de ESIOS/REE**, solo si vas a usar la tarifa `pvpc` en algún suministro. Se solicita gratis [por email a REE](https://api.esios.ree.es/), y tarda normalmente un par de días en llegar. También eliges tu **región** (Península/Canarias/Baleares/Ceuta/Melilla), ya que el precio PVPC varía según la zona.
+
+**Un paso por cada suministro:**
+- Si **seguirlo** (puedes desmarcar los históricos) y un **alias**.
+- El **tipo de tarifa de energía**:
+  - `fija`: un único precio €/kWh.
+  - `tramos`: precio €/kWh en 3 campos separados (punta/llano/valle), calculado hora a hora con tu consumo real.
+  - `pvpc`: usa el precio real hora a hora de la API de ESIOS/REE (indicador 1001), con la clave y región que hayas puesto en el paso 1 — **los precios de mañana se publican sobre las 20:15h del día anterior**, así que las horas de después de esa hora ya usan el precio real del día siguiente, y las de un rato antes puede que aún no tengan precio publicado (se reflejan como "horas sin precio" hasta que ESIOS los publique).
+- La **compensación de excedentes**: si tu comercializadora te paga por lo exportado, actívala y pon el precio €/kWh para tener un sensor de esa compensación estimada.
 
 ## Entidades
 
@@ -204,7 +211,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 - Sin autenticación propia en la API del add-on — no expongas el puerto 8099 a Internet.
 - El relleno de histórico en el Dashboard de Energía usa la Statistics API del `recorder`, una parte más avanzada y menos estable de Home Assistant — está pensado como "mejor esfuerzo": si falla, se registra un aviso en el log y el resto de la integración sigue funcionando con normalidad (solo te quedas sin el relleno retroactivo).
 - Con tarifa `tramos`, se usa el horario estándar de punta/llano/valle de la 2.0TD peninsular (punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana) — **no tiene en cuenta festivos** (que cuentan como valle todo el día en la tarifa real), así que en un día festivo el estimado saldrá algo más caro de lo real.
-- Con tarifa `pvpc`, se usa el precio **actual** del sensor que referencies (p.ej. de la integración oficial ESIOS) — no hay aquí un histórico de precios PVPC hora a hora, así que el coste de "hoy"/"mes" con PVPC es una aproximación con el precio de ahora mismo, no el real de cada hora pasada.
+- Con tarifa `pvpc`, se usa el precio real hora a hora obtenido directamente de la API de ESIOS/REE (indicador 1001) para tu región — se piden los precios del mes en curso una vez al día (no en cada actualización, para no saturar la API pública). Las horas para las que ESIOS aún no haya publicado precio (p.ej. las últimas del día siguiente antes de las ~20:15h) quedan sin coste y se cuentan como "horas sin precio" hasta que se publiquen.
 - El término de potencia usa periodos P1/P2, que en la 2.0TD tienen un horario **distinto** al de punta/llano/valle de energía (P1 cubre de día entre semana, P2 noches+fin de semana) — no se cruzan las franjas de un término con el otro.
 
 ## Soporte

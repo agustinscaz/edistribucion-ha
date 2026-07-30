@@ -25,14 +25,31 @@
   "options": {
     "step": {
       "init": {
-        "title": "Opciones de e-distribución",
-        "description": "Intervalo de actualización, término de potencia (kW contratados P1/P2 + precio €/kW/día, para toda la instalación), y por cada suministro: si seguirlo, alias, tipo de tarifa de energía (fija/tramos/pvpc) con sus precios, y compensación de excedentes.\n\nPara cada suministro verás campos con el sufijo de su CUPS — usa 'fija' + un precio único, 'tramos' + precios de punta/llano/valle, o 'pvpc' + el entity_id de un sensor de precio ya existente (p.ej. de la integración oficial ESIOS — OJO: usa el precio ACTUAL de ese sensor, no un histórico real hora a hora).\n\nTus suministros:\n{supply_points_list}",
+        "title": "Opciones de e-distribución: ajustes generales",
+        "description": "Intervalo de actualización, término de potencia (kW contratados P1/P2 + precio €/kW/día), y clave de ESIOS/REE si vas a usar tarifa PVPC en algún suministro (se pide gratis por email — indicador 1001, geo_id según tu región: {geo_ids}). Los precios de mañana se publican sobre las 20:15h del día anterior.\n\nDespués de este paso, configurarás cada uno de tus {num_supplies} suministros por separado.",
         "data": {
           "scan_interval": "Intervalo de actualización (minutos)",
           "contracted_power_p1_kw": "Potencia contratada P1 (kW, opcional)",
           "contracted_power_p2_kw": "Potencia contratada P2 (kW, opcional)",
           "price_power_p1": "Precio potencia P1 (€/kW/día, opcional)",
-          "price_power_p2": "Precio potencia P2 (€/kW/día, opcional)"
+          "price_power_p2": "Precio potencia P2 (€/kW/día, opcional)",
+          "esios_api_key": "Clave de ESIOS (opcional, solo si usarás tarifa PVPC)",
+          "esios_geo_id": "Región (para el precio PVPC)"
+        }
+      },
+      "supply_point": {
+        "title": "Suministro {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nElige si seguir este suministro, un alias, el tipo de tarifa de energía y sus precios, y si tienes compensación de excedentes.",
+        "data": {
+          "track": "Seguir este suministro",
+          "alias": "Alias (opcional)",
+          "tariff_type": "Tipo de tarifa: fija / tramos / pvpc",
+          "fixed_price": "Precio fijo (€/kWh, si la tarifa es 'fija')",
+          "price_punta": "Precio en punta (€/kWh, si la tarifa es 'tramos')",
+          "price_llano": "Precio en llano (€/kWh, si la tarifa es 'tramos')",
+          "price_valle": "Precio en valle (€/kWh, si la tarifa es 'tramos')",
+          "surplus_compensation": "Compensación de excedentes",
+          "surplus_price": "Precio de la compensación (€/kWh, si está activada)"
         }
       }
     }

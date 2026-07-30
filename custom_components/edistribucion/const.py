@@ -11,8 +11,8 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 15
 
 # Opciones: qué suministros seguir, con qué alias, y tarifa/precios de CADA UNO — dict
 # {contId: {"track": bool, "alias": str, "tariff_type": ..., "fixed_price": ..., "price_punta": ...,
-#   "price_llano": ..., "price_valle": ..., "pvpc_entity": ..., "surplus_compensation": bool,
-#   "surplus_price": ...}}
+#   "price_llano": ..., "price_valle": ..., "surplus_compensation": bool,
+#   "surplus_price": ...}} — el precio PVPC NO va aquí: es global (ver CONF_ESIOS_API_KEY/CONF_ESIOS_GEO_ID)
 CONF_SUPPLY_POINTS = "supply_points"
 
 # Tipos de tarifa de energía, configurables por CUPS (no a nivel de toda la integración, distintos
@@ -20,14 +20,26 @@ CONF_SUPPLY_POINTS = "supply_points"
 # - fija: un único precio €/kWh para todo.
 # - tramos: precio €/kWh por franja horaria (punta/llano/valle), calculado hora a hora con el
 #   consumo real (hourlyByDate) — más preciso que una media diaria.
-# - pvpc: se referencia un sensor YA EXISTENTE en HA (p.ej. de la integración oficial ESIOS) y se
-#   usa su valor ACTUAL como precio — OJO, es una limitación real: no hay histórico de precios PVPC
-#   hora a hora aquí, así que el coste de "hoy"/"mes" con PVPC es una aproximación con el precio de
-#   AHORA, no el que tocaba en cada hora pasada.
+# - pvpc: precio real hora a hora sacado directamente de la API de ESIOS/REE (indicador 1001), con
+#   la clave y región configuradas a nivel de la integración (ver más abajo) — el precio PVPC es el
+#   mismo para todos los CUPS de una misma región, no depende del contrato.
 TARIFF_FIJA = "fija"
 TARIFF_TRAMOS = "tramos"
 TARIFF_PVPC = "pvpc"
 TARIFF_TYPES = (TARIFF_FIJA, TARIFF_TRAMOS, TARIFF_PVPC)
+
+# ESIOS/REE (PVPC): clave gratuita solicitada por email a la propia REE, y región (geo_id) — es lo
+# mismo para todos los suministros que usen tarifa "pvpc", así que va a nivel de la integración.
+CONF_ESIOS_API_KEY = "esios_api_key"
+CONF_ESIOS_GEO_ID = "esios_geo_id"
+ESIOS_GEO_IDS = {
+    "8741": "Península",
+    "8742": "Canarias",
+    "8743": "Baleares",
+    "8744": "Ceuta",
+    "8745": "Melilla",
+}
+DEFAULT_ESIOS_GEO_ID = "8741"
 
 # Término de potencia: en la 2.0TD son solo DOS periodos (P1/P2, con horario distinto al de
 # energía), ambos se facturan siempre (no es "uno u otro" según la hora) — por eso no hace falta

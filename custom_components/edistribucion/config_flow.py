@@ -17,11 +17,15 @@ from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
     CONF_CONTRACTED_POWER_P1,
     CONF_CONTRACTED_POWER_P2,
+    CONF_ESIOS_API_KEY,
+    CONF_ESIOS_GEO_ID,
     CONF_SUPPLY_POINTS,
+    DEFAULT_ESIOS_GEO_ID,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    ESIOS_GEO_IDS,
     POWER_TERM_KEYS,
     TARIFF_TRAMOS,
     TARIFF_TYPES,
@@ -92,45 +96,48 @@ class EdistribucionConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return EdistribucionOptionsFlow(config_entry)
 
 
+_SUPPLY_POINT_FIELD_DEFAULTS = {
+    "track": True,
+    "alias": "",
+    "tariff_type": TARIFF_TRAMOS,
+    "fixed_price": 0,
+    "price_punta": 0,
+    "price_llano": 0,
+    "price_valle": 0,
+    "surplus_compensation": False,
+    "surplus_price": 0,
+}
+
+
 class EdistribucionOptionsFlow(config_entries.OptionsFlow):
-    """Intervalo de actualización, término de potencia (global), y por cada suministro: si
-    seguirlo, alias, tipo de tarifa de energía (fija/tramos/pvpc) con sus precios, y compensación
-    de excedentes."""
+    """Paso 1: intervalo de actualización + término de potencia + ESIOS (todo global). Un paso más
+    por cada suministro, uno detrás de otro: si seguirlo, alias, tipo de tarifa (fija/tramos/pvpc)
+    con sus precios, y compensación de excedentes — cada CUPS en su propia pantalla, en vez de un
+    formulario gigante con todos mezclados."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
         self._supply_points: list[dict] | None = None
+        self._collected: dict[str, Any] = {}
+        self._collected_supply_points: dict[str, dict] = {}
+        self._current_index = 0
+
+    async def _async_ensure_supply_points(self) -> None:
+        if self._supply_points is not None:
+            return
+        session = async_get_clientsession(self.hass)
+        client = EdistribucionApiClient(session, self._config_entry.data[CONF_HOST], self._config_entry.data[CONF_PORT])
+        try:
+            self._supply_points = await client.async_get_supply_points()
+        except EdistribucionApiError:
+            self._supply_points = []
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if self._supply_points is None:
-            session = async_get_clientsession(self.hass)
-            client = EdistribucionApiClient(session, self._config_entry.data[CONF_HOST], self._config_entry.data[CONF_PORT])
-            try:
-                self._supply_points = await client.async_get_supply_points()
-            except EdistribucionApiError:
-                self._supply_points = []
-
-        current_supply_opts: dict[str, dict] = self._config_entry.options.get(CONF_SUPPLY_POINTS, {})
+        await self._async_ensure_supply_points()
 
         if user_input is not None:
-            supply_points_opt: dict[str, dict] = {}
-            for sp in self._supply_points:
-                cont_id = sp["contId"]
-                cups = sp["cups"]
-                supply_points_opt[cont_id] = {
-                    "track": user_input.pop(f"track_{cups}", True),
-                    "alias": user_input.pop(f"alias_{cups}", "").strip(),
-                    "tariff_type": user_input.pop(f"tariff_type_{cups}", TARIFF_TRAMOS),
-                    "fixed_price": user_input.pop(f"fixed_price_{cups}", 0),
-                    "price_punta": user_input.pop(f"price_punta_{cups}", 0),
-                    "price_llano": user_input.pop(f"price_llano_{cups}", 0),
-                    "price_valle": user_input.pop(f"price_valle_{cups}", 0),
-                    "pvpc_entity": user_input.pop(f"pvpc_entity_{cups}", None),
-                    "surplus_compensation": user_input.pop(f"surplus_compensation_{cups}", False),
-                    "surplus_price": user_input.pop(f"surplus_price_{cups}", 0),
-                }
-            user_input[CONF_SUPPLY_POINTS] = supply_points_opt
-            return self.async_create_entry(data=user_input)
+            self._collected = dict(user_input)
+            return await self.async_step_supply_point()
 
         current_interval = self._config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_MINUTES)
         schema_dict: dict[Any, Any] = {
@@ -143,42 +150,70 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
             current_price_power = self._config_entry.options.get(price_power_key, 0)
             schema_dict[vol.Optional(price_power_key, default=current_price_power)] = vol.All(vol.Coerce(float), vol.Range(min=0, max=5))
 
-        listing_lines = []
-        for sp in self._supply_points:
-            cont_id = sp["contId"]
-            cups = sp["cups"]
-            prev = current_supply_opts.get(cont_id, {})
+        current_esios_key = self._config_entry.options.get(CONF_ESIOS_API_KEY, "")
+        current_geo_id = self._config_entry.options.get(CONF_ESIOS_GEO_ID, DEFAULT_ESIOS_GEO_ID)
+        schema_dict[vol.Optional(CONF_ESIOS_API_KEY, default=current_esios_key)] = str
+        schema_dict[vol.Optional(CONF_ESIOS_GEO_ID, default=current_geo_id)] = vol.In(list(ESIOS_GEO_IDS))
 
-            schema_dict[vol.Required(f"track_{cups}", default=prev.get("track", True))] = bool
-            schema_dict[vol.Optional(f"alias_{cups}", default=prev.get("alias", ""))] = str
-            schema_dict[vol.Optional(f"tariff_type_{cups}", default=prev.get("tariff_type", TARIFF_TRAMOS))] = vol.In(TARIFF_TYPES)
-            schema_dict[vol.Optional(f"fixed_price_{cups}", default=prev.get("fixed_price", 0))] = vol.All(
-                vol.Coerce(float), vol.Range(min=0, max=10)
-            )
-            schema_dict[vol.Optional(f"price_punta_{cups}", default=prev.get("price_punta", 0))] = vol.All(
-                vol.Coerce(float), vol.Range(min=0, max=10)
-            )
-            schema_dict[vol.Optional(f"price_llano_{cups}", default=prev.get("price_llano", 0))] = vol.All(
-                vol.Coerce(float), vol.Range(min=0, max=10)
-            )
-            schema_dict[vol.Optional(f"price_valle_{cups}", default=prev.get("price_valle", 0))] = vol.All(
-                vol.Coerce(float), vol.Range(min=0, max=10)
-            )
-            schema_dict[vol.Optional(f"pvpc_entity_{cups}", default=prev.get("pvpc_entity") or "")] = str
-            schema_dict[vol.Optional(f"surplus_compensation_{cups}", default=prev.get("surplus_compensation", False))] = bool
-            schema_dict[vol.Optional(f"surplus_price_{cups}", default=prev.get("surplus_price", 0))] = vol.All(
-                vol.Coerce(float), vol.Range(min=0, max=10)
-            )
-
-            estado = "activo" if sp.get("active") else "histórico"
-            listing_lines.append(f"- {cups} ({estado}): {sp.get('address', '')}")
-
-        placeholders = {
-            "supply_points_list": "\n".join(listing_lines)
-            or "(no se pudo obtener la lista de suministros — ¿está el add-on arrancado?)"
-        }
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema_dict),
-            description_placeholders=placeholders,
+            description_placeholders={
+                "geo_ids": ", ".join(f"{k}={v}" for k, v in ESIOS_GEO_IDS.items()),
+                "num_supplies": str(len(self._supply_points)),
+            },
+        )
+
+    async def async_step_supply_point(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        current_supply_opts: dict[str, dict] = self._config_entry.options.get(CONF_SUPPLY_POINTS, {})
+
+        # Guardar lo que se acaba de enviar (si venimos de un submit) antes de mirar si hay más CUPS.
+        if user_input is not None and self._supply_points:
+            cont_id = self._supply_points[self._current_index]["contId"]
+            self._collected_supply_points[cont_id] = {
+                "track": user_input.get("track", True),
+                "alias": user_input.get("alias", "").strip(),
+                "tariff_type": user_input.get("tariff_type", TARIFF_TRAMOS),
+                "fixed_price": user_input.get("fixed_price", 0),
+                "price_punta": user_input.get("price_punta", 0),
+                "price_llano": user_input.get("price_llano", 0),
+                "price_valle": user_input.get("price_valle", 0),
+                "surplus_compensation": user_input.get("surplus_compensation", False),
+                "surplus_price": user_input.get("surplus_price", 0),
+            }
+            self._current_index += 1
+
+        if not self._supply_points or self._current_index >= len(self._supply_points):
+            self._collected[CONF_SUPPLY_POINTS] = self._collected_supply_points
+            return self.async_create_entry(data=self._collected)
+
+        sp = self._supply_points[self._current_index]
+        cont_id = sp["contId"]
+        cups = sp["cups"]
+        prev = current_supply_opts.get(cont_id, _SUPPLY_POINT_FIELD_DEFAULTS)
+
+        schema = vol.Schema(
+            {
+                vol.Required("track", default=prev.get("track", True)): bool,
+                vol.Optional("alias", default=prev.get("alias", "")): str,
+                vol.Optional("tariff_type", default=prev.get("tariff_type", TARIFF_TRAMOS)): vol.In(TARIFF_TYPES),
+                vol.Optional("fixed_price", default=prev.get("fixed_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional("price_punta", default=prev.get("price_punta", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional("price_llano", default=prev.get("price_llano", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional("price_valle", default=prev.get("price_valle", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional("surplus_compensation", default=prev.get("surplus_compensation", False)): bool,
+                vol.Optional("surplus_price", default=prev.get("surplus_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+            }
+        )
+        estado = "activo" if sp.get("active") else "histórico"
+        return self.async_show_form(
+            step_id="supply_point",
+            data_schema=schema,
+            description_placeholders={
+                "position": str(self._current_index + 1),
+                "total": str(len(self._supply_points)),
+                "cups": cups,
+                "estado": estado,
+                "address": sp.get("address", ""),
+            },
         )
