@@ -74,39 +74,52 @@ def _carry_over_sum(last_saved: tuple[datetime, float] | None, first_point_start
 
     `month_data` (ver coordinator.py) es siempre el mes EN CURSO — nunca el histórico completo —
     así que reconstruir el `sum` desde 0 en cada llamada solo es correcto la primera vez que se
-    crea el statistic_id, o cuando se está reescribiendo (idempotente) el mismo mes de siempre. El
-    caso que NO es correcto: el backfill ahora se repite una vez al día (ver
-    coordinator._async_backfill_statistics_if_needed) y, al cambiar de mes, `month_data` pasa a
-    contener solo los días/horas del mes nuevo — si volviéramos a arrancar en 0 ahí, el `sum` ya
-    guardado del mes anterior (que puede ser un número grande) caería en picado de un día para
-    otro, rompiendo la monotonía que exige el recorder para las long-term statistics.
+    crea el statistic_id. El resto de veces hay que arrastrar el `sum` acumulado hasta el cierre
+    del mes anterior (`last_saved`, ver `_async_last_saved_stat_before` — busca el último punto
+    ESTRICTAMENTE ANTERIOR al primero que se va a (re)escribir ahora, no "lo último guardado en
+    general": a partir del segundo día del mes en curso, "lo último guardado en general" ya sería
+    una hora de este mismo mes, no el cierre del anterior — usarlo como ancla duplicaría el
+    arrastre en cada re-ejecución dentro del mismo mes).
 
-    Por eso: si lo último que hay guardado para este statistic_id es ANTERIOR al primer punto que
-    vamos a escribir ahora, es que representa historia real que no vamos a tocar (el cierre del mes
-    anterior) y hay que usarlo como base. Si en cambio cae DENTRO del rango que vamos a reescribir
-    (mismo mes, ya visto en una llamada anterior de hoy), no hay que sumarlo aparte — ya está
-    contado en `month_data`, así que se arranca en 0 como siempre (evita contar dos veces)."""
+    Como `last_saved` ya viene filtrado a "estrictamente anterior" por la propia consulta, esta
+    comprobación es solo un cinturón de seguridad, no la lógica principal."""
     if last_saved is not None and last_saved[0] < first_point_start:
         return last_saved[1]
     return 0.0
 
 
-async def _async_last_saved_stat(hass: HomeAssistant, statistic_id: str) -> tuple[datetime, float] | None:
-    """(inicio, sum) de la última estadística ya guardada para este statistic_id, o None si no hay
-    ninguna todavía (primera vez que se crea). Es una consulta BLOQUEANTE a la base de datos del
+async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, before: datetime) -> tuple[datetime, float] | None:
+    """(inicio, sum) del último punto ya guardado ESTRICTAMENTE ANTERIOR a `before`, o None si no
+    hay ninguno (primera vez que se crea el statistic_id).
+
+    A propósito NO se usa `get_last_statistics` (da "el último punto guardado en general", sin
+    importar cuándo — bug real: a partir del segundo día del mes en curso ese "último punto" ya es
+    una hora de ESTE MISMO MES, reescrita el día anterior, no el cierre del mes pasado; usarlo como
+    ancla duplicaba el arrastre en cada re-ejecución del mismo mes). `statistics_during_period` sí
+    acepta `end_time` (exclusivo) para acotar la búsqueda a "antes de donde voy a escribir ahora",
+    sin importar qué día del mes sea este run. Es una consulta BLOQUEANTE a la base de datos del
     recorder, así que se ejecuta en su executor, nunca en el bucle de eventos."""
     from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.statistics import get_last_statistics
+    from homeassistant.components.recorder.statistics import statistics_during_period
 
     def _query() -> tuple[datetime, float] | None:
-        result = get_last_statistics(hass, 1, statistic_id, True, {"sum"})
+        result = statistics_during_period(
+            hass,
+            start_time=dt_util.utc_from_timestamp(0),
+            end_time=before,
+            statistic_ids={statistic_id},
+            period="hour",
+            units=None,
+            types={"sum"},
+        )
         rows = result.get(statistic_id)
         if not rows:
             return None
-        start = rows[0]["start"]
+        last = rows[-1]  # ordenados ascendente por start — el último es el más reciente antes de `before`
+        start = last["start"]
         if isinstance(start, (int, float)):  # timestamp UNIX crudo, no datetime (según versión de HA)
             start = dt_util.utc_from_timestamp(start)
-        return start, rows[0]["sum"]
+        return start, last["sum"]
 
     return await get_instance(hass).async_add_executor_job(_query)
 
@@ -146,7 +159,7 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
 
             statistic_id = f"{DOMAIN}:{cups.lower()}_{flow}_energy"
             try:
-                last_saved = await _async_last_saved_stat(hass, statistic_id)
+                last_saved = await _async_last_saved_stat_before(hass, statistic_id, points[0][0])
             except Exception as err:  # noqa: BLE001 — sin poder leerlo, se asume "sin dato previo" (0.0)
                 _LOGGER.warning("No se pudo leer el último sum guardado de %s (%s): %s", cups, flow, err)
                 last_saved = None
