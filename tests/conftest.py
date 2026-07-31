@@ -20,6 +20,7 @@ defined" para TODOS los tests que hacen `hass.config_entries.async_setup(...)`.
 
 import sys
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
@@ -71,6 +72,32 @@ if not _HOMEASSISTANT_AVAILABLE:
     sys.modules["homeassistant"] = _ha
     sys.modules["homeassistant.config_entries"] = _ha_config_entries
     sys.modules["homeassistant.core"] = _ha_core
+
+    # statistics.py también usa `homeassistant.const.UnitOfEnergy` y `homeassistant.util.dt`
+    # (solo para el formato/huso horario, no lógica de HA de verdad) — un stub mínimo basta para
+    # poder probar en local su lógica pura (_hourly_points, _daily_points, _parse_day/_parse_hour).
+    _ha_const = types.ModuleType("homeassistant.const")
+
+    class UnitOfEnergy:  # noqa: D101
+        KILO_WATT_HOUR = "kWh"
+
+    _ha_const.UnitOfEnergy = UnitOfEnergy
+
+    _ha_util = types.ModuleType("homeassistant.util")
+    _ha_util_dt = types.ModuleType("homeassistant.util.dt")
+    # UTC como "huso local" en el stub (Home Assistant de verdad usaría el huso configurado) — para
+    # comprobar la fórmula de conversión, no el comportamiento exacto de zonas horarias de HA.
+    _ha_util_dt.as_utc = lambda value: value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    _ha_util_dt.as_local = lambda value: value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    _ha_util_dt.now = lambda: datetime.now(timezone.utc)
+    _ha_util_dt.utcnow = lambda: datetime.now(timezone.utc)
+    _ha_util.dt = _ha_util_dt
+    _ha.const = _ha_const
+    _ha.util = _ha_util
+
+    sys.modules["homeassistant.const"] = _ha_const
+    sys.modules["homeassistant.util"] = _ha_util
+    sys.modules["homeassistant.util.dt"] = _ha_util_dt
 
 if _HOMEASSISTANT_AVAILABLE:
     import pytest

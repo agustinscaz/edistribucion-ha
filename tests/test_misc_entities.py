@@ -107,6 +107,42 @@ class TestBinarySensor:
         assert state is not None
         assert state.state == "on"
 
+    async def test_power_excess_off_when_within_contracted_limit(self, hass, mock_add_on):
+        """El fixture mock_add_on trae maxValue=3.5 == potencia contratada -> no hay exceso."""
+        from homeassistant.helpers import entity_registry as er
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_power_excess")
+        assert entity_id is not None
+        assert hass.states.get(entity_id).state == "off"
+
+    async def test_power_excess_on_when_above_contracted_limit(self, hass, aioclient_mock):
+        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
+        aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
+        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 4.2, "points": []})
+        aioclient_mock.get(
+            "http://localhost:8099/contracted-power/contA",
+            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
+        )
+        from homeassistant.helpers import entity_registry as er
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_power_excess")
+        assert entity_id is not None
+        state = hass.states.get(entity_id)
+        assert state.state == "on"
+        assert state.attributes["maximo_real_kw"] == 4.2
+
 
 class TestButtons:
     async def test_pvpc_refresh_button_absent_without_pvpc_tariff(self, hass, mock_add_on):

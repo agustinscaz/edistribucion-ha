@@ -1,8 +1,10 @@
 """Relleno de histórico en el Dashboard de Energía usando la Statistics API del recorder.
 
-Se ejecuta una vez al configurar cada suministro (usando el consumo mensual ya disponible), para
-que el Dashboard de Energía no empiece con el gráfico vacío. Es idempotente (mismo statistic_id +
-misma fecha se sobrescribe, no se duplica), así que es seguro llamarlo en cada arranque.
+Se ejecuta al configurar cada suministro Y una vez al día en cada ciclo del coordinator (ver
+coordinator._async_backfill_statistics_if_needed), usando el consumo mensual ya disponible, para
+que el Dashboard de Energía no empiece con el gráfico vacío y los meses nuevos se rellenen solos
+aunque Home Assistant lleve semanas sin reiniciarse. Es idempotente (mismo statistic_id + misma
+fecha se sobrescribe, no se duplica), así que es seguro llamarlo tantas veces como haga falta.
 
 Esta es la parte más "avanzada" de toda la integración (la Statistics API del recorder no es
 trivial y ha cambiado de forma sutil entre versiones de Home Assistant) — por eso todo aquí está
@@ -13,6 +15,7 @@ funcionando con normalidad (solo te quedas sin el relleno retroactivo, no sin lo
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from homeassistant.const import UnitOfEnergy
@@ -30,8 +33,44 @@ def _parse_day(date_str: str) -> datetime:
     return dt_util.as_utc(dt_util.as_local(naive_midnight))
 
 
+def _leading_hour(hour_label: str) -> int | None:
+    """'13 - 14 h' -> 13 (el formato de hora que usa el add-on en hourlyByDate)."""
+    match = re.match(r"(\d+)", hour_label or "")
+    return int(match.group(1)) if match else None
+
+
+def _parse_hour(date_str: str, hour: int) -> datetime:
+    """'DD/MM/YYYY' + hora (0-23) -> ese instante en UTC, tz-aware."""
+    naive = datetime.strptime(date_str, "%d/%m/%Y").replace(hour=hour, minute=0, second=0, microsecond=0)
+    return dt_util.as_utc(dt_util.as_local(naive))
+
+
+def _hourly_points(month_data: dict, field: str) -> list[tuple[datetime, float]] | None:
+    """Un punto por HORA a partir de `hourlyByDate` — más granular que un punto por día. None si
+    no hay datos horarios (para que el llamador haga fallback a `_daily_points`)."""
+    hourly = month_data.get("hourlyByDate")
+    if not hourly:
+        return None
+    points: list[tuple[datetime, float]] = []
+    for date_str, hours in hourly.items():
+        for h in hours:
+            hour = _leading_hour(h.get("hour", ""))
+            if hour is None:
+                continue
+            points.append((_parse_hour(date_str, hour), h.get(field) or 0.0))
+    return points or None
+
+
+def _daily_points(month_data: dict, field: str) -> list[tuple[datetime, float]] | None:
+    """Un punto por DÍA a partir de `dailyTotals` — usado si no hay `hourlyByDate` disponible."""
+    days = month_data.get("dailyTotals")
+    if not days:
+        return None
+    return [(_parse_day(day["date"]), day.get(field) or 0.0) for day in days]
+
+
 async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month_data: dict | None) -> None:
-    if not month_data or not month_data.get("dailyTotals"):
+    if not month_data or not (month_data.get("hourlyByDate") or month_data.get("dailyTotals")):
         return
     if "recorder" not in hass.config.components:
         return
@@ -43,21 +82,22 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
         _LOGGER.debug("Recorder/Statistics API no disponible, sin relleno de histórico: %s", err)
         return
 
-    days = sorted(month_data["dailyTotals"], key=lambda d: _parse_day(d["date"]))
-
     for flow, field, label in (
         ("imported", "importedKwh", "importada"),
         ("exported", "exportedKwh", "exportada"),
     ):
         try:
-            statistic_id = f"{DOMAIN}:{cups.lower()}_{flow}_energy"
+            points = _hourly_points(month_data, field) or _daily_points(month_data, field)
+            if not points:
+                continue
+            points.sort(key=lambda p: p[0])
             running_total = 0.0
             stats: list[StatisticData] = []
-            for day in days:
-                running_total += day.get(field) or 0.0
-                stats.append(StatisticData(start=_parse_day(day["date"]), sum=running_total, state=day.get(field) or 0.0))
-            if not stats:
-                continue
+            for start, value in points:
+                running_total += value
+                stats.append(StatisticData(start=start, sum=running_total, state=value))
+
+            statistic_id = f"{DOMAIN}:{cups.lower()}_{flow}_energy"
             metadata = StatisticMetaData(
                 has_mean=False,
                 has_sum=True,

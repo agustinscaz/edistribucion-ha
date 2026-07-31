@@ -90,7 +90,17 @@ class FakeCoordinator:
 
 
 def _bundle(sp_overrides=None, has_export=False):
-    sp = {"cups": "ES123", "cupsId": "cupsA", "contId": "contA", "tariff_type": "tramos"}
+    # contracted_power_*_kw se pone en `sp` porque el coordinador real lo copia ahí desde
+    # bundle["contract"] (ver coordinator._async_update_data) — sin esto, power_cost() siempre
+    # daría 0 pase lo que pase con price_power_punta/valle.
+    sp = {
+        "cups": "ES123",
+        "cupsId": "cupsA",
+        "contId": "contA",
+        "tariff_type": "tramos",
+        "contracted_power_punta_kw": 3.5,
+        "contracted_power_valle_kw": 3.5,
+    }
     sp.update(sp_overrides or {})
     month = {"totalImportedKwh": 10.0, "totalExportedKwh": 3.0 if has_export else 0.0, "hourlyByDate": {}}
     return {

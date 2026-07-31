@@ -30,7 +30,9 @@ _SUPPLY_POINTS = [
 @pytest.fixture
 def mock_add_on(aioclient_mock):
     aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
-    aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
+    # Los mocks CON `params` deben registrarse antes que el genérico sin params: aioclient_mock
+    # compara en orden de registro y un mock sin `params` hace de comodín (coincide con cualquier
+    # query) — si fuera el primero, "ganaría" también para las llamadas con range=2/range=3.
     aioclient_mock.get(
         "http://localhost:8099/consumption/contA",
         params={"range": "2"},
@@ -41,6 +43,7 @@ def mock_add_on(aioclient_mock):
         params={"range": "3"},
         json={"totalImportedKwh": 20.0, "hourlyByDate": {}},
     )
+    aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
     aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
     aioclient_mock.get(
         "http://localhost:8099/contracted-power/contA",

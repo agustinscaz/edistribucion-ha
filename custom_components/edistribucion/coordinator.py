@@ -23,6 +23,7 @@ from .const import (
     DOMAIN,
 )
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
+from .statistics import async_backfill_energy_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +32,14 @@ RANGE_WEEK = "2"
 
 ISSUE_CONNECTION = "addon_connection_failed"
 ISSUE_INVALID_CREDENTIALS = "invalid_credentials"
+
+
+def _latest_daily_values(consumption: dict | None) -> dict[str, float] | None:
+    """{"imported": kwh, "exported": kwh} del día más reciente en dailyTotals, o None sin datos."""
+    if not consumption or not consumption.get("dailyTotals"):
+        return None
+    latest = max(consumption["dailyTotals"], key=lambda d: datetime.strptime(d["date"], "%d/%m/%Y"))
+    return {"imported": latest.get("importedKwh") or 0.0, "exported": latest.get("exportedKwh") or 0.0}
 
 
 class EdistribucionCoordinator(DataUpdateCoordinator):
@@ -50,6 +59,13 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self._pvpc_fetched_date: str | None = None
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
+        self._last_backfill_day: str | None = None
+        # Última vez que se vio cambiar importado/exportado "de hoy" de cada CUPS — para el
+        # atributo de "frescura del dato" (ver sensor.py): la curva horaria de e-distribución se
+        # publica con retraso, así que el valor puede quedarse igual varias horas sin que eso
+        # signifique que la integración esté fallando.
+        self._last_value_change: dict[str, dict[str, datetime]] = {}
+        self._previous_values: dict[str, dict[str, float]] = {}
 
     def _pvpc_zones_needed(self) -> set[str]:
         """Zonas de las que hace falta precio PVPC — no solo si la tarifa activa es "pvpc": el
@@ -151,12 +167,14 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 except EdistribucionApiError as err:
                     _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
 
+                self._track_value_freshness(cont_id, bundle)
                 data[cont_id] = bundle
 
             self.last_success_time = dt_util.utcnow()
             self._consecutive_failures = 0
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_CONNECTION}_{self.entry_id}")
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}")
+            await self._async_backfill_statistics_if_needed(data)
             return data
         except InvalidCredentialsError as err:
             # Caso inequívoco: no tiene sentido esperar a varios fallos seguidos como con un fallo de
@@ -182,3 +200,37 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     translation_key="addon_connection_failed",
                 )
             raise UpdateFailed(f"Error hablando con el add-on de e-distribución: {err}") from err
+
+    async def _async_backfill_statistics_if_needed(self, data: dict) -> None:
+        """Repite el relleno de estadísticas del Dashboard de Energía una vez al día (no solo al
+        configurar la integración) — así los meses nuevos se rellenan solos aunque Home Assistant
+        lleve semanas sin reiniciarse. Es idempotente (ver statistics.py), así que repetirlo más a
+        menudo no haría daño, pero tampoco aportaría nada."""
+        today_key = dt_util.now().strftime("%Y-%m-%d")
+        if self._last_backfill_day == today_key:
+            return
+        for bundle in data.values():
+            sp = bundle.get("supply_point") or {}
+            await async_backfill_energy_statistics(self.hass, sp.get("cups", ""), bundle.get("month"))
+        self._last_backfill_day = today_key
+
+    def _track_value_freshness(self, cont_id: str, bundle: dict) -> None:
+        """Registra cuándo cambió por última vez el importado/exportado "de hoy" de este CUPS —
+        para poder distinguir "sin consumo" de "dato atascado esperando sync del distribuidor" (ver
+        sensor.py). La curva horaria de e-distribución se publica con retraso: que este ciclo del
+        coordinator haya ido bien no significa que el DATO en sí sea reciente."""
+        values = _latest_daily_values(bundle.get("consumption"))
+        if values is None:
+            return
+        now = dt_util.utcnow()
+        previous = self._previous_values.get(cont_id)
+        tracked = self._last_value_change.setdefault(cont_id, {})
+        for flow, value in values.items():
+            if flow not in tracked or previous is None or value != previous.get(flow):
+                tracked[flow] = now
+        self._previous_values[cont_id] = values
+
+    def last_value_change(self, cont_id: str, flow: str) -> datetime | None:
+        """Última vez que cambió el importado/exportado "de hoy" de este CUPS, o None si aún no
+        hay datos suficientes para saberlo."""
+        return self._last_value_change.get(cont_id, {}).get(flow)

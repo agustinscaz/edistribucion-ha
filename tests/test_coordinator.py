@@ -171,6 +171,63 @@ async def test_successful_update_clears_repairs(hass):
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"addon_connection_failed_{entry.entry_id}") is None
 
 
+async def test_value_freshness_tracks_change_and_stays_stable(hass):
+    """La curva horaria de e-distribución se publica con retraso — el timestamp de "último cambio"
+    solo debe avanzar cuando el valor de verdad cambia, no en cada ciclo del coordinator."""
+    entry = _make_entry(hass)
+    client = _make_client()
+    client.async_get_consumption.return_value = {
+        "totalImportedKwh": 5.0,
+        "dailyTotals": [{"date": "30/07/2026", "importedKwh": 5.0, "exportedKwh": 0.0}],
+        "hourlyByDate": {},
+    }
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+
+    await coordinator._async_update_data()
+    first_change = coordinator.last_value_change("cont1", "imported")
+    assert first_change is not None
+
+    await coordinator._async_update_data()  # mismo valor -> no debe moverse el timestamp
+    assert coordinator.last_value_change("cont1", "imported") == first_change
+
+    client.async_get_consumption.return_value = {
+        "totalImportedKwh": 6.0,
+        "dailyTotals": [{"date": "30/07/2026", "importedKwh": 6.0, "exportedKwh": 0.0}],
+        "hourlyByDate": {},
+    }
+    await coordinator._async_update_data()
+    assert coordinator.last_value_change("cont1", "imported") > first_change
+
+
+async def test_value_freshness_none_without_daily_totals(hass):
+    entry = _make_entry(hass)
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+    await coordinator._async_update_data()
+    assert coordinator.last_value_change("cont1", "imported") is None
+
+
+async def test_backfill_runs_once_per_day(hass, monkeypatch):
+    entry = _make_entry(hass)
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+
+    calls = {"n": 0}
+
+    async def fake_backfill(hass_arg, cups, month_data):
+        calls["n"] += 1
+
+    monkeypatch.setattr("custom_components.edistribucion.coordinator.async_backfill_energy_statistics", fake_backfill)
+
+    await coordinator._async_update_data()
+    assert calls["n"] == 1
+
+    await coordinator._async_update_data()
+    assert calls["n"] == 1  # mismo día, no se repite
+
+    coordinator._last_backfill_day = None  # simula que cambió el día
+    await coordinator._async_update_data()
+    assert calls["n"] == 2
+
+
 class TestPvpcZonesNeeded:
     def test_only_tracked_supply_points_count(self, hass):
         entry = _make_entry(

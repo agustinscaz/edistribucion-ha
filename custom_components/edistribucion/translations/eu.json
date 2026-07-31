@@ -124,6 +124,9 @@
     "binary_sensor": {
       "connected": {
         "name": "Konektatuta"
+      },
+      "power_excess": {
+        "name": "Potentzia gehiegikeria detektatuta"
       }
     },
     "button": {

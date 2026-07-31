@@ -92,11 +92,12 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 
 | Entidad | Descripción |
 |---|---|
-| `sensor.<cups>_energia_importada_hoy` | Energía importada de la red hoy (kWh) — compatible con el Dashboard de Energía |
-| `sensor.<cups>_energia_exportada_hoy` | Energía exportada a la red hoy (kWh, si tienes autoconsumo con excedentes) |
+| `sensor.<cups>_energia_importada_hoy` | Energía importada de la red hoy (kWh) — compatible con el Dashboard de Energía. Atributos `ultimo_cambio`/`minutos_sin_cambiar`: la curva horaria de e-distribución se publica con retraso, así que el valor puede quedarse igual varias horas sin que sea un fallo — estos atributos permiten distinguir "sin consumo" de "dato atascado" sin mirar el histórico a mano |
+| `sensor.<cups>_energia_exportada_hoy` | Energía exportada a la red hoy (kWh, si tienes autoconsumo con excedentes) — mismos atributos `ultimo_cambio`/`minutos_sin_cambiar` |
 | `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
-| `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
+| `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora, detalle por periodo (P1-P6), y el máximo real de TODO el periodo devuelto (`maximo_real_kw`, no solo el último punto) como atributos |
+| `binary_sensor.<cups>_exceso_de_potencia_detectado` | ON si la potencia máxima real demandada (dato oficial de e-distribución) ha superado la potencia contratada — con el máximo real y, si el add-on lo distingue, el máximo por periodo (punta/valle) como atributos |
 | `sensor.<cups>_comparativa_con_el_mismo_mes_del_año_anterior` | % de cambio del consumo importado de este mes frente al mismo mes de hace un año (sin valor si el contrato es más nuevo que un año) |
 | `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has configurado precio de energía para este suministro — el cálculo depende del tipo de tarifa elegido (fija/tramos/pvpc) |
 | `sensor.<cups>_precio_medio_del_kwh_mes` | Coste total del mes ÷ kWh importados — para comparar contra otras ofertas del mercado |
@@ -180,7 +181,7 @@ El add-on tiene un panel de estado en HTML (`GET /`, en vez de JSON) con: si hay
 - **Diagnósticos descargables**: Ajustes → Dispositivos y servicios → e-distribución → menú (⋮) → Descargar diagnósticos. Útil para adjuntar a un issue sin tener que copiar nada a mano (la dirección postal se redacta automáticamente).
 - **Reparaciones (Repairs)**: si el add-on falla varias veces seguidas, aparece un aviso en Ajustes → Sistema → Reparaciones en vez de solo marcar los sensores como "no disponible" en silencio. Si el fallo es concretamente por **credenciales incorrectas**, el aviso lo dice explícitamente en vez de un genérico "no se puede conectar".
 - **Reintentos automáticos**: un fallo de red puntual entre la integración y el add-on se reintenta un par de veces (con espera creciente) antes de darse por vencido.
-- **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro, se intenta rellenar como estadística externa el consumo del último mes ya disponible, para no empezar con el gráfico completamente vacío.
+- **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro (y una vez al día en adelante, no solo al arrancar) se rellena como estadística externa el consumo del mes en curso, con un punto por HORA si el add-on trae datos horarios (`hourlyByDate`) o por día si no — para no empezar con el gráfico vacío, y para que los meses nuevos se rellenen solos aunque Home Assistant lleve semanas sin reiniciarse.
 - **Servicio `edistribucion.consultar_consumo`**: consulta bajo demanda un rango y fecha de referencia concretos (día/semana/mes de un mes anterior, por ejemplo), no solo el periodo actual que ya cachean los sensores — útil desde Herramientas de desarrollo → Acciones, o en tus propias automatizaciones/scripts.
 - **Servicio `edistribucion.exportar_precios_pvpc`**: vuelca a CSV (en la respuesta del servicio) los precios PVPC ya cacheados del mes en curso, opcionalmente filtrados por zona — útil para analizarlos fuera de Home Assistant.
 - **Botón "Actualizar precios PVPC"** (solo si algún suministro usa tarifa `pvpc`): fuerza la petición a ESIOS ya, sin esperar al ciclo diario — útil si falló antes, o para comprobar si ya han publicado los precios de mañana.
@@ -244,7 +245,7 @@ La lógica de negocio (tarifas, festivos, PVPC, autosuficiencia, comparador de t
 
 ```bash
 pip install pytest pytest-asyncio pytest-cov pytest-aiohttp holidays
-pytest tests/test_costs.py tests/test_esios.py tests/test_api.py tests/test_migration.py --cov=custom_components.edistribucion
+pytest tests/test_costs.py tests/test_esios.py tests/test_api.py tests/test_migration.py tests/test_statistics.py --cov=custom_components.edistribucion
 ```
 
 El resto (config_flow, coordinator, sensor, `__init__`, botones...) necesita objetos reales de Home Assistant (`pytest-homeassistant-custom-component`) y se verifica en CI (ver `.github/workflows/validate.yml`), no en un entorno de desarrollo mínimo:

@@ -124,6 +124,9 @@
     "binary_sensor": {
       "connected": {
         "name": "Verbunden"
+      },
+      "power_excess": {
+        "name": "Leistungsüberschreitung erkannt"
       }
     },
     "button": {

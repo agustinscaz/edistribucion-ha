@@ -14,7 +14,10 @@ from custom_components.edistribucion.costs import (  # noqa: E402
     estimate_cost_as_tariff,
     estimate_energy_cost,
     hour_period,
+    max_power_by_period,
+    max_power_reported,
     power_cost,
+    power_excess_detected,
     pvpc_cost_breakdown,
     self_consumption_ratio,
     surplus_compensation_value,
@@ -327,3 +330,71 @@ class TestSurplusCompensationValue:
     def test_basic_value(self):
         sp = {"surplus_compensation": True, "surplus_price": 0.05}
         assert surplus_compensation_value(sp, 10.0) == 0.5
+
+
+class TestMaxPowerReported:
+    def test_none_without_data(self):
+        assert max_power_reported(None) is None
+        assert max_power_reported({}) is None
+
+    def test_uses_max_value_when_present(self):
+        assert max_power_reported({"maxValue": 3.8, "points": [{"valueKw": 1.0}]}) == 3.8
+
+    def test_falls_back_to_max_of_points_without_max_value(self):
+        power = {"points": [{"valueKw": 2.0}, {"valueKw": 4.2}, {"valueKw": 1.0}]}
+        assert max_power_reported(power) == 4.2
+
+    def test_none_without_max_value_or_points(self):
+        assert max_power_reported({"points": []}) is None
+
+
+class TestPowerExcessDetected:
+    def test_none_without_max_power_demand(self):
+        assert power_excess_detected(None, {"contractedPowerPuntaKw": 3.5}) is None
+
+    def test_none_without_contract(self):
+        assert power_excess_detected({"maxValue": 4.0}, None) is None
+
+    def test_none_without_contracted_limit(self):
+        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 0}) is None
+
+    def test_true_when_above_punta_limit(self):
+        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}) is True
+
+    def test_false_when_within_limit(self):
+        assert power_excess_detected({"maxValue": 3.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}) is False
+
+    def test_compares_against_the_higher_of_punta_and_valle(self):
+        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 5.0}) is False
+
+
+class TestMaxPowerByPeriod:
+    def test_empty_without_data(self):
+        assert max_power_by_period(None) == {}
+        assert max_power_by_period({"points": []}) == {}
+
+    def test_dict_shaped_periods(self):
+        power = {
+            "points": [
+                {"periods": {"punta": 3.0, "valle": 1.0}},
+                {"periods": {"punta": 4.5, "valle": 0.8}},
+            ]
+        }
+        assert max_power_by_period(power) == {"punta": 4.5, "valle": 1.0}
+
+    def test_list_shaped_periods(self):
+        power = {
+            "points": [
+                {"periods": [{"tipo": "punta", "valueKw": 3.0}, {"tipo": "valle", "valueKw": 1.0}]},
+                {"periods": [{"tipo": "punta", "valueKw": 4.5}]},
+            ]
+        }
+        assert max_power_by_period(power) == {"punta": 4.5, "valle": 1.0}
+
+    def test_ignores_points_without_periods(self):
+        power = {"points": [{"date": "30/07/2026"}, {"periods": {"punta": 2.0}}]}
+        assert max_power_by_period(power) == {"punta": 2.0}
+
+    def test_unrecognizable_entry_is_skipped(self):
+        power = {"points": [{"periods": [{"onlytext": "x"}, {"onlynum": 5}]}]}
+        assert max_power_by_period(power) == {}

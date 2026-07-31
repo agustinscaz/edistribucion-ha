@@ -223,3 +223,68 @@ def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> flo
     if not price or exported_kwh is None:
         return None
     return round(exported_kwh * price, 4)
+
+
+def max_power_reported(max_power_demand: dict | None) -> float | None:
+    """Máximo real reportado por e-distribución en todo el periodo devuelto (no solo el último
+    punto, ver `maxValue`) — si el add-on no trae `maxValue`, se calcula como el mayor `valueKw` de
+    todos los `points`."""
+    if not max_power_demand:
+        return None
+    max_value = max_power_demand.get("maxValue")
+    if max_value is not None:
+        return max_value
+    points = max_power_demand.get("points") or []
+    values = [p.get("valueKw") for p in points if p.get("valueKw") is not None]
+    return max(values) if values else None
+
+
+def power_excess_detected(max_power_demand: dict | None, contract: dict | None) -> bool | None:
+    """¿La potencia máxima real demandada ha superado la potencia contratada? None si no hay datos
+    suficientes (sin telegestión, o sin lectura de contrato) para saberlo. Se compara contra el
+    mayor de punta/valle contratados — cualquier punto por encima de eso es un exceso real."""
+    reported = max_power_reported(max_power_demand)
+    if reported is None or not contract:
+        return None
+    limit = max(contract.get("contractedPowerPuntaKw") or 0, contract.get("contractedPowerValleKw") or 0)
+    if not limit:
+        return None
+    return reported > limit
+
+
+def _extract_period_value(period_entry) -> tuple[str, float] | tuple[None, None]:
+    """Intenta sacar (nombre_periodo, valor_kw) de una entrada de "periods" sin asumir un nombre de
+    clave concreto (el add-on no documenta el formato exacto) — usa la primera clave con valor
+    numérico como el valor, y la primera clave de texto como la etiqueta."""
+    if not isinstance(period_entry, dict):
+        return None, None
+    label = None
+    value = None
+    for key, val in period_entry.items():
+        if isinstance(val, (int, float)) and value is None:
+            value = float(val)
+        elif isinstance(val, str) and label is None:
+            label = val
+    return (label, value) if label is not None and value is not None else (None, None)
+
+
+def max_power_by_period(max_power_demand: dict | None) -> dict[str, float]:
+    """Máximo por periodo (punta/valle...) si `periods` lo distingue, agregando el mayor valor de
+    CADA periodo a lo largo de todos los puntos — no se asume una forma concreta de `periods` (el
+    add-on no la documenta): admite tanto un dict {periodo: valor} como una lista de entradas con
+    alguna clave numérica y otra de texto. Vacío si no hay nada reconocible."""
+    if not max_power_demand:
+        return {}
+    result: dict[str, float] = {}
+    for point in max_power_demand.get("points") or []:
+        periods = point.get("periods")
+        if isinstance(periods, dict):
+            for label, val in periods.items():
+                if isinstance(val, (int, float)):
+                    result[label] = max(result.get(label, 0.0), float(val))
+        elif isinstance(periods, list):
+            for entry in periods:
+                label, val = _extract_period_value(entry)
+                if label is not None:
+                    result[label] = max(result.get(label, 0.0), val)
+    return result

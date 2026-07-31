@@ -24,6 +24,8 @@ from .costs import (
     average_price_per_kwh,
     estimate_cost_as_tariff,
     estimate_energy_cost,
+    max_power_by_period,
+    max_power_reported,
     power_cost,
     self_consumption_ratio,
     surplus_compensation_value,
@@ -181,6 +183,20 @@ class _EdistribucionBaseSensor(CoordinatorEntity[EdistribucionCoordinator], Sens
         return self.coordinator.data.get(self._cont_id, {})
 
 
+def _freshness_attributes(coordinator: EdistribucionCoordinator, cont_id: str, flow: str) -> dict:
+    """Cuándo cambió por última vez este valor — la curva horaria de e-distribución se publica con
+    retraso, así que "hoy" puede quedarse igual varias horas sin que sea un fallo de la integración
+    (ver coordinator._track_value_freshness). Permite distinguir eso de un dato realmente atascado
+    sin tener que mirar el histórico a mano."""
+    last_change = coordinator.last_value_change(cont_id, flow)
+    if last_change is None:
+        return {}
+    return {
+        "ultimo_cambio": last_change.isoformat(),
+        "minutos_sin_cambiar": round((dt_util.utcnow() - last_change).total_seconds() / 60),
+    }
+
+
 class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
     entity_description = SensorEntityDescription(
         key="imported_energy_today",
@@ -199,6 +215,10 @@ class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
     def native_value(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["importedKwh"] if day else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _freshness_attributes(self.coordinator, self._cont_id, "imported")
 
 
 class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
@@ -219,6 +239,10 @@ class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
     def native_value(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["exportedKwh"] if day else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _freshness_attributes(self.coordinator, self._cont_id, "exported")
 
 
 class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
@@ -291,11 +315,16 @@ class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
         if not points:
             return {}
         last = points[-1]
+        by_period = max_power_by_period(power)
         return {
             "date": last.get("date"),
             "hour": last.get("hour"),
             "periods": last.get("periods"),
             "max_value_reported": power.get("maxValue"),
+            # Máximo real de TODO el periodo devuelto (no solo el último punto) — ver
+            # binary_sensor.EdistribucionPowerExcessSensor para la comparación contra lo contratado.
+            "maximo_real_kw": max_power_reported(power),
+            **({"maximo_por_periodo_kw": by_period} if by_period else {}),
         }
 
     @property

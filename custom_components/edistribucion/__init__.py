@@ -15,7 +15,6 @@ from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
 from .esios import pvpc_prices_to_csv
 from .migration import async_migrate_legacy_options
-from .statistics import async_backfill_energy_statistics
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.CALENDAR]
 
@@ -42,10 +41,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    for bundle in coordinator.data.values():
-        sp = bundle.get("supply_point") or {}
-        await async_backfill_energy_statistics(hass, sp.get("cups", ""), bundle.get("month"))
 
     if not hass.services.has_service(DOMAIN, SERVICE_CONSULTAR_CONSUMO):
 

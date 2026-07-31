@@ -124,6 +124,9 @@
     "binary_sensor": {
       "connected": {
         "name": "Подключено"
+      },
+      "power_excess": {
+        "name": "Обнаружено превышение мощности"
       }
     },
     "button": {
