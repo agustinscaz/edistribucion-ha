@@ -5,6 +5,7 @@ pip), se verifica vía CI. Ver requirements_test.txt."""
 
 from __future__ import annotations
 
+import aiohttp
 import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
@@ -43,6 +44,10 @@ _SUPPLY_POINTS = [
 def mock_add_on(aioclient_mock):
     aioclient_mock.get("http://localhost:8099/info", json={"name": "e-distribución"})
     aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
+    # El descubrimiento zeroconf usa la IP, no "localhost" — se registra también para que esos
+    # tests (que reutilizan este fixture) encuentren mock.
+    aioclient_mock.get("http://127.0.0.1:8099/info", json={"name": "e-distribución"})
+    aioclient_mock.get("http://127.0.0.1:8099/supply-points", json=_SUPPLY_POINTS)
     return aioclient_mock
 
 
@@ -59,7 +64,9 @@ async def test_user_flow_success(hass, mock_add_on):
 
 
 async def test_user_flow_cannot_connect_shows_error(hass, aioclient_mock):
-    aioclient_mock.get("http://localhost:8099/info", exc=Exception("boom"))
+    # api.py solo atrapa aiohttp.ClientError/TimeoutError (ver EdistribucionApiError) — una
+    # Exception genérica no la envolvería y se propagaría sin control.
+    aioclient_mock.get("http://localhost:8099/info", exc=aiohttp.ClientError("boom"))
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     result2 = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"host": "localhost", "port": 8099}
@@ -100,7 +107,7 @@ async def test_zeroconf_discovery_confirms_and_creates_entry(hass, mock_add_on):
 
 
 async def test_zeroconf_discovery_cannot_connect_aborts(hass, aioclient_mock):
-    aioclient_mock.get("http://127.0.0.1:8099/info", exc=Exception("boom"))
+    aioclient_mock.get("http://127.0.0.1:8099/info", exc=aiohttp.ClientError("boom"))
     discovery_info = ZeroconfServiceInfo(
         ip_address="127.0.0.1",
         ip_addresses=["127.0.0.1"],

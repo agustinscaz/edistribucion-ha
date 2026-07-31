@@ -114,7 +114,10 @@ async def _setup_with_fake_coordinator(hass, bundles: dict):
 
     added = []
 
-    async def async_add_entities(new_entities, update_before_add=False):
+    def async_add_entities(new_entities, update_before_add=False):
+        # AddEntitiesCallback es una función síncrona en HA real (sensor.py la llama sin await) —
+        # si aquí fuera `async def`, la llamada sin await solo crearía una corrutina sin ejecutar,
+        # y `added` se quedaría vacío en silencio.
         added.extend(new_entities)
 
     await sensor_module.async_setup_entry(hass, entry, async_add_entities)

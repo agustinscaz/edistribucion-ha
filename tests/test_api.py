@@ -9,6 +9,12 @@ from aiohttp.test_utils import TestClient
 
 from custom_components.edistribucion.api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
 
+# Monta un aiohttp.test_utils.TestServer real (socket local de verdad) — en CI,
+# pytest-homeassistant-custom-component trae pytest-socket, que bloquea sockets por defecto para
+# evitar llamadas de red reales durante los tests de HA. Aquí el socket es local (127.0.0.1), así
+# que se permite explícitamente para todo el módulo.
+pytestmark = pytest.mark.enable_socket
+
 
 def _json_handler(payload, status: int = 200):
     async def handler(request):

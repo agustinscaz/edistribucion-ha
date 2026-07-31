@@ -17,6 +17,11 @@ from custom_components.edistribucion.esios import (
     pvpc_prices_to_csv,
 )
 
+# Servidor aiohttp real de pruebas (socket local) — pytest-socket (traído por
+# pytest-homeassistant-custom-component en CI) bloquea sockets por defecto; se permite para todo
+# el módulo, igual que en test_api.py.
+pytestmark = pytest.mark.enable_socket
+
 
 async def _client_with_mock_archive(aiohttp_client, monkeypatch, app):
     """`async_get_pvpc_prices_for_day` llama a la URL ABSOLUTA `esios.ARCHIVE_URL` — el cliente de

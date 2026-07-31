@@ -220,14 +220,25 @@ async def test_pvpc_prices_fetched_once_per_day(hass, monkeypatch):
 
 
 async def test_force_refresh_bypasses_daily_cache(hass, monkeypatch):
+    """Si el día de mañana aún no está publicado en ESIOS, la primera pasada lo deja sin cachear
+    (rompe el bucle con EsiosError). Un refresco forzado, una vez publicado, debe volver a pedirlo
+    — no basta con resetear `_pvpc_fetched_date`, ya que el caché por día (`zone_prices`) seguiría
+    cubriendo el resto del mes y no generaría ninguna petición nueva."""
+    from custom_components.edistribucion.esios import EsiosError
+
     entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"c1": {"track": True, "pvpc_zone": "PCB"}}})
     client = _make_client()
     coordinator = EdistribucionCoordinator(hass, client, entry)
 
     call_count = {"n": 0}
+    tomorrow_published = {"flag": False}
 
     async def fake_fetch(session, zone, day):
         call_count["n"] += 1
+        from homeassistant.util import dt as dt_util
+
+        if day > dt_util.now().date() and not tomorrow_published["flag"]:
+            raise EsiosError("aún no publicado")
         return {f"{day.strftime('%d/%m/%Y')} 0": 0.1}
 
     monkeypatch.setattr("custom_components.edistribucion.coordinator.async_get_pvpc_prices_for_day", fake_fetch)
@@ -235,8 +246,9 @@ async def test_force_refresh_bypasses_daily_cache(hass, monkeypatch):
     await coordinator._async_update_pvpc_prices()
     n_after_first = call_count["n"]
 
+    tomorrow_published["flag"] = True
     await coordinator.async_force_refresh_pvpc_prices()
-    assert call_count["n"] > n_after_first  # el refresco forzado sí volvió a pedir
+    assert call_count["n"] > n_after_first  # el refresco forzado sí volvió a pedir el día que faltaba
 
 
 async def test_esios_error_does_not_crash_update(hass, monkeypatch):
