@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Energia importada avui" },
-      "exported_energy_today": { "name": "Energia exportada avui" },
-      "imported_energy_week": { "name": "Energia importada (setmana)" },
-      "exported_energy_week": { "name": "Energia exportada (setmana)" },
-      "imported_energy_month": { "name": "Energia importada (mes)" },
-      "exported_energy_month": { "name": "Energia exportada (mes)" },
-      "max_power_demand": { "name": "Potència màxima demandada" },
-      "contracted_power": { "name": "Potència contractada" },
-      "last_update": { "name": "Última actualització" },
-      "next_update": { "name": "Propera actualització" },
-      "estimated_cost_today": { "name": "Cost estimat avui" },
-      "estimated_cost_month": { "name": "Cost estimat (mes)" },
-      "power_cost_today": { "name": "Terme de potència (dia)" },
-      "power_cost_month": { "name": "Terme de potència (mes)" },
-      "surplus_compensation_today": { "name": "Compensació per excedents avui" },
-      "surplus_compensation_month": { "name": "Compensació per excedents (mes)" },
-      "month_vs_last_year": { "name": "Comparativa amb el mateix mes de l'any anterior" },
-      "current_pvpc_price": { "name": "Preu PVPC actual" },
-      "self_consumption_today": { "name": "Autoconsum aproximat avui" },
-      "self_consumption_month": { "name": "Autoconsum aproximat (mes)" }
+      "imported_energy_today": {
+        "name": "Energia importada avui"
+      },
+      "exported_energy_today": {
+        "name": "Energia exportada avui"
+      },
+      "imported_energy_week": {
+        "name": "Energia importada (setmana)"
+      },
+      "exported_energy_week": {
+        "name": "Energia exportada (setmana)"
+      },
+      "imported_energy_month": {
+        "name": "Energia importada (mes)"
+      },
+      "exported_energy_month": {
+        "name": "Energia exportada (mes)"
+      },
+      "max_power_demand": {
+        "name": "Potència màxima demandada"
+      },
+      "contracted_power": {
+        "name": "Potència contractada"
+      },
+      "last_update": {
+        "name": "Última actualització"
+      },
+      "next_update": {
+        "name": "Propera actualització"
+      },
+      "estimated_cost_today": {
+        "name": "Cost estimat avui"
+      },
+      "estimated_cost_month": {
+        "name": "Cost estimat (mes)"
+      },
+      "power_cost_today": {
+        "name": "Terme de potència (dia)"
+      },
+      "power_cost_month": {
+        "name": "Terme de potència (mes)"
+      },
+      "surplus_compensation_today": {
+        "name": "Compensació per excedents avui"
+      },
+      "surplus_compensation_month": {
+        "name": "Compensació per excedents (mes)"
+      },
+      "month_vs_last_year": {
+        "name": "Comparativa amb el mateix mes de l'any anterior"
+      },
+      "current_pvpc_price": {
+        "name": "Preu PVPC actual"
+      },
+      "self_consumption_today": {
+        "name": "Autosuficiència aproximada avui"
+      },
+      "self_consumption_month": {
+        "name": "Autosuficiència aproximada (mes)"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Connectat" }
+      "connected": {
+        "name": "Connectat"
+      }
     },
     "button": {
-      "refresh": { "name": "Actualitza ara" },
-      "relogin": { "name": "Força reconnexió" },
-      "refresh_pvpc": { "name": "Actualitza preus PVPC" }
+      "refresh": {
+        "name": "Actualitza ara"
+      },
+      "relogin": {
+        "name": "Força reconnexió"
+      },
+      "refresh_pvpc": {
+        "name": "Actualitza preus PVPC"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Calendari de consum" }
+      "consumption_calendar": {
+        "name": "Calendari de consum"
+      }
     }
   },
   "issues": {

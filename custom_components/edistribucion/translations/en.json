@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Imported energy today" },
-      "exported_energy_today": { "name": "Exported energy today" },
-      "imported_energy_week": { "name": "Imported energy (week)" },
-      "exported_energy_week": { "name": "Exported energy (week)" },
-      "imported_energy_month": { "name": "Imported energy (month)" },
-      "exported_energy_month": { "name": "Exported energy (month)" },
-      "max_power_demand": { "name": "Maximum power demand" },
-      "contracted_power": { "name": "Contracted power" },
-      "last_update": { "name": "Last update" },
-      "next_update": { "name": "Next update" },
-      "estimated_cost_today": { "name": "Estimated cost today" },
-      "estimated_cost_month": { "name": "Estimated cost (month)" },
-      "power_cost_today": { "name": "Power term (day)" },
-      "power_cost_month": { "name": "Power term (month)" },
-      "surplus_compensation_today": { "name": "Surplus compensation today" },
-      "surplus_compensation_month": { "name": "Surplus compensation (month)" },
-      "month_vs_last_year": { "name": "Comparison vs. same month last year" },
-      "current_pvpc_price": { "name": "Current PVPC price" },
-      "self_consumption_today": { "name": "Approximate self-consumption today" },
-      "self_consumption_month": { "name": "Approximate self-consumption (month)" }
+      "imported_energy_today": {
+        "name": "Imported energy today"
+      },
+      "exported_energy_today": {
+        "name": "Exported energy today"
+      },
+      "imported_energy_week": {
+        "name": "Imported energy (week)"
+      },
+      "exported_energy_week": {
+        "name": "Exported energy (week)"
+      },
+      "imported_energy_month": {
+        "name": "Imported energy (month)"
+      },
+      "exported_energy_month": {
+        "name": "Exported energy (month)"
+      },
+      "max_power_demand": {
+        "name": "Maximum power demand"
+      },
+      "contracted_power": {
+        "name": "Contracted power"
+      },
+      "last_update": {
+        "name": "Last update"
+      },
+      "next_update": {
+        "name": "Next update"
+      },
+      "estimated_cost_today": {
+        "name": "Estimated cost today"
+      },
+      "estimated_cost_month": {
+        "name": "Estimated cost (month)"
+      },
+      "power_cost_today": {
+        "name": "Power term (day)"
+      },
+      "power_cost_month": {
+        "name": "Power term (month)"
+      },
+      "surplus_compensation_today": {
+        "name": "Surplus compensation today"
+      },
+      "surplus_compensation_month": {
+        "name": "Surplus compensation (month)"
+      },
+      "month_vs_last_year": {
+        "name": "Comparison vs. same month last year"
+      },
+      "current_pvpc_price": {
+        "name": "Current PVPC price"
+      },
+      "self_consumption_today": {
+        "name": "Approximate energy self-sufficiency today"
+      },
+      "self_consumption_month": {
+        "name": "Approximate energy self-sufficiency (month)"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Connected" }
+      "connected": {
+        "name": "Connected"
+      }
     },
     "button": {
-      "refresh": { "name": "Refresh now" },
-      "relogin": { "name": "Force reconnect" },
-      "refresh_pvpc": { "name": "Update PVPC prices" }
+      "refresh": {
+        "name": "Refresh now"
+      },
+      "relogin": {
+        "name": "Force reconnect"
+      },
+      "refresh_pvpc": {
+        "name": "Update PVPC prices"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Consumption calendar" }
+      "consumption_calendar": {
+        "name": "Consumption calendar"
+      }
     }
   },
   "issues": {

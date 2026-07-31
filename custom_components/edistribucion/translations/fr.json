@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Énergie importée aujourd'hui" },
-      "exported_energy_today": { "name": "Énergie exportée aujourd'hui" },
-      "imported_energy_week": { "name": "Énergie importée (semaine)" },
-      "exported_energy_week": { "name": "Énergie exportée (semaine)" },
-      "imported_energy_month": { "name": "Énergie importée (mois)" },
-      "exported_energy_month": { "name": "Énergie exportée (mois)" },
-      "max_power_demand": { "name": "Puissance maximale appelée" },
-      "contracted_power": { "name": "Puissance souscrite" },
-      "last_update": { "name": "Dernière mise à jour" },
-      "next_update": { "name": "Prochaine mise à jour" },
-      "estimated_cost_today": { "name": "Coût estimé aujourd'hui" },
-      "estimated_cost_month": { "name": "Coût estimé (mois)" },
-      "power_cost_today": { "name": "Terme de puissance (jour)" },
-      "power_cost_month": { "name": "Terme de puissance (mois)" },
-      "surplus_compensation_today": { "name": "Compensation des excédents aujourd'hui" },
-      "surplus_compensation_month": { "name": "Compensation des excédents (mois)" },
-      "month_vs_last_year": { "name": "Comparaison avec le même mois de l'année précédente" },
-      "current_pvpc_price": { "name": "Prix PVPC actuel" },
-      "self_consumption_today": { "name": "Autoconsommation approximative aujourd'hui" },
-      "self_consumption_month": { "name": "Autoconsommation approximative (mois)" }
+      "imported_energy_today": {
+        "name": "Énergie importée aujourd'hui"
+      },
+      "exported_energy_today": {
+        "name": "Énergie exportée aujourd'hui"
+      },
+      "imported_energy_week": {
+        "name": "Énergie importée (semaine)"
+      },
+      "exported_energy_week": {
+        "name": "Énergie exportée (semaine)"
+      },
+      "imported_energy_month": {
+        "name": "Énergie importée (mois)"
+      },
+      "exported_energy_month": {
+        "name": "Énergie exportée (mois)"
+      },
+      "max_power_demand": {
+        "name": "Puissance maximale appelée"
+      },
+      "contracted_power": {
+        "name": "Puissance souscrite"
+      },
+      "last_update": {
+        "name": "Dernière mise à jour"
+      },
+      "next_update": {
+        "name": "Prochaine mise à jour"
+      },
+      "estimated_cost_today": {
+        "name": "Coût estimé aujourd'hui"
+      },
+      "estimated_cost_month": {
+        "name": "Coût estimé (mois)"
+      },
+      "power_cost_today": {
+        "name": "Terme de puissance (jour)"
+      },
+      "power_cost_month": {
+        "name": "Terme de puissance (mois)"
+      },
+      "surplus_compensation_today": {
+        "name": "Compensation des excédents aujourd'hui"
+      },
+      "surplus_compensation_month": {
+        "name": "Compensation des excédents (mois)"
+      },
+      "month_vs_last_year": {
+        "name": "Comparaison avec le même mois de l'année précédente"
+      },
+      "current_pvpc_price": {
+        "name": "Prix PVPC actuel"
+      },
+      "self_consumption_today": {
+        "name": "Autosuffisance énergétique approximative aujourd'hui"
+      },
+      "self_consumption_month": {
+        "name": "Autosuffisance énergétique approximative (mois)"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Connecté" }
+      "connected": {
+        "name": "Connecté"
+      }
     },
     "button": {
-      "refresh": { "name": "Actualiser maintenant" },
-      "relogin": { "name": "Forcer la reconnexion" },
-      "refresh_pvpc": { "name": "Actualiser les prix PVPC" }
+      "refresh": {
+        "name": "Actualiser maintenant"
+      },
+      "relogin": {
+        "name": "Forcer la reconnexion"
+      },
+      "refresh_pvpc": {
+        "name": "Actualiser les prix PVPC"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Calendrier de consommation" }
+      "consumption_calendar": {
+        "name": "Calendrier de consommation"
+      }
     }
   },
   "issues": {

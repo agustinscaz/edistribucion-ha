@@ -497,9 +497,11 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
 
 
 class _EdistribucionSelfConsumptionSensor(_EdistribucionBaseSensor):
-    """Autoconsumo APROXIMADO (%) — calculado solo con importado/exportado de e-distribución, no
-    con generación solar real (que el contador no reporta). Ver `costs.self_consumption_ratio`
-    para la definición exacta y sus limitaciones. Solo se crea si el CUPS ha exportado algo."""
+    """Grado de AUTOSUFICIENCIA aproximado (%) — calculado solo con importado/exportado de
+    e-distribución, no con generación solar real (que el contador no reporta). Ver
+    `costs.self_consumption_ratio` para la definición exacta y sus limitaciones (casos límite
+    correctos: 0% importado = 100%, nada exportado = 0%). Solo se crea si el CUPS ha exportado
+    algo."""
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1

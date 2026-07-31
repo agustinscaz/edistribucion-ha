@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Импортированная энергия сегодня" },
-      "exported_energy_today": { "name": "Экспортированная энергия сегодня" },
-      "imported_energy_week": { "name": "Импортированная энергия (неделя)" },
-      "exported_energy_week": { "name": "Экспортированная энергия (неделя)" },
-      "imported_energy_month": { "name": "Импортированная энергия (месяц)" },
-      "exported_energy_month": { "name": "Экспортированная энергия (месяц)" },
-      "max_power_demand": { "name": "Максимальная потребляемая мощность" },
-      "contracted_power": { "name": "Заявленная мощность" },
-      "last_update": { "name": "Последнее обновление" },
-      "next_update": { "name": "Следующее обновление" },
-      "estimated_cost_today": { "name": "Расчётная стоимость сегодня" },
-      "estimated_cost_month": { "name": "Расчётная стоимость (месяц)" },
-      "power_cost_today": { "name": "Плата за мощность (день)" },
-      "power_cost_month": { "name": "Плата за мощность (месяц)" },
-      "surplus_compensation_today": { "name": "Компенсация за излишки сегодня" },
-      "surplus_compensation_month": { "name": "Компенсация за излишки (месяц)" },
-      "month_vs_last_year": { "name": "Сравнение с тем же месяцем прошлого года" },
-      "current_pvpc_price": { "name": "Текущая цена PVPC" },
-      "self_consumption_today": { "name": "Приблизительное самопотребление сегодня" },
-      "self_consumption_month": { "name": "Приблизительное самопотребление (месяц)" }
+      "imported_energy_today": {
+        "name": "Импортированная энергия сегодня"
+      },
+      "exported_energy_today": {
+        "name": "Экспортированная энергия сегодня"
+      },
+      "imported_energy_week": {
+        "name": "Импортированная энергия (неделя)"
+      },
+      "exported_energy_week": {
+        "name": "Экспортированная энергия (неделя)"
+      },
+      "imported_energy_month": {
+        "name": "Импортированная энергия (месяц)"
+      },
+      "exported_energy_month": {
+        "name": "Экспортированная энергия (месяц)"
+      },
+      "max_power_demand": {
+        "name": "Максимальная потребляемая мощность"
+      },
+      "contracted_power": {
+        "name": "Заявленная мощность"
+      },
+      "last_update": {
+        "name": "Последнее обновление"
+      },
+      "next_update": {
+        "name": "Следующее обновление"
+      },
+      "estimated_cost_today": {
+        "name": "Расчётная стоимость сегодня"
+      },
+      "estimated_cost_month": {
+        "name": "Расчётная стоимость (месяц)"
+      },
+      "power_cost_today": {
+        "name": "Плата за мощность (день)"
+      },
+      "power_cost_month": {
+        "name": "Плата за мощность (месяц)"
+      },
+      "surplus_compensation_today": {
+        "name": "Компенсация за излишки сегодня"
+      },
+      "surplus_compensation_month": {
+        "name": "Компенсация за излишки (месяц)"
+      },
+      "month_vs_last_year": {
+        "name": "Сравнение с тем же месяцем прошлого года"
+      },
+      "current_pvpc_price": {
+        "name": "Текущая цена PVPC"
+      },
+      "self_consumption_today": {
+        "name": "Приблизительная энергетическая самодостаточность сегодня"
+      },
+      "self_consumption_month": {
+        "name": "Приблизительная энергетическая самодостаточность (месяц)"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Подключено" }
+      "connected": {
+        "name": "Подключено"
+      }
     },
     "button": {
-      "refresh": { "name": "Обновить сейчас" },
-      "relogin": { "name": "Принудительное переподключение" },
-      "refresh_pvpc": { "name": "Обновить цены PVPC" }
+      "refresh": {
+        "name": "Обновить сейчас"
+      },
+      "relogin": {
+        "name": "Принудительное переподключение"
+      },
+      "refresh_pvpc": {
+        "name": "Обновить цены PVPC"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Календарь потребления" }
+      "consumption_calendar": {
+        "name": "Календарь потребления"
+      }
     }
   },
   "issues": {

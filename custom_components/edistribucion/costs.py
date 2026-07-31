@@ -177,18 +177,19 @@ def power_cost(sp_opts: dict) -> float:
 
 
 def self_consumption_ratio(imported_kwh: float | None, exported_kwh: float | None) -> float | None:
-    """Autoconsumo APROXIMADO (%), calculado solo con importado/exportado del contador de
-    e-distribución — no con generación solar real (e-distribución no la reporta, solo ve el
-    intercambio con la red). Representa qué % de toda la energía que cruzó el contador (en
-    cualquier dirección) fue importada en vez de exportada: cuanto menos exportes en proporción a
-    lo que importas, más alto sale. Sin excedentes (0 exportado), sale 100% aunque no haya
-    autoconsumo real que medir — no es un % sobre tu generación solar."""
+    """Grado de AUTOSUFICIENCIA aproximado (%), calculado solo con importado/exportado del
+    contador de e-distribución — no con generación solar real (e-distribución no la reporta, solo
+    ve el intercambio con la red). Es una aproximación, pero con los casos límite correctos: si no
+    importas nada de la red (imported=0), sale 100% (autosuficiente del todo, sin depender de la
+    red); si nunca exportas nada (sin placas/batería), sale 0%. Los valores intermedios son solo
+    una estimación (no equivalen exactamente a "% de tu generación autoconsumida", que requeriría
+    el dato de generación real, no solo el del contador)."""
     if imported_kwh is None or exported_kwh is None:
         return None
     total = imported_kwh + exported_kwh
     if total <= 0:
         return None
-    return round(100 * imported_kwh / total, 1)
+    return round(100 * exported_kwh / total, 1)
 
 
 def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> float | None:

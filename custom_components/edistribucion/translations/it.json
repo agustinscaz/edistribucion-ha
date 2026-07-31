@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Energia importata oggi" },
-      "exported_energy_today": { "name": "Energia esportata oggi" },
-      "imported_energy_week": { "name": "Energia importata (settimana)" },
-      "exported_energy_week": { "name": "Energia esportata (settimana)" },
-      "imported_energy_month": { "name": "Energia importata (mese)" },
-      "exported_energy_month": { "name": "Energia esportata (mese)" },
-      "max_power_demand": { "name": "Potenza massima richiesta" },
-      "contracted_power": { "name": "Potenza contrattuale" },
-      "last_update": { "name": "Ultimo aggiornamento" },
-      "next_update": { "name": "Prossimo aggiornamento" },
-      "estimated_cost_today": { "name": "Costo stimato oggi" },
-      "estimated_cost_month": { "name": "Costo stimato (mese)" },
-      "power_cost_today": { "name": "Termine di potenza (giorno)" },
-      "power_cost_month": { "name": "Termine di potenza (mese)" },
-      "surplus_compensation_today": { "name": "Compensazione eccedenze oggi" },
-      "surplus_compensation_month": { "name": "Compensazione eccedenze (mese)" },
-      "month_vs_last_year": { "name": "Confronto con lo stesso mese dell'anno precedente" },
-      "current_pvpc_price": { "name": "Prezzo PVPC attuale" },
-      "self_consumption_today": { "name": "Autoconsumo approssimativo oggi" },
-      "self_consumption_month": { "name": "Autoconsumo approssimativo (mese)" }
+      "imported_energy_today": {
+        "name": "Energia importata oggi"
+      },
+      "exported_energy_today": {
+        "name": "Energia esportata oggi"
+      },
+      "imported_energy_week": {
+        "name": "Energia importata (settimana)"
+      },
+      "exported_energy_week": {
+        "name": "Energia esportata (settimana)"
+      },
+      "imported_energy_month": {
+        "name": "Energia importata (mese)"
+      },
+      "exported_energy_month": {
+        "name": "Energia esportata (mese)"
+      },
+      "max_power_demand": {
+        "name": "Potenza massima richiesta"
+      },
+      "contracted_power": {
+        "name": "Potenza contrattuale"
+      },
+      "last_update": {
+        "name": "Ultimo aggiornamento"
+      },
+      "next_update": {
+        "name": "Prossimo aggiornamento"
+      },
+      "estimated_cost_today": {
+        "name": "Costo stimato oggi"
+      },
+      "estimated_cost_month": {
+        "name": "Costo stimato (mese)"
+      },
+      "power_cost_today": {
+        "name": "Termine di potenza (giorno)"
+      },
+      "power_cost_month": {
+        "name": "Termine di potenza (mese)"
+      },
+      "surplus_compensation_today": {
+        "name": "Compensazione eccedenze oggi"
+      },
+      "surplus_compensation_month": {
+        "name": "Compensazione eccedenze (mese)"
+      },
+      "month_vs_last_year": {
+        "name": "Confronto con lo stesso mese dell'anno precedente"
+      },
+      "current_pvpc_price": {
+        "name": "Prezzo PVPC attuale"
+      },
+      "self_consumption_today": {
+        "name": "Autosufficienza approssimativa oggi"
+      },
+      "self_consumption_month": {
+        "name": "Autosufficienza approssimativa (mese)"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Connesso" }
+      "connected": {
+        "name": "Connesso"
+      }
     },
     "button": {
-      "refresh": { "name": "Aggiorna ora" },
-      "relogin": { "name": "Forza riconnessione" },
-      "refresh_pvpc": { "name": "Aggiorna prezzi PVPC" }
+      "refresh": {
+        "name": "Aggiorna ora"
+      },
+      "relogin": {
+        "name": "Forza riconnessione"
+      },
+      "refresh_pvpc": {
+        "name": "Aggiorna prezzi PVPC"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Calendario dei consumi" }
+      "consumption_calendar": {
+        "name": "Calendario dei consumi"
+      }
     }
   },
   "issues": {

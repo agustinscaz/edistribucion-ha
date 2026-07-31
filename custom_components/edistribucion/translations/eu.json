@@ -54,37 +54,87 @@
   },
   "entity": {
     "sensor": {
-      "imported_energy_today": { "name": "Gaur inportatutako energia" },
-      "exported_energy_today": { "name": "Gaur esportatutako energia" },
-      "imported_energy_week": { "name": "Inportatutako energia (astea)" },
-      "exported_energy_week": { "name": "Esportatutako energia (astea)" },
-      "imported_energy_month": { "name": "Inportatutako energia (hilabetea)" },
-      "exported_energy_month": { "name": "Esportatutako energia (hilabetea)" },
-      "max_power_demand": { "name": "Eskatutako potentzia maximoa" },
-      "contracted_power": { "name": "Kontratatutako potentzia" },
-      "last_update": { "name": "Azken eguneraketa" },
-      "next_update": { "name": "Hurrengo eguneraketa" },
-      "estimated_cost_today": { "name": "Gaurko kostu estimatua" },
-      "estimated_cost_month": { "name": "Hilabeteko kostu estimatua" },
-      "power_cost_today": { "name": "Potentzia terminoa (eguna)" },
-      "power_cost_month": { "name": "Potentzia terminoa (hilabetea)" },
-      "surplus_compensation_today": { "name": "Gaurko soberakinen konpentsazioa" },
-      "surplus_compensation_month": { "name": "Hilabeteko soberakinen konpentsazioa" },
-      "month_vs_last_year": { "name": "Iazko hilabete berarekin alderatuta" },
-      "current_pvpc_price": { "name": "Uneko PVPC prezioa" },
-      "self_consumption_today": { "name": "Gaurko autokontsumo hurbildua" },
-      "self_consumption_month": { "name": "Hilabeteko autokontsumo hurbildua" }
+      "imported_energy_today": {
+        "name": "Gaur inportatutako energia"
+      },
+      "exported_energy_today": {
+        "name": "Gaur esportatutako energia"
+      },
+      "imported_energy_week": {
+        "name": "Inportatutako energia (astea)"
+      },
+      "exported_energy_week": {
+        "name": "Esportatutako energia (astea)"
+      },
+      "imported_energy_month": {
+        "name": "Inportatutako energia (hilabetea)"
+      },
+      "exported_energy_month": {
+        "name": "Esportatutako energia (hilabetea)"
+      },
+      "max_power_demand": {
+        "name": "Eskatutako potentzia maximoa"
+      },
+      "contracted_power": {
+        "name": "Kontratatutako potentzia"
+      },
+      "last_update": {
+        "name": "Azken eguneraketa"
+      },
+      "next_update": {
+        "name": "Hurrengo eguneraketa"
+      },
+      "estimated_cost_today": {
+        "name": "Gaurko kostu estimatua"
+      },
+      "estimated_cost_month": {
+        "name": "Hilabeteko kostu estimatua"
+      },
+      "power_cost_today": {
+        "name": "Potentzia terminoa (eguna)"
+      },
+      "power_cost_month": {
+        "name": "Potentzia terminoa (hilabetea)"
+      },
+      "surplus_compensation_today": {
+        "name": "Gaurko soberakinen konpentsazioa"
+      },
+      "surplus_compensation_month": {
+        "name": "Hilabeteko soberakinen konpentsazioa"
+      },
+      "month_vs_last_year": {
+        "name": "Iazko hilabete berarekin alderatuta"
+      },
+      "current_pvpc_price": {
+        "name": "Uneko PVPC prezioa"
+      },
+      "self_consumption_today": {
+        "name": "Gaurko autosufizientzia hurbildua"
+      },
+      "self_consumption_month": {
+        "name": "Hilabeteko autosufizientzia hurbildua"
+      }
     },
     "binary_sensor": {
-      "connected": { "name": "Konektatuta" }
+      "connected": {
+        "name": "Konektatuta"
+      }
     },
     "button": {
-      "refresh": { "name": "Eguneratu orain" },
-      "relogin": { "name": "Berkonexioa behartu" },
-      "refresh_pvpc": { "name": "Eguneratu PVPC prezioak" }
+      "refresh": {
+        "name": "Eguneratu orain"
+      },
+      "relogin": {
+        "name": "Berkonexioa behartu"
+      },
+      "refresh_pvpc": {
+        "name": "Eguneratu PVPC prezioak"
+      }
     },
     "calendar": {
-      "consumption_calendar": { "name": "Kontsumo egutegia" }
+      "consumption_calendar": {
+        "name": "Kontsumo egutegia"
+      }
     }
   },
   "issues": {
