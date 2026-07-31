@@ -40,3 +40,60 @@ exportar_precios_pvpc:
           options:
             - "PCB"
             - "CYM"
+
+horas_mas_baratas_pvpc:
+  name: Horas más baratas PVPC
+  description: Busca la ventana de N horas consecutivas más barata a partir de ahora, con los precios PVPC ya cacheados — para automatizar cargas oportunistas (coche eléctrico, batería).
+  fields:
+    horas:
+      name: Horas
+      description: Tamaño de la ventana consecutiva a buscar (1-24).
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 24
+          mode: box
+    zona:
+      name: Zona
+      description: "PCB (Península/Baleares/Canarias) o CYM (Ceuta/Melilla). Por defecto, PCB."
+      required: false
+      selector:
+        select:
+          options:
+            - "PCB"
+            - "CYM"
+
+resumen_mensual:
+  name: Resumen mensual
+  description: Genera un resumen en CSV del coste estimado del mes en curso de un suministro (por periodo, término de potencia, excedentes) — una estimación propia, no la factura real.
+  fields:
+    device_id:
+      name: Suministro
+      description: Dispositivo del suministro (CUPS) del que generar el resumen.
+      required: true
+      selector:
+        device:
+          integration: edistribucion
+
+rellenar_historico:
+  name: Rellenar histórico completo
+  description: Rellena el histórico de estadísticas del Dashboard de Energía para meses ANTERIORES al actual (el relleno automático solo cubre el mes en curso) — útil recién instalada la integración o al recuperar histórico de otra solución.
+  fields:
+    device_id:
+      name: Suministro
+      description: Dispositivo del suministro (CUPS) a rellenar. Si se omite, se rellenan todos los suministros seguidos.
+      required: false
+      selector:
+        device:
+          integration: edistribucion
+    meses:
+      name: Meses
+      description: Cuántos meses hacia atrás rellenar, incluido el mes en curso (1-36).
+      required: false
+      default: 12
+      selector:
+        number:
+          min: 1
+          max: 36
+          mode: box

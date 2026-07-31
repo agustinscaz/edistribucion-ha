@@ -4,6 +4,7 @@ CI, no en el sandbox de desarrollo local (sin pip)."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -224,6 +225,70 @@ async def test_backfill_runs_once_per_day(hass, monkeypatch):
     assert calls["n"] == 1  # mismo día, no se repite
 
     coordinator._last_backfill_day = None  # simula que cambió el día
+    await coordinator._async_update_data()
+    assert calls["n"] == 2
+
+
+async def test_year_to_date_sums_completed_months_plus_current_month(hass, monkeypatch):
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    client = _make_client()
+
+    async def fake_consumption(cont_id, range_type=None, date=None):
+        if date in ("2026-01-01", "2026-02-01"):  # meses YA COMPLETADOS (ene, feb) pedidos por el YTD
+            return {"totalImportedKwh": 10.0, "totalExportedKwh": 1.0}
+        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
+
+    client.async_get_consumption.side_effect = fake_consumption
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
+    )
+
+    await coordinator._async_update_data()
+
+    completed = coordinator.year_to_date_completed_months("cont1")
+    assert completed["imported_kwh"] == 20.0  # 2 meses completados (ene, feb) x 10 kWh
+    assert completed["exported_kwh"] == 2.0
+    assert completed["cost"] == pytest.approx(4.0)  # 20 kWh x 0.2 €/kWh (fija)
+
+
+async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 1, 10, tzinfo=timezone.utc)
+    )
+
+    await coordinator._async_update_data()
+
+    completed = coordinator.year_to_date_completed_months("cont1")
+    assert completed == {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0}
+
+
+async def test_year_to_date_refetched_once_per_day(hass, monkeypatch):
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    client = _make_client()
+    calls = {"n": 0}
+
+    async def fake_consumption(cont_id, range_type=None, date=None):
+        if date == "2026-01-01":
+            calls["n"] += 1
+            return {"totalImportedKwh": 10.0, "totalExportedKwh": 0.0}
+        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
+
+    client.async_get_consumption.side_effect = fake_consumption
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 2, 15, tzinfo=timezone.utc)
+    )
+
+    await coordinator._async_update_data()
+    assert calls["n"] == 1
+
+    await coordinator._async_update_data()
+    assert calls["n"] == 1  # mismo día, no se repite
+
+    coordinator._year_to_date_fetched_day = None  # simula que cambió el día
     await coordinator._async_update_data()
     assert calls["n"] == 2
 

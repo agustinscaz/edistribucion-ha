@@ -119,6 +119,9 @@
       },
       "simulated_cost_month": {
         "name": "Смоделированная стоимость по тарифу {tarifa} (месяц)"
+      },
+      "year_to_date_cost": {
+        "name": "Накопленная стоимость за год"
       }
     },
     "binary_sensor": {
@@ -127,6 +130,9 @@
       },
       "power_excess": {
         "name": "Обнаружено превышение мощности"
+      },
+      "exporting_now": {
+        "name": "Экспорт излишков сейчас"
       }
     },
     "button": {

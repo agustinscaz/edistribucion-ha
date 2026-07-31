@@ -70,6 +70,35 @@ def _leading_hour(hour_label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def latest_hour_flow_kwh(consumption: dict | None, field: str) -> tuple[str, float] | None:
+    """(clave "DD/MM/YYYY H", kWh) de la hora MÁS RECIENTE con dato horario en `hourlyByDate`, para
+    `field` ("importedKwh"/"exportedKwh") — para saber "ahora mismo" (según lo último que haya
+    sincronizado el distribuidor) sin tener que recorrer todo `hourlyByDate` a mano. None si no hay
+    datos horarios."""
+    if not consumption or not consumption.get("hourlyByDate"):
+        return None
+    latest_sort_key: tuple[datetime, int] | None = None
+    latest_key: str | None = None
+    latest_value = 0.0
+    for date_str, hours in consumption["hourlyByDate"].items():
+        try:
+            day = datetime.strptime(date_str, "%d/%m/%Y")
+        except ValueError:
+            continue
+        for h in hours:
+            hour = _leading_hour(h.get("hour", ""))
+            if hour is None:
+                continue
+            sort_key = (day, hour)
+            if latest_sort_key is None or sort_key > latest_sort_key:
+                latest_sort_key = sort_key
+                latest_key = f"{date_str} {hour}"
+                latest_value = h.get(field) or 0.0
+    if latest_key is None:
+        return None
+    return latest_key, latest_value
+
+
 def cost_breakdown(consumption: dict | None, prices: dict[str, float], holiday_region: str | None = None) -> dict[str, float] | None:
     """kWh importados y coste, desglosados por periodo, para un consumo con `hourlyByDate`.
     None si no hay datos horarios. `holiday_region` (CCAA) es opcional — sin ella, los festivos
@@ -307,3 +336,31 @@ def max_power_by_period(max_power_demand: dict | None) -> dict[str, float]:
                 if label is not None:
                     result[label] = max(result.get(label, 0.0), val)
     return result
+
+
+def monthly_summary_csv(sp_opts: dict, month_data: dict | None, pvpc_prices_by_zone: dict[str, dict[str, float]] | None = None) -> str:
+    """Resumen del mes en texto CSV (concepto,valor): coste de energía (desglosado por periodo si
+    la tarifa lo permite), término de potencia, compensación de excedentes si aplica, y un total
+    estimado — para descargar/analizar fuera de Home Assistant. Es una ESTIMACIÓN hecha con los
+    precios que tengas configurados AHORA (no una factura real, ver limitaciones en la cabecera del
+    módulo)."""
+    imported_kwh = (month_data or {}).get("totalImportedKwh")
+    exported_kwh = (month_data or {}).get("totalExportedKwh")
+    breakdown = estimate_energy_cost(sp_opts, imported_kwh, month_data, pvpc_prices_by_zone) or {}
+    power = power_cost(sp_opts)
+    surplus = surplus_compensation_value(sp_opts, exported_kwh)
+
+    rows = ["concepto,valor"]
+    rows.append(f"tarifa,{sp_opts.get('tariff_type') or TARIFF_TRAMOS}")
+    rows.append(f"kwh_importados,{imported_kwh if imported_kwh is not None else ''}")
+    rows.append(f"kwh_exportados,{exported_kwh if exported_kwh is not None else ''}")
+    for key in ("kwh_punta", "kwh_llano", "kwh_valle", "coste_punta", "coste_llano", "coste_valle", "kwh_con_precio", "horas_sin_precio"):
+        if key in breakdown:
+            rows.append(f"{key},{breakdown[key]}")
+    rows.append(f"coste_energia,{breakdown.get('total', 0)}")
+    rows.append(f"termino_potencia,{power}")
+    if surplus is not None:
+        rows.append(f"compensacion_excedentes,{surplus}")
+    total = round((breakdown.get("total") or 0) + power - (surplus or 0), 4)
+    rows.append(f"total_estimado,{total}")
+    return "\n".join(rows)

@@ -4,7 +4,7 @@ Assistant, se ejecuta con un servidor aiohttp real de pruebas."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from aiohttp import web
@@ -16,6 +16,7 @@ from custom_components.edistribucion.esios import (
     ZONE_PENINSULA_BALEARES_CANARIAS,
     EsiosError,
     async_get_pvpc_prices_for_day,
+    cheapest_window,
     pvpc_prices_to_csv,
 )
 
@@ -171,3 +172,52 @@ class TestPvpcPricesToCsv:
         prices = {"PCB": {"30/07/2026 0": 0.10}}
         csv = pvpc_prices_to_csv(prices, zone_filter="CYM")
         assert csv == "zona,fecha,hora,precio_eur_kwh"
+
+
+class TestCheapestWindow:
+    def _prices(self, day: str, values: list[float]) -> dict[str, float]:
+        return {f"{day} {h}": v for h, v in enumerate(values)}
+
+    def test_none_without_prices(self):
+        assert cheapest_window({}, 2, datetime(2026, 7, 30, 0)) is None
+
+    def test_none_with_invalid_window(self):
+        prices = self._prices("30/07/2026", [0.1] * 24)
+        assert cheapest_window(prices, 0, datetime(2026, 7, 30, 0)) is None
+
+    def test_none_without_enough_upcoming_hours(self):
+        prices = self._prices("30/07/2026", [0.1] * 24)
+        # A las 22h del día solo quedan 2 horas por delante (22, 23) — pedir 3 no puede cumplirse.
+        assert cheapest_window(prices, 3, datetime(2026, 7, 30, 22)) is None
+
+    def test_finds_the_cheapest_consecutive_window(self):
+        # Precios de un día: caros salvo un valle claro en la madrugada (horas 2-3).
+        values = [0.20, 0.20, 0.05, 0.05, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20, 0.20]
+        prices = self._prices("30/07/2026", values)
+        result = cheapest_window(prices, 2, datetime(2026, 7, 30, 0))
+        assert result == {"inicio": "30/07/2026 2h", "horas": 2, "precio_medio_eur_kwh": 0.05}
+
+    def test_only_considers_hours_from_now_onwards(self):
+        """Aunque la hora más barata del día ya haya pasado, no debe elegirla — solo cuenta desde
+        `now` en adelante."""
+        values = [0.05] + [0.20] * 23  # la más barata es la 0h, que ya pasó a las 10h
+        prices = self._prices("30/07/2026", values)
+        result = cheapest_window(prices, 1, datetime(2026, 7, 30, 10))
+        assert result["inicio"] == "30/07/2026 10h"
+
+    def test_skips_windows_with_gaps(self):
+        """Si falta una hora en medio (p.ej. sin precio publicado todavía), esa ventana no cuenta
+        como "consecutiva", aunque las horas que sí están sean muy baratas."""
+        prices = {"30/07/2026 0": 0.01, "30/07/2026 2": 0.01}  # falta la hora 1 -> no son consecutivas
+        assert cheapest_window(prices, 2, datetime(2026, 7, 30, 0)) is None
+
+    def test_window_spans_midnight_correctly(self):
+        """Una ventana que cruza medianoche (23h de un día + 0h del siguiente) sí debe contar como
+        consecutiva."""
+        prices = {
+            "30/07/2026 23": 0.05,
+            "31/07/2026 0": 0.05,
+            "31/07/2026 1": 0.20,
+        }
+        result = cheapest_window(prices, 2, datetime(2026, 7, 30, 23))
+        assert result == {"inicio": "30/07/2026 23h", "horas": 2, "precio_medio_eur_kwh": 0.05}

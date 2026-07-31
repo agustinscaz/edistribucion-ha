@@ -69,6 +69,24 @@ def _daily_points(month_data: dict, field: str) -> list[tuple[datetime, float]] 
     return [(_parse_day(day["date"]), day.get(field) or 0.0) for day in days]
 
 
+def months_back(base: datetime, n: int) -> list[datetime]:
+    """Los `n` meses hasta `base` (incluido su propio mes), como el día 1 de cada uno, en orden
+    CRONOLÓGICO (el más antiguo primero) — usado por el servicio de relleno de histórico completo
+    (ver __init__.py). El orden importa: para que el arrastre de sum entre meses (ver
+    `_carry_over_sum`) quede bien encadenado, hay que rellenar los meses de más antiguo a más
+    reciente, nunca al revés ni salteados."""
+    results = []
+    year, month = base.year, base.month
+    for _ in range(n):
+        results.append(base.replace(year=year, month=month, day=1))
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    results.reverse()
+    return results
+
+
 def _carry_over_sum(last_saved: tuple[datetime, float] | None, first_point_start: datetime) -> float:
     """Con qué `sum` arrancar el `running_total` de ESTA llamada.
 

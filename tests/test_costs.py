@@ -14,8 +14,10 @@ from custom_components.edistribucion.costs import (  # noqa: E402
     estimate_cost_as_tariff,
     estimate_energy_cost,
     hour_period,
+    latest_hour_flow_kwh,
     max_power_by_period,
     max_power_reported,
+    monthly_summary_csv,
     power_cost,
     power_excess_detected,
     pvpc_cost_breakdown,
@@ -422,3 +424,71 @@ class TestMaxPowerByPeriod:
     def test_unrecognizable_entry_is_skipped(self):
         power = {"points": [{"periods": [{"onlytext": "x"}, {"onlynum": 5}]}]}
         assert max_power_by_period(power) == {}
+
+
+class TestLatestHourFlowKwh:
+    def test_none_without_hourly_by_date(self):
+        assert latest_hour_flow_kwh(None, "exportedKwh") is None
+        assert latest_hour_flow_kwh({}, "exportedKwh") is None
+        assert latest_hour_flow_kwh({"hourlyByDate": {}}, "exportedKwh") is None
+
+    def test_picks_the_most_recent_hour_across_days(self):
+        consumption = {
+            "hourlyByDate": {
+                "29/07/2026": [{"hour": "23 - 24 h", "exportedKwh": 1.0}],
+                "30/07/2026": [{"hour": "0 - 1 h", "exportedKwh": 2.5}, {"hour": "1 - 2 h", "exportedKwh": 0.0}],
+            }
+        }
+        assert latest_hour_flow_kwh(consumption, "exportedKwh") == ("30/07/2026 1", 0.0)
+
+    def test_missing_field_defaults_to_zero(self):
+        consumption = {"hourlyByDate": {"30/07/2026": [{"hour": "0 - 1 h"}]}}
+        assert latest_hour_flow_kwh(consumption, "exportedKwh") == ("30/07/2026 0", 0.0)
+
+    def test_malformed_date_is_skipped(self):
+        consumption = {"hourlyByDate": {"no-es-fecha": [{"hour": "0 - 1 h", "exportedKwh": 5.0}]}}
+        assert latest_hour_flow_kwh(consumption, "exportedKwh") is None
+
+
+class TestMonthlySummaryCsv:
+    def test_fija_tariff(self):
+        sp = {"tariff_type": "fija", "fixed_price": 0.2}
+        month = {"totalImportedKwh": 100.0, "totalExportedKwh": 0.0}
+        csv = monthly_summary_csv(sp, month)
+        assert "tarifa,fija" in csv
+        assert "kwh_importados,100.0" in csv
+        assert "coste_energia,20.0" in csv
+        assert "total_estimado,20.0" in csv
+
+    def test_tramos_tariff_includes_period_breakdown(self):
+        sp = {"tariff_type": "tramos", "price_punta": 0.3, "price_llano": 0.2, "price_valle": 0.1}
+        month = {
+            "totalImportedKwh": 10.0,
+            "hourlyByDate": {"30/07/2026": [{"hour": "10 - 11 h", "importedKwh": 10.0}]},  # jueves, punta
+        }
+        csv = monthly_summary_csv(sp, month)
+        assert "kwh_punta,10.0" in csv
+        assert "coste_punta,3.0" in csv
+        assert "coste_energia,3.0" in csv
+
+    def test_includes_power_term_and_surplus_compensation(self):
+        sp = {
+            "tariff_type": "fija",
+            "fixed_price": 0.2,
+            "contracted_power_punta_kw": 5.0,
+            "price_power_punta": 0.1,
+            "surplus_compensation": True,
+            "surplus_price": 0.05,
+        }
+        month = {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0}
+        csv = monthly_summary_csv(sp, month)
+        assert "termino_potencia,0.5" in csv
+        assert "compensacion_excedentes,0.2" in csv
+        # 10*0.2 (energía) + 0.5 (potencia) - 0.2 (excedentes) = 2.3
+        assert "total_estimado,2.3" in csv
+
+    def test_without_month_data_still_returns_header_and_zeros(self):
+        sp = {"tariff_type": "fija", "fixed_price": 0.2}
+        csv = monthly_summary_csv(sp, None)
+        assert "coste_energia,0" in csv
+        assert "total_estimado,0" in csv

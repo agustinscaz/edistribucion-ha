@@ -15,6 +15,7 @@ from custom_components.edistribucion.statistics import (
     _parse_day,
     _parse_hour,
     async_backfill_energy_statistics,
+    months_back,
 )
 
 
@@ -44,6 +45,25 @@ class TestParseHour:
         result = _parse_hour("30/07/2026", 13)
         assert result.tzinfo is not None
         assert (result.year, result.month, result.day, result.hour) == (2026, 7, 30, 13)
+
+
+class TestMonthsBack:
+    def test_single_month_is_just_base(self):
+        assert months_back(datetime(2026, 7, 30), 1) == [datetime(2026, 7, 1)]
+
+    def test_chronological_order_oldest_first(self):
+        result = months_back(datetime(2026, 7, 30), 3)
+        assert result == [datetime(2026, 5, 1), datetime(2026, 6, 1), datetime(2026, 7, 1)]
+
+    def test_wraps_across_year_boundary(self):
+        result = months_back(datetime(2026, 2, 15), 3)
+        assert result == [datetime(2025, 12, 1), datetime(2026, 1, 1), datetime(2026, 2, 1)]
+
+    def test_twelve_months_back_from_january(self):
+        result = months_back(datetime(2026, 1, 10), 12)
+        assert result[0] == datetime(2025, 2, 1)
+        assert result[-1] == datetime(2026, 1, 1)
+        assert len(result) == 12
 
 
 class TestHourlyPoints:

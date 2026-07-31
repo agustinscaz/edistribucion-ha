@@ -119,6 +119,9 @@
       },
       "simulated_cost_month": {
         "name": "{tarifa} tarifarekin simulatutako kostua (hilabetea)"
+      },
+      "year_to_date_cost": {
+        "name": "Urteko kostu metatua"
       }
     },
     "binary_sensor": {
@@ -127,6 +130,9 @@
       },
       "power_excess": {
         "name": "Potentzia gehiegikeria detektatuta"
+      },
+      "exporting_now": {
+        "name": "Soberakina esportatzen orain"
       }
     },
     "button": {

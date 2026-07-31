@@ -119,6 +119,9 @@
       },
       "simulated_cost_month": {
         "name": "Coût simulé avec le tarif {tarifa} (mois)"
+      },
+      "year_to_date_cost": {
+        "name": "Coût cumulé de l'année"
       }
     },
     "binary_sensor": {
@@ -127,6 +130,9 @@
       },
       "power_excess": {
         "name": "Dépassement de puissance détecté"
+      },
+      "exporting_now": {
+        "name": "Excédent exporté maintenant"
       }
     },
     "button": {

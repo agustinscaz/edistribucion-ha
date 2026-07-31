@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
-from .costs import max_power_by_period, max_power_reported, power_excess_detected
+from .costs import latest_hour_flow_kwh, max_power_by_period, max_power_reported, power_excess_detected
 from .device import hub_device_info
 
 
@@ -25,6 +25,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities: list[BinarySensorEntity] = [EdistribucionConnectivitySensor(coordinator, entry)]
     for cont_id, bundle in coordinator.data.items():
         entities.append(EdistribucionPowerExcessSensor(coordinator, cont_id, bundle["supply_point"]))
+        if (bundle.get("month") or {}).get("totalExportedKwh"):
+            entities.append(EdistribucionExportingNowSensor(coordinator, cont_id, bundle["supply_point"]))
     async_add_entities(entities)
 
 
@@ -104,3 +106,58 @@ class EdistribucionPowerExcessSensor(CoordinatorEntity[EdistribucionCoordinator]
     @property
     def available(self) -> bool:
         return super().available and self.is_on is not None
+
+
+class EdistribucionExportingNowSensor(CoordinatorEntity[EdistribucionCoordinator], BinarySensorEntity):
+    """ON si la hora MÁS RECIENTE con dato horario (de `consumption`, "hoy") tiene excedente
+    exportado > 0 — casi en tiempo real, según lo último que haya sincronizado el distribuidor (ver
+    atributos `ultimo_cambio`/`minutos_sin_cambiar` de los sensores de energía para saber cuán
+    reciente es de verdad ese dato). Pensado para automatizaciones oportunistas (encender el termo
+    eléctrico cuando hay excedente solar). Solo se crea si el CUPS ha exportado algo alguna vez
+    (ver async_setup_entry)."""
+
+    _attr_has_entity_name = True
+    entity_description = BinarySensorEntityDescription(
+        key="exporting_now",
+        translation_key="exporting_now",
+        device_class=BinarySensorDeviceClass.POWER,
+    )
+
+    def __init__(self, coordinator: EdistribucionCoordinator, cont_id: str, supply_point: dict) -> None:
+        super().__init__(coordinator)
+        self._cont_id = cont_id
+        self._attr_unique_id = f"{cont_id}_exporting_now"
+        cups = supply_point.get("cups", cont_id)
+        name = supply_point.get("alias") or f"e-distribución {cups}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, cont_id)},
+            name=name,
+            manufacturer="e-distribución",
+            model=supply_point.get("tariff"),
+            via_device=(DOMAIN, coordinator.entry_id),
+        )
+
+    @property
+    def _bundle(self) -> dict:
+        return self.coordinator.data.get(self._cont_id, {})
+
+    @property
+    def _latest(self) -> tuple[str, float] | None:
+        return latest_hour_flow_kwh(self._bundle.get("consumption"), "exportedKwh")
+
+    @property
+    def is_on(self) -> bool | None:
+        latest = self._latest
+        return latest[1] > 0 if latest is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        latest = self._latest
+        if latest is None:
+            return {}
+        key, kwh = latest
+        return {"ultima_hora_con_dato": key, "kwh_exportados_esa_hora": kwh}
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._latest is not None

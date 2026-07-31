@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.edistribucion.const import CONF_SUPPLY_POINTS, DOMAIN
@@ -88,6 +89,9 @@ async def test_services_are_registered_after_setup(hass, mock_add_on):
 
     assert hass.services.has_service(DOMAIN, "consultar_consumo")
     assert hass.services.has_service(DOMAIN, "exportar_precios_pvpc")
+    assert hass.services.has_service(DOMAIN, "horas_mas_baratas_pvpc")
+    assert hass.services.has_service(DOMAIN, "resumen_mensual")
+    assert hass.services.has_service(DOMAIN, "rellenar_historico")
 
 
 class TestConsultarConsumoService:
@@ -168,3 +172,158 @@ class TestExportarPreciosPvpcService:
         )
         assert "PCB" in result["csv"]
         assert "CYM" not in result["csv"]
+
+
+class TestHorasMasBaratasPvpcService:
+    async def test_finds_cheapest_window(self, hass, mock_add_on):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        now = dt_util.now()
+        today_str = now.strftime("%d/%m/%Y")
+        prices = {f"{today_str} {h}": 0.30 for h in range(24)}
+        prices[f"{today_str} {now.hour}"] = 0.05  # la hora actual, la más barata
+        coordinator.pvpc_prices = {"PCB": prices}
+
+        result = await hass.services.async_call(
+            DOMAIN, "horas_mas_baratas_pvpc", {"horas": 1}, blocking=True, return_response=True
+        )
+        assert result["precio_medio_eur_kwh"] == 0.05
+
+    async def test_raises_when_not_enough_consecutive_hours(self, hass, mock_add_on):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, "horas_mas_baratas_pvpc", {"horas": 5}, blocking=True, return_response=True
+            )
+
+
+class TestResumenMensualService:
+    async def test_returns_csv_summary(self, hass, mock_add_on):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "localhost", "port": 8099},
+            options={CONF_SUPPLY_POINTS: {"contA": {"tariff_type": "fija", "fixed_price": 0.2}}},
+        )
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "contA")})
+        result = await hass.services.async_call(
+            DOMAIN, "resumen_mensual", {"device_id": device.id}, blocking=True, return_response=True
+        )
+        assert "tarifa,fija" in result["resumen"]
+        assert "total_estimado," in result["resumen"]
+
+    async def test_unknown_device_raises(self, hass, mock_add_on):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, "resumen_mensual", {"device_id": "no-existe"}, blocking=True, return_response=True
+            )
+
+
+class TestRellenarHistoricoService:
+    async def test_fills_all_supply_points_by_default(self, hass, mock_add_on, monkeypatch):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+
+        async def fake_get_consumption(cont_id, range_type=None, date=None):
+            return {"totalImportedKwh": 1.0, "totalExportedKwh": 0.0}
+
+        coordinator.client.async_get_consumption = fake_get_consumption
+
+        backfilled_cups = []
+
+        async def fake_backfill(hass_arg, cups, month_data):
+            backfilled_cups.append(cups)
+
+        monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
+
+        result = await hass.services.async_call(
+            DOMAIN, "rellenar_historico", {"meses": 3}, blocking=True, return_response=True
+        )
+
+        assert result == {"suministros": 1, "meses_rellenados": 3}
+        assert backfilled_cups == ["ES0031500160526001DS0F"] * 3
+
+    async def test_fills_only_the_given_device_when_device_id_provided(self, hass, mock_add_on, monkeypatch):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+
+        async def fake_get_consumption(cont_id, range_type=None, date=None):
+            return {"totalImportedKwh": 1.0, "totalExportedKwh": 0.0}
+
+        coordinator.client.async_get_consumption = fake_get_consumption
+
+        async def fake_backfill(hass_arg, cups, month_data):
+            pass
+
+        monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
+
+        device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "contA")})
+        result = await hass.services.async_call(
+            DOMAIN, "rellenar_historico", {"device_id": device.id, "meses": 2}, blocking=True, return_response=True
+        )
+        assert result == {"suministros": 1, "meses_rellenados": 2}
+
+    async def test_unknown_device_raises(self, hass, mock_add_on):
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, "rellenar_historico", {"device_id": "no-existe"}, blocking=True, return_response=True
+            )
+
+    async def test_api_error_for_one_month_does_not_stop_the_rest(self, hass, mock_add_on, monkeypatch):
+        """Un mes sin datos (contrato más nuevo que ese mes, o fallo puntual) no debe frenar el
+        relleno del resto de meses pedidos."""
+        from custom_components.edistribucion.api import EdistribucionApiError
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        calls = {"n": 0}
+
+        async def flaky_get_consumption(cont_id, range_type=None, date=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise EdistribucionApiError("sin datos ese mes")
+            return {"totalImportedKwh": 1.0, "totalExportedKwh": 0.0}
+
+        async def fake_backfill(hass_arg, cups, month_data):
+            pass
+
+        coordinator.client.async_get_consumption = flaky_get_consumption
+        monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
+
+        result = await hass.services.async_call(
+            DOMAIN, "rellenar_historico", {"meses": 3}, blocking=True, return_response=True
+        )
+        assert result == {"suministros": 1, "meses_rellenados": 2}  # 3 pedidos, 1 falló, 2 rellenados

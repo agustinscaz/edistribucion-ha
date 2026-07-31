@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from aiohttp import ClientError, ClientSession
 
@@ -84,6 +84,51 @@ def _price_key_sort_key(key: str) -> tuple[datetime, int]:
     (DD/MM/YYYY no es lexicográfico, y la hora no lleva cero a la izquierda)."""
     date_str, hour_str = key.rsplit(" ", 1)
     return datetime.strptime(date_str, "%d/%m/%Y"), int(hour_str)
+
+
+def _is_next_hour(prev: tuple[datetime, int], cur: tuple[datetime, int]) -> bool:
+    """¿`cur` es exactamente la hora siguiente a `prev`? (mismo día +1h, o medianoche del día
+    siguiente tras las 23h) — para detectar huecos (p.ej. una hora sin precio publicado) dentro de
+    una ventana de horas que se supone consecutivas."""
+    prev_day, prev_hour = prev
+    cur_day, cur_hour = cur
+    if prev_day == cur_day:
+        return cur_hour == prev_hour + 1
+    return cur_day == prev_day + timedelta(days=1) and prev_hour == 23 and cur_hour == 0
+
+
+def cheapest_window(prices: dict[str, float], window_hours: int, now: datetime) -> dict | None:
+    """Busca la ventana de `window_hours` horas CONSECUTIVAS más barata a partir de la hora actual
+    (incluida), entre los precios PVPC ya cacheados — pensado para automatizar cargas oportunistas
+    (coche eléctrico, batería) sin tener que mirar los precios a mano. `now` solo se usa por su
+    fecha/hora local (`strftime`/`.hour`), da igual que sea tz-aware o no. None si no hay
+    suficientes horas consecutivas por delante todavía (p.ej. `window_hours` mayor que las horas
+    que quedan hoy y mañana aún no se ha publicado), o si `window_hours` no es válido."""
+    if window_hours < 1 or not prices:
+        return None
+
+    sorted_keys = sorted(prices, key=_price_key_sort_key)
+    current_key = _price_key_sort_key(f"{now.strftime('%d/%m/%Y')} {now.hour}")
+    upcoming = [k for k in sorted_keys if _price_key_sort_key(k) >= current_key]
+    if len(upcoming) < window_hours:
+        return None
+    upcoming_sort_keys = [_price_key_sort_key(k) for k in upcoming]
+
+    best: dict | None = None
+    for i in range(len(upcoming) - window_hours + 1):
+        window_sort_keys = upcoming_sort_keys[i : i + window_hours]
+        if any(not _is_next_hour(window_sort_keys[j - 1], window_sort_keys[j]) for j in range(1, window_hours)):
+            continue  # hueco en la ventana (p.ej. una hora sin precio) — no sirve como bloque consecutivo
+        window_keys = upcoming[i : i + window_hours]
+        avg = round(sum(prices[k] for k in window_keys) / window_hours, 5)
+        if best is None or avg < best["precio_medio_eur_kwh"]:
+            start_day, start_hour = window_sort_keys[0]
+            best = {
+                "inicio": f"{start_day.strftime('%d/%m/%Y')} {start_hour}h",
+                "horas": window_hours,
+                "precio_medio_eur_kwh": avg,
+            }
+    return best
 
 
 def pvpc_prices_to_csv(prices_by_zone: dict[str, dict[str, float]], zone_filter: str | None = None) -> str:

@@ -81,12 +81,16 @@ class FakeCoordinator:
         self.entry_id = entry_id
         self.pvpc_prices: dict[str, dict[str, float]] = {}
         self.last_success_time = None
+        self._year_to_date: dict[str, dict[str, float]] = {}
         from datetime import timedelta
 
         self.update_interval = timedelta(minutes=15)
 
     def async_add_listener(self, *args, **kwargs):
         return lambda: None
+
+    def year_to_date_completed_months(self, cont_id):
+        return self._year_to_date.get(cont_id, {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0})
 
 
 def _bundle(sp_overrides=None, has_export=False):
@@ -144,6 +148,7 @@ async def test_no_cost_sensors_without_price_configured(hass):
     ids = _unique_ids(entities)
     assert "contA_estimated_cost_today" not in ids
     assert "contA_average_price_month" not in ids
+    assert "contA_year_to_date_cost" not in ids
 
 
 async def test_cost_sensors_created_when_price_configured(hass):
@@ -153,6 +158,7 @@ async def test_cost_sensors_created_when_price_configured(hass):
     assert "contA_estimated_cost_today" in ids
     assert "contA_estimated_cost_month" in ids
     assert "contA_average_price_month" in ids
+    assert "contA_year_to_date_cost" in ids
 
 
 async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
@@ -220,6 +226,23 @@ async def test_surplus_compensation_sensors_only_if_enabled_with_price(hass):
     hass.data[DOMAIN].clear()
     entities_disabled = await _setup_with_fake_coordinator(hass, bundles_disabled)
     assert "contA_surplus_compensation_today" not in _unique_ids(entities_disabled)
+
+
+async def test_year_to_date_cost_adds_completed_months_and_current_month(hass):
+    bundles = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}  # mes en curso: 10 kWh x 0.2 = 2.0
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+    entry.add_to_hass(hass)
+    coordinator = FakeCoordinator(bundles, entry.entry_id)
+    coordinator._year_to_date["contA"] = {"imported_kwh": 50.0, "exported_kwh": 0.0, "cost": 10.0}
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    from custom_components.edistribucion import sensor as sensor_module
+
+    added = []
+    await sensor_module.async_setup_entry(hass, entry, lambda new, update_before_add=False: added.extend(new))
+
+    sensor = next(e for e in added if getattr(e, "_attr_unique_id", None) == "contA_year_to_date_cost")
+    assert sensor.native_value == pytest.approx(12.0)  # 10.0 (meses completados) + 2.0 (mes en curso)
 
 
 async def test_always_created_sensors_present(hass):

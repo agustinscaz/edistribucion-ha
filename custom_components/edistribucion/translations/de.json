@@ -119,6 +119,9 @@
       },
       "simulated_cost_month": {
         "name": "Simulierte Kosten mit Tarif {tarifa} (Monat)"
+      },
+      "year_to_date_cost": {
+        "name": "Kumulierte Jahreskosten"
       }
     },
     "binary_sensor": {
@@ -127,6 +130,9 @@
       },
       "power_excess": {
         "name": "Leistungsüberschreitung erkannt"
+      },
+      "exporting_now": {
+        "name": "Überschuss wird jetzt exportiert"
       }
     },
     "button": {

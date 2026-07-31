@@ -86,6 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionAveragePriceMonthSensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionYearToDateCostSensor(coordinator, cont_id, sp))
         if sp.get("tariff_type") == TARIFF_PVPC:
             entities.append(EdistribucionCurrentPvpcPriceSensor(coordinator, cont_id, sp))
         active_tariff = sp.get("tariff_type") or TARIFF_TRAMOS
@@ -468,6 +469,50 @@ class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):
         breakdown = estimate_energy_cost(sp, imported_kwh, month, self.coordinator.pvpc_prices)
         cost_total = breakdown.get("total") if breakdown else None
         return average_price_per_kwh(cost_total, imported_kwh)
+
+
+class EdistribucionYearToDateCostSensor(_EdistribucionBaseSensor):
+    """Coste estimado acumulado en lo que va de año: meses ya completados (recalculados una vez al
+    día, ver coordinator._async_update_year_to_date_if_needed) + el mes en curso (en vivo, con lo
+    que ya se tiene en `bundle["month"]`). Para tarifa pvpc, los meses anteriores al actual pueden
+    salir con coste incompleto — no se vuelve a pedir el histórico de precios PVPC día a día a
+    ESIOS para no sobrecargar esa API pública, solo se usa lo que ya haya cacheado del mes en
+    curso."""
+
+    entity_description = SensorEntityDescription(
+        key="year_to_date_cost",
+        translation_key="year_to_date_cost",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR",
+        suggested_display_precision=2,
+        state_class=SensorStateClass.TOTAL,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_year_to_date_cost"
+
+    @property
+    def _current_month_breakdown(self) -> dict | None:
+        sp = self._bundle.get("supply_point") or {}
+        month = self._bundle.get("month")
+        imported_kwh = month.get("totalImportedKwh") if month else None
+        return estimate_energy_cost(sp, imported_kwh, month, self.coordinator.pvpc_prices)
+
+    @property
+    def native_value(self) -> float:
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        current_month_cost = (self._current_month_breakdown or {}).get("total") or 0.0
+        return round((completed.get("cost") or 0.0) + current_month_cost, 2)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        month = self._bundle.get("month") or {}
+        return {
+            "kwh_importados_año": round((completed.get("imported_kwh") or 0.0) + (month.get("totalImportedKwh") or 0.0), 2),
+            "kwh_exportados_año": round((completed.get("exported_kwh") or 0.0) + (month.get("totalExportedKwh") or 0.0), 2),
+        }
 
 
 class EdistribucionSimulatedCostMonthSensor(_EdistribucionEstimatedCostSensor):

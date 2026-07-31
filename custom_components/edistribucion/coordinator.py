@@ -22,6 +22,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
+from .costs import estimate_energy_cost
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
 from .statistics import async_backfill_energy_statistics
 
@@ -66,6 +67,11 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         # signifique que la integración esté fallando.
         self._last_value_change: dict[str, dict[str, datetime]] = {}
         self._previous_values: dict[str, dict[str, float]] = {}
+        # kWh/coste acumulados de los meses YA COMPLETADOS de este año, por CUPS — ver
+        # _async_update_year_to_date_if_needed. El mes en curso se suma en vivo aparte (con lo que
+        # ya se tiene en `bundle["month"]`), no hace falta guardarlo aquí.
+        self._year_to_date_completed: dict[str, dict[str, float]] = {}
+        self._year_to_date_fetched_day: str | None = None
 
     def _pvpc_zones_needed(self) -> set[str]:
         """Zonas de las que hace falta precio PVPC — no solo si la tarifa activa es "pvpc": el
@@ -175,6 +181,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_CONNECTION}_{self.entry_id}")
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}")
             await self._async_backfill_statistics_if_needed(data)
+            await self._async_update_year_to_date_if_needed(data)
             return data
         except InvalidCredentialsError as err:
             # Caso inequívoco: no tiene sentido esperar a varios fallos seguidos como con un fallo de
@@ -213,6 +220,50 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             sp = bundle.get("supply_point") or {}
             await async_backfill_energy_statistics(self.hass, sp.get("cups", ""), bundle.get("month"))
         self._last_backfill_day = today_key
+
+    async def _async_update_year_to_date_if_needed(self, data: dict) -> None:
+        """Una vez al día, recalcula consumo/coste de los meses YA COMPLETADOS de este año (el mes
+        en curso se suma en vivo cada ciclo con lo que ya se tiene en `bundle["month"]`, no hace
+        falta repetirlo). No se hace en cada ciclo porque implica una llamada extra al add-on POR
+        MES completado y por CUPS — el total de meses completados no cambia salvo que cambie el
+        mes, así que sobra pedirlo cada 15 minutos.
+
+        LIMITACIÓN conocida con tarifa "pvpc": el coste de meses anteriores usa los precios PVPC
+        que haya cacheados en `self.pvpc_prices` (solo el mes en curso, ver
+        `_async_update_pvpc_prices`) — no se vuelve a pedir el histórico de precios a ESIOS día a
+        día para no sobrecargar esa API pública, así que el coste de meses PVPC anteriores al
+        actual puede salir incompleto (ver `horas_sin_precio` si se calcula aparte)."""
+        today_key = dt_util.now().strftime("%Y-%m-%d")
+        if self._year_to_date_fetched_day == today_key:
+            return
+        now = dt_util.now()
+        for cont_id, bundle in data.items():
+            sp = bundle.get("supply_point") or {}
+            imported = 0.0
+            exported = 0.0
+            cost = 0.0
+            for month in range(1, now.month):  # meses ya completados de este año (1..mes_actual-1)
+                month_date = now.replace(month=month, day=1).strftime("%Y-%m-%d")
+                try:
+                    month_data = await self.client.async_get_consumption(cont_id, RANGE_MONTH, month_date)
+                except EdistribucionApiError as err:
+                    _LOGGER.debug(
+                        "Sin consumo de %s/%s para el acumulado del año de %s: %s", month, now.year, sp.get("cups"), err
+                    )
+                    continue
+                imported += month_data.get("totalImportedKwh") or 0.0
+                exported += month_data.get("totalExportedKwh") or 0.0
+                breakdown = estimate_energy_cost(sp, month_data.get("totalImportedKwh"), month_data, self.pvpc_prices)
+                if breakdown:
+                    cost += breakdown.get("total") or 0.0
+            self._year_to_date_completed[cont_id] = {"imported_kwh": imported, "exported_kwh": exported, "cost": cost}
+        self._year_to_date_fetched_day = today_key
+
+    def year_to_date_completed_months(self, cont_id: str) -> dict[str, float]:
+        """kWh importado/exportado y coste estimado de los meses YA COMPLETADOS de este año para
+        este CUPS (cacheado una vez al día, ver `_async_update_year_to_date_if_needed`) — falta
+        sumarle el mes en curso, que cada sensor añade en vivo con lo que ya tiene a mano."""
+        return self._year_to_date_completed.get(cont_id, {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0})
 
     def _track_value_freshness(self, cont_id: str, bundle: dict) -> None:
         """Registra cuándo cambió por última vez el importado/exportado "de hoy" de este CUPS —

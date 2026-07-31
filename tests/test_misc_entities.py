@@ -143,6 +143,84 @@ class TestBinarySensor:
         assert state.state == "on"
         assert state.attributes["maximo_real_kw"] == 4.2
 
+    async def test_exporting_now_absent_without_any_export(self, hass, mock_add_on):
+        """El fixture mock_add_on no trae nunca totalExportedKwh — sin haber exportado nada
+        alguna vez, no tiene sentido crear el sensor (ver async_setup_entry)."""
+        from homeassistant.helpers import entity_registry as er
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        assert reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now") is None
+
+    async def test_exporting_now_on_when_latest_hour_has_export(self, hass, aioclient_mock):
+        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
+        aioclient_mock.get(
+            "http://localhost:8099/consumption/contA",
+            params={"range": "3"},
+            json={"totalImportedKwh": 5.0, "totalExportedKwh": 2.0, "hourlyByDate": {}},
+        )
+        aioclient_mock.get(
+            "http://localhost:8099/consumption/contA",
+            json={
+                "totalImportedKwh": 5.0,
+                "hourlyByDate": {"30/07/2026": [{"hour": "10 - 11 h", "exportedKwh": 1.5}]},
+            },
+        )
+        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
+        aioclient_mock.get(
+            "http://localhost:8099/contracted-power/contA",
+            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
+        )
+        from homeassistant.helpers import entity_registry as er
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now")
+        assert entity_id is not None
+        state = hass.states.get(entity_id)
+        assert state.state == "on"
+        assert state.attributes["kwh_exportados_esa_hora"] == 1.5
+        assert state.attributes["ultima_hora_con_dato"] == "30/07/2026 10"
+
+    async def test_exporting_now_off_when_latest_hour_has_no_export(self, hass, aioclient_mock):
+        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
+        aioclient_mock.get(
+            "http://localhost:8099/consumption/contA",
+            params={"range": "3"},
+            json={"totalImportedKwh": 5.0, "totalExportedKwh": 2.0, "hourlyByDate": {}},
+        )
+        aioclient_mock.get(
+            "http://localhost:8099/consumption/contA",
+            json={
+                "totalImportedKwh": 5.0,
+                "hourlyByDate": {"30/07/2026": [{"hour": "10 - 11 h", "exportedKwh": 0.0}]},
+            },
+        )
+        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
+        aioclient_mock.get(
+            "http://localhost:8099/contracted-power/contA",
+            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
+        )
+        from homeassistant.helpers import entity_registry as er
+
+        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        reg = er.async_get(hass)
+        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now")
+        assert entity_id is not None
+        assert hass.states.get(entity_id).state == "off"
+
 
 class TestButtons:
     async def test_pvpc_refresh_button_absent_without_pvpc_tariff(self, hass, mock_add_on):

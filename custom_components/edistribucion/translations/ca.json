@@ -119,6 +119,9 @@
       },
       "simulated_cost_month": {
         "name": "Cost simulat amb tarifa {tarifa} (mes)"
+      },
+      "year_to_date_cost": {
+        "name": "Cost acumulat de l'any"
       }
     },
     "binary_sensor": {
@@ -127,6 +130,9 @@
       },
       "power_excess": {
         "name": "Excés de potència detectat"
+      },
+      "exporting_now": {
+        "name": "Exportant excedent ara"
       }
     },
     "button": {
