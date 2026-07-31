@@ -241,12 +241,31 @@ def max_power_reported(max_power_demand: dict | None) -> float | None:
 
 def power_excess_detected(max_power_demand: dict | None, contract: dict | None) -> bool | None:
     """¿La potencia máxima real demandada ha superado la potencia contratada? None si no hay datos
-    suficientes (sin telegestión, o sin lectura de contrato) para saberlo. Se compara contra el
-    mayor de punta/valle contratados — cualquier punto por encima de eso es un exceso real."""
-    reported = max_power_reported(max_power_demand)
-    if reported is None or not contract:
+    suficientes (sin telegestión, o sin lectura de contrato) para saberlo.
+
+    Si `periods` distingue con claridad punta/valle (ver `max_power_by_period`), se compara CADA
+    periodo contra su propio límite contratado — comparar solo contra el mayor de los dos, cuando
+    punta y valle contratados difieren, daría un falso negativo si el exceso ocurrió justo en el
+    periodo de menor potencia contratada. Si no se puede distinguir, cae al máximo global contra el
+    mayor de punta/valle contratados (comportamiento anterior)."""
+    if not contract:
         return None
-    limit = max(contract.get("contractedPowerPuntaKw") or 0, contract.get("contractedPowerValleKw") or 0)
+
+    by_period = max_power_by_period(max_power_demand)
+    punta_label = next((label for label in by_period if "punta" in label.lower()), None)
+    valle_label = next((label for label in by_period if "valle" in label.lower()), None)
+    punta_limit = contract.get("contractedPowerPuntaKw") or 0
+    valle_limit = contract.get("contractedPowerValleKw") or 0
+
+    if punta_label and valle_label and (punta_limit or valle_limit):
+        exceeded_punta = bool(punta_limit) and by_period[punta_label] > punta_limit
+        exceeded_valle = bool(valle_limit) and by_period[valle_label] > valle_limit
+        return exceeded_punta or exceeded_valle
+
+    reported = max_power_reported(max_power_demand)
+    if reported is None:
+        return None
+    limit = max(punta_limit, valle_limit)
     if not limit:
         return None
     return reported > limit

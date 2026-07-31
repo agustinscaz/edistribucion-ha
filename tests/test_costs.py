@@ -367,6 +367,30 @@ class TestPowerExcessDetected:
     def test_compares_against_the_higher_of_punta_and_valle(self):
         assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 5.0}) is False
 
+    def test_per_period_catches_excess_in_the_lower_contracted_period(self):
+        """Caso del falso negativo: valle contratado (2.0kW) es menor que punta (5.0kW). Un pico de
+        3.0kW en valle no supera el máximo global (5.0kW) pero SÍ supera lo contratado en valle."""
+        power = {"points": [{"periods": {"punta": 4.0, "valle": 3.0}}]}
+        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
+        assert power_excess_detected(power, contract) is True
+
+    def test_per_period_false_when_both_within_their_own_limits(self):
+        power = {"points": [{"periods": {"punta": 4.0, "valle": 1.5}}]}
+        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
+        assert power_excess_detected(power, contract) is False
+
+    def test_per_period_true_when_punta_exceeds_its_own_limit(self):
+        power = {"points": [{"periods": {"punta": 6.0, "valle": 1.0}}]}
+        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
+        assert power_excess_detected(power, contract) is True
+
+    def test_falls_back_to_global_max_without_recognizable_period_labels(self):
+        """Sin "punta"/"valle" reconocibles en los labels, no se puede comparar por periodo — cae
+        al comportamiento global (aquí el pico de 4.0 SÍ supera el mayor contratado, 3.5)."""
+        power = {"maxValue": 4.0, "points": [{"periods": {"P1": 4.0, "P2": 1.0}}]}
+        contract = {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
+        assert power_excess_detected(power, contract) is True
+
 
 class TestMaxPowerByPeriod:
     def test_empty_without_data(self):

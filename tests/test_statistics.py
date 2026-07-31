@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from custom_components.edistribucion.statistics import (
+    _carry_over_sum,
     _daily_points,
     _hourly_points,
     _leading_hour,
@@ -99,6 +100,40 @@ class TestDailyPoints:
         month_data = {"dailyTotals": [{"date": "30/07/2026"}]}
         points = _daily_points(month_data, "importedKwh")
         assert points == [(points[0][0], 0.0)]
+
+
+class TestCarryOverSum:
+    """El bug real: `month_data` (ver coordinator.py) es siempre el mes EN CURSO — al cambiar de
+    mes, `points[0]` pasa a ser el día/hora 1 del mes nuevo. Sin anclar al último sum guardado, el
+    running_total volvería a arrancar en 0 aunque el recorder ya tuviera un sum grande acumulado
+    del mes anterior, provocando una caída que rompe la monotonía de las long-term statistics."""
+
+    def test_no_previous_data_starts_at_zero(self):
+        """Primera vez que se crea el statistic_id — 0.0 sigue siendo correcto."""
+        first_point = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        assert _carry_over_sum(None, first_point) == 0.0
+
+    def test_anchors_to_previous_month_close_at_month_boundary(self):
+        """El caso que estaba roto: lo último guardado es del 31/07 (mes anterior al que se va a
+        escribir ahora, que empieza el 01/08) -> debe usarse como base, no reiniciar a 0."""
+        last_saved = (datetime(2026, 7, 31, tzinfo=timezone.utc), 38.7)
+        first_point = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        assert _carry_over_sum(last_saved, first_point) == 38.7
+
+    def test_does_not_double_count_within_the_same_month(self):
+        """Re-ejecución dentro del MISMO mes (lo último guardado es un día de este mismo mes, que
+        `month_data` va a reescribir de todas formas): no hay que sumarlo aparte, o se contaría
+        dos veces — sigue arrancando en 0, como siempre."""
+        last_saved = (datetime(2026, 8, 15, tzinfo=timezone.utc), 20.0)
+        first_point = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        assert _carry_over_sum(last_saved, first_point) == 0.0
+
+    def test_equal_timestamp_does_not_anchor(self):
+        """Si coincide exactamente con el primer punto (se va a reescribir), tampoco debe sumarse
+        aparte — el límite es estrictamente "anterior", no "anterior o igual"."""
+        last_saved = (datetime(2026, 8, 1, tzinfo=timezone.utc), 5.0)
+        first_point = datetime(2026, 8, 1, tzinfo=timezone.utc)
+        assert _carry_over_sum(last_saved, first_point) == 0.0
 
 
 class _FakeConfig:
