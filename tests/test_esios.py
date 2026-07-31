@@ -3,10 +3,12 @@ Assistant, se ejecuta con un servidor aiohttp real de pruebas."""
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import date
 
 import pytest
 from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 
 from custom_components.edistribucion.esios import (
     DEFAULT_PVPC_ZONE,
@@ -23,15 +25,17 @@ from custom_components.edistribucion.esios import (
 pytestmark = pytest.mark.enable_socket
 
 
-async def _client_with_mock_archive(aiohttp_client, monkeypatch, app):
-    """`async_get_pvpc_prices_for_day` llama a la URL ABSOLUTA `esios.ARCHIVE_URL` — el cliente de
-    pruebas de aiohttp solo intercepta rutas relativas a su propio servidor, así que sin esto la
-    llamada se iría de verdad a la ESIOS real en vez de al servidor de pruebas local."""
-    client = await aiohttp_client(app)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.esios.ARCHIVE_URL", str(client.make_url("/archives/70/download_json"))
-    )
-    return client
+@asynccontextmanager
+async def _client_with_mock_archive(monkeypatch, app):
+    """Arranca el servidor de pruebas dentro de la propia tarea del test (ver test_api.py para el
+    motivo de no usar el fixture `aiohttp_client` de pytest-aiohttp) y redirige la URL ABSOLUTA
+    `esios.ARCHIVE_URL` hacia él — si no, `async_get_pvpc_prices_for_day` se iría de verdad a la
+    ESIOS real en vez de al servidor de pruebas local."""
+    async with TestClient(TestServer(app)) as test_client:
+        monkeypatch.setattr(
+            "custom_components.edistribucion.esios.ARCHIVE_URL", str(test_client.make_url("/archives/70/download_json"))
+        )
+        yield test_client
 
 
 def _pvpc_payload(rows):
@@ -52,8 +56,7 @@ def _row(dia: str, hora: str, pcb: str, cym: str | None = None) -> dict:
     return row
 
 
-@pytest.mark.asyncio
-async def test_parses_real_shaped_response(aiohttp_client, monkeypatch):
+async def test_parses_real_shaped_response(monkeypatch):
     rows = [_row("30/07/2026", f"{h}-{h + 1}", f"{100 + h},50") for h in range(24)]
     app = web.Application()
 
@@ -64,40 +67,34 @@ async def test_parses_real_shaped_response(aiohttp_client, monkeypatch):
         return web.json_response(_pvpc_payload(rows))
 
     app.router.add_get("/archives/70/download_json", handler)
-    client = await _client_with_mock_archive(aiohttp_client, monkeypatch, app)
+    async with _client_with_mock_archive(monkeypatch, app) as client:
+        prices = await async_get_pvpc_prices_for_day(client.session, ZONE_PENINSULA_BALEARES_CANARIAS, date(2026, 7, 30))
+        assert len(prices) == 24
+        assert prices["30/07/2026 0"] == 0.1005
+        assert prices["30/07/2026 23"] == round(123.5 / 1000, 5)
 
-    prices = await async_get_pvpc_prices_for_day(client.session, ZONE_PENINSULA_BALEARES_CANARIAS, date(2026, 7, 30))
-    assert len(prices) == 24
-    assert prices["30/07/2026 0"] == 0.1005
-    assert prices["30/07/2026 23"] == round(123.5 / 1000, 5)
 
-
-@pytest.mark.asyncio
-async def test_uses_correct_zone_column(aiohttp_client, monkeypatch):
+async def test_uses_correct_zone_column(monkeypatch):
     rows = [_row("30/07/2026", "0-1", "100,0", "200,0")]
     app = web.Application()
     app.router.add_get("/archives/70/download_json", _json_handler(_pvpc_payload(rows)))
-    client = await _client_with_mock_archive(aiohttp_client, monkeypatch, app)
+    async with _client_with_mock_archive(monkeypatch, app) as client:
+        pcb_prices = await async_get_pvpc_prices_for_day(client.session, ZONE_PENINSULA_BALEARES_CANARIAS, date(2026, 7, 30))
+        cym_prices = await async_get_pvpc_prices_for_day(client.session, ZONE_CEUTA_MELILLA, date(2026, 7, 30))
+        assert pcb_prices["30/07/2026 0"] == 0.1
+        assert cym_prices["30/07/2026 0"] == 0.2
 
-    pcb_prices = await async_get_pvpc_prices_for_day(client.session, ZONE_PENINSULA_BALEARES_CANARIAS, date(2026, 7, 30))
-    cym_prices = await async_get_pvpc_prices_for_day(client.session, ZONE_CEUTA_MELILLA, date(2026, 7, 30))
-    assert pcb_prices["30/07/2026 0"] == 0.1
-    assert cym_prices["30/07/2026 0"] == 0.2
 
-
-@pytest.mark.asyncio
-async def test_not_yet_published_day_returns_empty_dict(aiohttp_client, monkeypatch):
+async def test_not_yet_published_day_returns_empty_dict(monkeypatch):
     """Comportamiento real observado contra ESIOS: día aún no publicado -> 200 sin clave "PVPC"."""
     app = web.Application()
     app.router.add_get("/archives/70/download_json", _json_handler({"message": "No values for specified archive"}))
-    client = await _client_with_mock_archive(aiohttp_client, monkeypatch, app)
+    async with _client_with_mock_archive(monkeypatch, app) as client:
+        prices = await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 12, 31))
+        assert prices == {}
 
-    prices = await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 12, 31))
-    assert prices == {}
 
-
-@pytest.mark.asyncio
-async def test_malformed_row_is_skipped_not_fatal(aiohttp_client, monkeypatch):
+async def test_malformed_row_is_skipped_not_fatal(monkeypatch):
     rows = [
         _row("30/07/2026", "0-1", "100,0"),
         {"Dia": "30/07/2026", "Hora": "1-2", "PCB": "no-es-un-numero"},  # precio inválido
@@ -106,38 +103,34 @@ async def test_malformed_row_is_skipped_not_fatal(aiohttp_client, monkeypatch):
     ]
     app = web.Application()
     app.router.add_get("/archives/70/download_json", _json_handler(_pvpc_payload(rows)))
-    client = await _client_with_mock_archive(aiohttp_client, monkeypatch, app)
+    async with _client_with_mock_archive(monkeypatch, app) as client:
+        prices = await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
+        assert set(prices) == {"30/07/2026 0", "30/07/2026 2"}
 
-    prices = await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
-    assert set(prices) == {"30/07/2026 0", "30/07/2026 2"}
 
-
-@pytest.mark.asyncio
-async def test_http_error_raises_esios_error(aiohttp_client, monkeypatch):
+async def test_http_error_raises_esios_error(monkeypatch):
     async def forbidden_handler(request):
         return web.Response(status=403, text="banned")
 
     app = web.Application()
     app.router.add_get("/archives/70/download_json", forbidden_handler)
-    client = await _client_with_mock_archive(aiohttp_client, monkeypatch, app)
+    async with _client_with_mock_archive(monkeypatch, app) as client:
+        with pytest.raises(EsiosError, match="403"):
+            await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
 
-    with pytest.raises(EsiosError, match="403"):
-        await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
 
-
-@pytest.mark.asyncio
-async def test_connection_error_raises_esios_error(aiohttp_client, monkeypatch):
+async def test_connection_error_raises_esios_error(monkeypatch):
     from aiohttp import ClientConnectionError
 
     app = web.Application()
-    client = await aiohttp_client(app)
+    async with TestClient(TestServer(app)) as test_client:
 
-    async def failing_get(*args, **kwargs):
-        raise ClientConnectionError("no hay red")
+        async def failing_get(*args, **kwargs):
+            raise ClientConnectionError("no hay red")
 
-    monkeypatch.setattr(client.session, "get", failing_get)
-    with pytest.raises(EsiosError):
-        await async_get_pvpc_prices_for_day(client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
+        monkeypatch.setattr(test_client.session, "get", failing_get)
+        with pytest.raises(EsiosError):
+            await async_get_pvpc_prices_for_day(test_client.session, DEFAULT_PVPC_ZONE, date(2026, 7, 30))
 
 
 class TestPvpcPricesToCsv:
