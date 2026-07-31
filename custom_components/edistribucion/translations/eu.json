@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "e-distribución add-onarekin konektatu",
+        "description": "Idatzi `edistribucion` add-onaren helbidea (berez, Home Assistant instantzia berean).",
+        "data": {
+          "host": "Host",
+          "port": "Ataka"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "e-distribución add-ona sarean aurkitu da",
+        "description": "e-distribución add-on bat aurkitu da {host}:{port} helbidean. Gehitu nahi duzu?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Ezin izan da add-onarekin konektatu. Egiaztatu abiarazita dagoela eta host/ataka zuzenak direla."
+    },
+    "abort": {
+      "already_configured": "Add-on hori jadanik konfiguratuta dago.",
+      "cannot_connect": "Ezin izan da sarean aurkitutako add-onarekin konektatu."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "e-distribución aukerak: ezarpen orokorrak",
+        "description": "Eguneratze-tartea bakarrik da globala. Pauso honen ondoren, zure {num_supplies} hornidurak banaka konfiguratuko dituzu: tarifa mota, potentzia eta energia prezioa, PVPC eremua eta soberakinen konpentsazioa — dena CUPS bakoitzeko, kontratu bakoitza desberdina izan daitekeelako. Kontratatutako potentzia (kW) ez da eskatzen: automatikoki irakurtzen da e-distribución kontratutik.",
+        "data": {
+          "scan_interval": "Eguneratze-tartea (minutuak)"
+        }
+      },
+      "supply_point": {
+        "title": "Hornidura {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nAukeratu hornidura hau jarraitu nahi duzun, ezizen bat, tarifa mota (finkoa/tarteak/pvpc), potentzia terminoaren prezioa, aukeratutako tarifaren araberako energia prezioak, soberakinen konpentsazioa, eta (pvpc erabiltzen baduzu) eremua. Kontratatutako potentzia (kW) automatikoki irakurtzen da e-distribución-etik — ez duzu idatzi behar.\n\nBihar-etarako pvpc prezioak aurreko egunean 20:15ak inguruan argitaratzen dira — ez da gakorik edo erregistrorik behar, REEren fitxategi publikoa erabiltzen da.",
+        "data": {
+          "track": "Hornidura hau jarraitu",
+          "alias": "Ezizena (aukerakoa)",
+          "tariff_type": "Tarifa mota: finkoa / tarteak / pvpc",
+          "price_power_punta": "Gailur-orduko potentzia prezioa (€/kW/egun)",
+          "price_power_valle": "Sakonaldiko potentzia prezioa (€/kW/egun)",
+          "fixed_price": "Prezio finkoa (€/kWh, tarifa 'finkoa' bada)",
+          "price_punta": "Gailur-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",
+          "price_llano": "Arrunt-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",
+          "price_valle": "Sakonaldiko prezioa (€/kWh, tarifa 'tarteak' bada)",
+          "surplus_compensation": "Soberakinen konpentsazioa",
+          "surplus_price": "Konpentsazioaren prezioa (€/kWh, aktibatuta badago)",
+          "pvpc_zone": "PVPC eremua (tarifa 'pvpc' bada): Penintsula/Balear uharteak/Kanaria uharteak, edo Ceuta eta Melilla"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Gaur inportatutako energia" },
+      "exported_energy_today": { "name": "Gaur esportatutako energia" },
+      "imported_energy_week": { "name": "Inportatutako energia (astea)" },
+      "exported_energy_week": { "name": "Esportatutako energia (astea)" },
+      "imported_energy_month": { "name": "Inportatutako energia (hilabetea)" },
+      "exported_energy_month": { "name": "Esportatutako energia (hilabetea)" },
+      "max_power_demand": { "name": "Eskatutako potentzia maximoa" },
+      "contracted_power": { "name": "Kontratatutako potentzia" },
+      "last_update": { "name": "Azken eguneraketa" },
+      "next_update": { "name": "Hurrengo eguneraketa" },
+      "estimated_cost_today": { "name": "Gaurko kostu estimatua" },
+      "estimated_cost_month": { "name": "Hilabeteko kostu estimatua" },
+      "power_cost_today": { "name": "Potentzia terminoa (eguna)" },
+      "power_cost_month": { "name": "Potentzia terminoa (hilabetea)" },
+      "surplus_compensation_today": { "name": "Gaurko soberakinen konpentsazioa" },
+      "surplus_compensation_month": { "name": "Hilabeteko soberakinen konpentsazioa" },
+      "month_vs_last_year": { "name": "Iazko hilabete berarekin alderatuta" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Konektatuta" }
+    },
+    "button": {
+      "refresh": { "name": "Eguneratu orain" },
+      "relogin": { "name": "Berkonexioa behartu" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Kontsumo egutegia" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "Ezin da e-distribución add-onarekin konektatu",
+      "description": "Add-onari egindako hainbat deik segidan huts egin dute. Egiaztatu Ezarpenak → Gehigarriak → e-distribución atalean abiarazita dagoela, berrikusi bere Erregistro fitxa, eta baieztatu integrazio honetan konfiguratutako host/ataka zuzenak direla."
+    },
+    "invalid_credentials": {
+      "title": "Kredentzial okerrak e-distribución add-onean",
+      "description": "Add-onak saio-hasiera baztertu du DNI/pasahitz okerragatik. Zuzendu Ezarpenak → Gehigarriak → e-distribución → Konfigurazioa atalean, eta berrabiarazi add-ona."
+    }
+  }
+}

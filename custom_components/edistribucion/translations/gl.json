@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Conectar co add-on de e-distribución",
+        "description": "Introduce o enderezo do add-on `edistribucion` (por defecto, no mesmo Home Assistant).",
+        "data": {
+          "host": "Host",
+          "port": "Porto"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Add-on de e-distribución atopado na rede",
+        "description": "Atopouse un add-on de e-distribución en {host}:{port}. Queres engadilo?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Non se puido conectar co add-on. Comproba que está iniciado e que o host/porto son correctos."
+    },
+    "abort": {
+      "already_configured": "Ese add-on xa está configurado.",
+      "cannot_connect": "Non se puido conectar co add-on atopado na rede."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcións de e-distribución: axustes xerais",
+        "description": "Só o intervalo de actualización é global. Despois deste paso, configurarás cada un dos teus {num_supplies} subministros por separado: tipo de tarifa, prezo de potencia e de enerxía, zona PVPC e compensación de excedentes — todo por CUPS, xa que cada contrato pode ser distinto. A potencia contratada (kW) non se pide: lese automaticamente do teu contrato con e-distribución.",
+        "data": {
+          "scan_interval": "Intervalo de actualización (minutos)"
+        }
+      },
+      "supply_point": {
+        "title": "Subministro {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nElixe se seguir este subministro, un alias, o tipo de tarifa (fixa/tramos/pvpc), o prezo do termo de potencia, os prezos de enerxía segundo a tarifa elixida, a compensación de excedentes, e (se usas pvpc) a zona. A potencia contratada (kW) lese soa de e-distribución — non fai falta que a escribas.\n\nOs prezos de mañá con tarifa pvpc publícanse sobre as 20:15h do día anterior — non fai falta clave nin rexistro, úsase o ficheiro público de REE.",
+        "data": {
+          "track": "Seguir este subministro",
+          "alias": "Alias (opcional)",
+          "tariff_type": "Tipo de tarifa: fixa / tramos / pvpc",
+          "price_power_punta": "Prezo potencia punta (€/kW/día)",
+          "price_power_valle": "Prezo potencia val (€/kW/día)",
+          "fixed_price": "Prezo fixo (€/kWh, se a tarifa é 'fixa')",
+          "price_punta": "Prezo en punta (€/kWh, se a tarifa é 'tramos')",
+          "price_llano": "Prezo en chaira (€/kWh, se a tarifa é 'tramos')",
+          "price_valle": "Prezo en val (€/kWh, se a tarifa é 'tramos')",
+          "surplus_compensation": "Compensación de excedentes",
+          "surplus_price": "Prezo da compensación (€/kWh, se está activada)",
+          "pvpc_zone": "Zona PVPC (se a tarifa é 'pvpc'): Península/Baleares/Canarias, ou Ceuta e Melilla"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Enerxía importada hoxe" },
+      "exported_energy_today": { "name": "Enerxía exportada hoxe" },
+      "imported_energy_week": { "name": "Enerxía importada (semana)" },
+      "exported_energy_week": { "name": "Enerxía exportada (semana)" },
+      "imported_energy_month": { "name": "Enerxía importada (mes)" },
+      "exported_energy_month": { "name": "Enerxía exportada (mes)" },
+      "max_power_demand": { "name": "Potencia máxima demandada" },
+      "contracted_power": { "name": "Potencia contratada" },
+      "last_update": { "name": "Última actualización" },
+      "next_update": { "name": "Próxima actualización" },
+      "estimated_cost_today": { "name": "Custo estimado hoxe" },
+      "estimated_cost_month": { "name": "Custo estimado (mes)" },
+      "power_cost_today": { "name": "Termo de potencia (día)" },
+      "power_cost_month": { "name": "Termo de potencia (mes)" },
+      "surplus_compensation_today": { "name": "Compensación por excedentes hoxe" },
+      "surplus_compensation_month": { "name": "Compensación por excedentes (mes)" },
+      "month_vs_last_year": { "name": "Comparativa co mesmo mes do ano anterior" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Conectado" }
+    },
+    "button": {
+      "refresh": { "name": "Actualizar agora" },
+      "relogin": { "name": "Forzar reconexión" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Calendario de consumo" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "Non se pode conectar co add-on de e-distribución",
+      "description": "Levan varios intentos seguidos fallando as chamadas ao add-on. Comproba en Configuración → Complementos → e-distribución que está iniciado, revisa a súa pestana de Rexistro, e confirma que o host/porto configurados nesta integración son correctos."
+    },
+    "invalid_credentials": {
+      "title": "Credenciais incorrectas no add-on de e-distribución",
+      "description": "O add-on rexeitou o inicio de sesión por DNI/contrasinal incorrectos. Corríxeos en Configuración → Complementos → e-distribución → Configuración, e reinicia o add-on."
+    }
+  }
+}

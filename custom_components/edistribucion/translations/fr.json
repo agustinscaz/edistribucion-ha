@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Se connecter à l'add-on e-distribución",
+        "description": "Indiquez l'adresse de l'add-on `edistribucion` (par défaut, la même instance de Home Assistant).",
+        "data": {
+          "host": "Hôte",
+          "port": "Port"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Add-on e-distribución trouvé sur le réseau",
+        "description": "Un add-on e-distribución a été trouvé à {host}:{port}. Voulez-vous l'ajouter ?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter à l'add-on. Vérifiez qu'il est démarré et que l'hôte/le port sont corrects."
+    },
+    "abort": {
+      "already_configured": "Cet add-on est déjà configuré.",
+      "cannot_connect": "Impossible de se connecter à l'add-on trouvé sur le réseau."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options d'e-distribución : réglages généraux",
+        "description": "Seul l'intervalle de mise à jour est global. Après cette étape, vous configurerez chacun de vos {num_supplies} points de livraison séparément : type de tarif, prix de la puissance et de l'énergie, zone PVPC et compensation des excédents — tout par CUPS, car chaque contrat peut être différent. La puissance souscrite (kW) n'est pas demandée : elle est lue automatiquement depuis votre contrat e-distribución.",
+        "data": {
+          "scan_interval": "Intervalle de mise à jour (minutes)"
+        }
+      },
+      "supply_point": {
+        "title": "Point de livraison {position}/{total} : {cups}",
+        "description": "{address} ({estado})\n\nChoisissez si vous voulez suivre ce point de livraison, un alias, le type de tarif (fixe/par tranches/pvpc), le prix du terme de puissance, les prix de l'énergie selon le tarif choisi, la compensation des excédents, et (si vous utilisez pvpc) la zone. La puissance souscrite (kW) est lue automatiquement depuis e-distribución — inutile de la saisir.\n\nLes prix de demain en tarif pvpc sont publiés vers 20h15 la veille — aucune clé ni inscription n'est nécessaire, le fichier public de REE est utilisé.",
+        "data": {
+          "track": "Suivre ce point de livraison",
+          "alias": "Alias (facultatif)",
+          "tariff_type": "Type de tarif : fixe / par tranches / pvpc",
+          "price_power_punta": "Prix puissance heures pleines (€/kW/jour)",
+          "price_power_valle": "Prix puissance heures creuses (€/kW/jour)",
+          "fixed_price": "Prix fixe (€/kWh, si le tarif est 'fixe')",
+          "price_punta": "Prix en heures pleines (€/kWh, si le tarif est 'par tranches')",
+          "price_llano": "Prix en heures intermédiaires (€/kWh, si le tarif est 'par tranches')",
+          "price_valle": "Prix en heures creuses (€/kWh, si le tarif est 'par tranches')",
+          "surplus_compensation": "Compensation des excédents",
+          "surplus_price": "Prix de la compensation (€/kWh, si activée)",
+          "pvpc_zone": "Zone PVPC (si le tarif est 'pvpc') : Péninsule/Baléares/Canaries, ou Ceuta et Melilla"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Énergie importée aujourd'hui" },
+      "exported_energy_today": { "name": "Énergie exportée aujourd'hui" },
+      "imported_energy_week": { "name": "Énergie importée (semaine)" },
+      "exported_energy_week": { "name": "Énergie exportée (semaine)" },
+      "imported_energy_month": { "name": "Énergie importée (mois)" },
+      "exported_energy_month": { "name": "Énergie exportée (mois)" },
+      "max_power_demand": { "name": "Puissance maximale appelée" },
+      "contracted_power": { "name": "Puissance souscrite" },
+      "last_update": { "name": "Dernière mise à jour" },
+      "next_update": { "name": "Prochaine mise à jour" },
+      "estimated_cost_today": { "name": "Coût estimé aujourd'hui" },
+      "estimated_cost_month": { "name": "Coût estimé (mois)" },
+      "power_cost_today": { "name": "Terme de puissance (jour)" },
+      "power_cost_month": { "name": "Terme de puissance (mois)" },
+      "surplus_compensation_today": { "name": "Compensation des excédents aujourd'hui" },
+      "surplus_compensation_month": { "name": "Compensation des excédents (mois)" },
+      "month_vs_last_year": { "name": "Comparaison avec le même mois de l'année précédente" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connecté" }
+    },
+    "button": {
+      "refresh": { "name": "Actualiser maintenant" },
+      "relogin": { "name": "Forcer la reconnexion" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Calendrier de consommation" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "Impossible de se connecter à l'add-on e-distribución",
+      "description": "Plusieurs appels consécutifs à l'add-on ont échoué. Vérifiez dans Paramètres → Modules complémentaires → e-distribución qu'il est démarré, consultez son onglet Journal, et confirmez que l'hôte/le port configurés dans cette intégration sont corrects."
+    },
+    "invalid_credentials": {
+      "title": "Identifiants incorrects dans l'add-on e-distribución",
+      "description": "L'add-on a rejeté la connexion à cause d'un DNI/mot de passe incorrect. Corrigez-les dans Paramètres → Modules complémentaires → e-distribución → Configuration, et redémarrez l'add-on."
+    }
+  }
+}

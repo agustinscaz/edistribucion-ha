@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connectar amb l'add-on d'e-distribución",
+        "description": "Introdueix l'adreça de l'add-on `edistribucion` (per defecte, al mateix Home Assistant).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "S'ha trobat l'add-on d'e-distribución a la xarxa",
+        "description": "S'ha trobat un add-on d'e-distribución a {host}:{port}. Vols afegir-lo?"
+      }
+    },
+    "error": {
+      "cannot_connect": "No s'ha pogut connectar amb l'add-on. Comprova que estigui iniciat i que l'host/port siguin correctes."
+    },
+    "abort": {
+      "already_configured": "Aquest add-on ja està configurat.",
+      "cannot_connect": "No s'ha pogut connectar amb l'add-on trobat a la xarxa."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcions d'e-distribución: ajustos generals",
+        "description": "Només l'interval d'actualització és global. Després d'aquest pas, configuraràs cadascun dels teus {num_supplies} subministraments per separat: tipus de tarifa, preu de potència i d'energia, zona PVPC i compensació d'excedents — tot per CUPS, ja que cada contracte pot ser diferent. La potència contractada (kW) no es demana: es llegeix automàticament del teu contracte amb e-distribución.",
+        "data": {
+          "scan_interval": "Interval d'actualització (minuts)"
+        }
+      },
+      "supply_point": {
+        "title": "Subministrament {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nTria si vols seguir aquest subministrament, un àlies, el tipus de tarifa (fixa/trams/pvpc), el preu del terme de potència, els preus d'energia segons la tarifa triada, la compensació d'excedents, i (si fas servir pvpc) la zona. La potència contractada (kW) es llegeix sola des d'e-distribución — no cal que l'escriguis.\n\nEls preus de demà amb tarifa pvpc es publiquen cap a les 20:15h del dia anterior — no cal cap clau ni registre, s'utilitza el fitxer públic de REE.",
+        "data": {
+          "track": "Seguir aquest subministrament",
+          "alias": "Àlies (opcional)",
+          "tariff_type": "Tipus de tarifa: fixa / trams / pvpc",
+          "price_power_punta": "Preu potència punta (€/kW/dia)",
+          "price_power_valle": "Preu potència vall (€/kW/dia)",
+          "fixed_price": "Preu fix (€/kWh, si la tarifa és 'fixa')",
+          "price_punta": "Preu en punta (€/kWh, si la tarifa és 'trams')",
+          "price_llano": "Preu en pla (€/kWh, si la tarifa és 'trams')",
+          "price_valle": "Preu en vall (€/kWh, si la tarifa és 'trams')",
+          "surplus_compensation": "Compensació d'excedents",
+          "surplus_price": "Preu de la compensació (€/kWh, si està activada)",
+          "pvpc_zone": "Zona PVPC (si la tarifa és 'pvpc'): Península/Balears/Canàries, o Ceuta i Melilla"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Energia importada avui" },
+      "exported_energy_today": { "name": "Energia exportada avui" },
+      "imported_energy_week": { "name": "Energia importada (setmana)" },
+      "exported_energy_week": { "name": "Energia exportada (setmana)" },
+      "imported_energy_month": { "name": "Energia importada (mes)" },
+      "exported_energy_month": { "name": "Energia exportada (mes)" },
+      "max_power_demand": { "name": "Potència màxima demandada" },
+      "contracted_power": { "name": "Potència contractada" },
+      "last_update": { "name": "Última actualització" },
+      "next_update": { "name": "Propera actualització" },
+      "estimated_cost_today": { "name": "Cost estimat avui" },
+      "estimated_cost_month": { "name": "Cost estimat (mes)" },
+      "power_cost_today": { "name": "Terme de potència (dia)" },
+      "power_cost_month": { "name": "Terme de potència (mes)" },
+      "surplus_compensation_today": { "name": "Compensació per excedents avui" },
+      "surplus_compensation_month": { "name": "Compensació per excedents (mes)" },
+      "month_vs_last_year": { "name": "Comparativa amb el mateix mes de l'any anterior" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connectat" }
+    },
+    "button": {
+      "refresh": { "name": "Actualitza ara" },
+      "relogin": { "name": "Força reconnexió" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Calendari de consum" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "No es pot connectar amb l'add-on d'e-distribución",
+      "description": "Porten diversos intents seguits fallant les trucades a l'add-on. Comprova a Configuració → Complements → e-distribución que estigui iniciat, revisa la pestanya de Registre, i confirma que l'host/port configurats en aquesta integració són correctes."
+    },
+    "invalid_credentials": {
+      "title": "Credencials incorrectes a l'add-on d'e-distribución",
+      "description": "L'add-on ha rebutjat l'inici de sessió per DNI/contrasenya incorrectes. Corregeix-los a Configuració → Complements → e-distribución → Configuració, i reinicia l'add-on."
+    }
+  }
+}

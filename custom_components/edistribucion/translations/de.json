@@ -1,0 +1,95 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit dem e-distribución-Add-on verbinden",
+        "description": "Gib die Adresse des `edistribucion`-Add-ons ein (standardmäßig dieselbe Home-Assistant-Instanz).",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "e-distribución-Add-on im Netzwerk gefunden",
+        "description": "Ein e-distribución-Add-on wurde unter {host}:{port} gefunden. Möchtest du es hinzufügen?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Add-on fehlgeschlagen. Prüfe, ob es gestartet ist und Host/Port korrekt sind."
+    },
+    "abort": {
+      "already_configured": "Dieses Add-on ist bereits konfiguriert.",
+      "cannot_connect": "Verbindung zum im Netzwerk gefundenen Add-on fehlgeschlagen."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "e-distribución-Optionen: allgemeine Einstellungen",
+        "description": "Nur das Aktualisierungsintervall ist global. Nach diesem Schritt konfigurierst du jeden deiner {num_supplies} Zählpunkte einzeln: Tarifart, Leistungs- und Energiepreis, PVPC-Zone und Einspeisevergütung — alles pro CUPS, da jeder Vertrag anders sein kann. Die vertraglich vereinbarte Leistung (kW) wird nicht abgefragt: Sie wird automatisch aus deinem e-distribución-Vertrag gelesen.",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall (Minuten)"
+        }
+      },
+      "supply_point": {
+        "title": "Zählpunkt {position}/{total}: {cups}",
+        "description": "{address} ({estado})\n\nWähle, ob dieser Zählpunkt verfolgt werden soll, einen Alias, die Tarifart (fest/zeitgestaffelt/pvpc), den Preis für den Leistungsterm, die Energiepreise je nach gewähltem Tarif, die Einspeisevergütung, und (bei pvpc) die Zone. Die vertraglich vereinbarte Leistung (kW) wird automatisch von e-distribución gelesen — du musst sie nicht eingeben.\n\nDie PVPC-Preise für morgen werden gegen 20:15 Uhr am Vortag veröffentlicht — es ist kein Schlüssel und keine Registrierung nötig, es wird die öffentliche Datei von REE verwendet.",
+        "data": {
+          "track": "Diesen Zählpunkt verfolgen",
+          "alias": "Alias (optional)",
+          "tariff_type": "Tarifart: fest / zeitgestaffelt / pvpc",
+          "price_power_punta": "Leistungspreis Spitzenlast (€/kW/Tag)",
+          "price_power_valle": "Leistungspreis Schwachlast (€/kW/Tag)",
+          "fixed_price": "Festpreis (€/kWh, wenn Tarif 'fest')",
+          "price_punta": "Preis Spitzenlast (€/kWh, wenn Tarif 'zeitgestaffelt')",
+          "price_llano": "Preis Mittellast (€/kWh, wenn Tarif 'zeitgestaffelt')",
+          "price_valle": "Preis Schwachlast (€/kWh, wenn Tarif 'zeitgestaffelt')",
+          "surplus_compensation": "Einspeisevergütung",
+          "surplus_price": "Vergütungspreis (€/kWh, wenn aktiviert)",
+          "pvpc_zone": "PVPC-Zone (wenn Tarif 'pvpc'): Festland/Balearen/Kanaren, oder Ceuta und Melilla"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "imported_energy_today": { "name": "Importierte Energie heute" },
+      "exported_energy_today": { "name": "Exportierte Energie heute" },
+      "imported_energy_week": { "name": "Importierte Energie (Woche)" },
+      "exported_energy_week": { "name": "Exportierte Energie (Woche)" },
+      "imported_energy_month": { "name": "Importierte Energie (Monat)" },
+      "exported_energy_month": { "name": "Exportierte Energie (Monat)" },
+      "max_power_demand": { "name": "Maximale Leistungsaufnahme" },
+      "contracted_power": { "name": "Vertraglich vereinbarte Leistung" },
+      "last_update": { "name": "Letzte Aktualisierung" },
+      "next_update": { "name": "Nächste Aktualisierung" },
+      "estimated_cost_today": { "name": "Geschätzte Kosten heute" },
+      "estimated_cost_month": { "name": "Geschätzte Kosten (Monat)" },
+      "power_cost_today": { "name": "Leistungsterm (Tag)" },
+      "power_cost_month": { "name": "Leistungsterm (Monat)" },
+      "surplus_compensation_today": { "name": "Einspeisevergütung heute" },
+      "surplus_compensation_month": { "name": "Einspeisevergütung (Monat)" },
+      "month_vs_last_year": { "name": "Vergleich mit demselben Monat des Vorjahres" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Verbunden" }
+    },
+    "button": {
+      "refresh": { "name": "Jetzt aktualisieren" },
+      "relogin": { "name": "Neuverbindung erzwingen" }
+    },
+    "calendar": {
+      "consumption_calendar": { "name": "Verbrauchskalender" }
+    }
+  },
+  "issues": {
+    "addon_connection_failed": {
+      "title": "Verbindung zum e-distribución-Add-on nicht möglich",
+      "description": "Mehrere Aufrufe des Add-ons sind hintereinander fehlgeschlagen. Prüfe unter Einstellungen → Add-ons → e-distribución, ob es läuft, sieh im Log-Tab nach, und bestätige, dass Host/Port in dieser Integration korrekt konfiguriert sind."
+    },
+    "invalid_credentials": {
+      "title": "Falsche Zugangsdaten im e-distribución-Add-on",
+      "description": "Das Add-on hat die Anmeldung wegen falscher DNI/Passwort abgelehnt. Korrigiere sie unter Einstellungen → Add-ons → e-distribución → Konfiguration, und starte das Add-on neu."
+    }
+  }
+}
