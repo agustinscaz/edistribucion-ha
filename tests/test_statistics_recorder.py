@@ -20,7 +20,7 @@ from custom_components.edistribucion.statistics import async_backfill_energy_sta
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 
-async def test_sum_stays_monotonic_across_a_month_boundary(hass, recorder_mock):
+async def test_sum_stays_monotonic_across_a_month_boundary(recorder_mock, hass):
     from homeassistant.components.recorder.statistics import get_last_statistics
     from pytest_homeassistant_custom_component.common import async_wait_recording_done
 
@@ -53,7 +53,7 @@ async def test_sum_stays_monotonic_across_a_month_boundary(hass, recorder_mock):
     assert august_first_sum > july_last_sum
 
 
-async def test_reruns_within_the_same_month_do_not_double_count(hass, recorder_mock):
+async def test_reruns_within_the_same_month_do_not_double_count(recorder_mock, hass):
     """Repetir el backfill varias veces dentro del MISMO mes (el ciclo diario normal, sin cruzar
     ningún límite de mes) no debe ir sumando el mismo consumo una y otra vez."""
     from homeassistant.components.recorder.statistics import get_last_statistics
