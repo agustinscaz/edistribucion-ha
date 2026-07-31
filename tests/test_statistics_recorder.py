@@ -25,7 +25,7 @@ from custom_components.edistribucion.statistics import async_backfill_energy_sta
 
 async def test_sum_stays_monotonic_across_a_month_boundary(recorder_mock, hass):
     from homeassistant.components.recorder.statistics import get_last_statistics
-    from pytest_homeassistant_custom_component.common import async_wait_recording_done
+    from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
 
     cups = "ES0031500160526001DS0F"
     statistic_id = f"edistribucion:{cups.lower()}_imported_energy"
@@ -60,7 +60,7 @@ async def test_reruns_within_the_same_month_do_not_double_count(recorder_mock, h
     """Repetir el backfill varias veces dentro del MISMO mes (el ciclo diario normal, sin cruzar
     ningún límite de mes) no debe ir sumando el mismo consumo una y otra vez."""
     from homeassistant.components.recorder.statistics import get_last_statistics
-    from pytest_homeassistant_custom_component.common import async_wait_recording_done
+    from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
 
     cups = "ES0031500160526001DS0F"
     statistic_id = f"edistribucion:{cups.lower()}_imported_energy"
