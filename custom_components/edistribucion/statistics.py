@@ -103,7 +103,10 @@ async def _async_last_saved_stat(hass: HomeAssistant, statistic_id: str) -> tupl
         rows = result.get(statistic_id)
         if not rows:
             return None
-        return rows[0]["start"], rows[0]["sum"]
+        start = rows[0]["start"]
+        if isinstance(start, (int, float)):  # timestamp UNIX crudo, no datetime (según versión de HA)
+            start = dt_util.utc_from_timestamp(start)
+        return start, rows[0]["sum"]
 
     return await get_instance(hass).async_add_executor_job(_query)
 
@@ -120,6 +123,16 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
     except ImportError as err:  # el recorder no está disponible en esta instalación
         _LOGGER.debug("Recorder/Statistics API no disponible, sin relleno de histórico: %s", err)
         return
+
+    try:
+        # `has_mean` está deprecado a favor de `mean_type` (HA 2026.11) — pero mean_type no existe
+        # en versiones más antiguas que las mínimas soportadas (ver hacs.json), así que se usa si
+        # está disponible y si no se cae al campo viejo.
+        from homeassistant.components.recorder.models import StatisticMeanType
+
+        mean_type_kwargs: dict = {"mean_type": StatisticMeanType.NONE}
+    except ImportError:
+        mean_type_kwargs = {"has_mean": False}
 
     for flow, field, label in (
         ("imported", "importedKwh", "importada"),
@@ -145,7 +158,7 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
                 stats.append(StatisticData(start=start, sum=running_total, state=value))
 
             metadata = StatisticMetaData(
-                has_mean=False,
+                **mean_type_kwargs,
                 has_sum=True,
                 name=f"e-distribución {cups} — energía {label}",
                 source=DOMAIN,
