@@ -18,11 +18,20 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, TARIFF_FIJA, TARIFF_PVPC
+from .const import DOMAIN, TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS, TARIFF_TYPES
 from .coordinator import EdistribucionCoordinator
-from .costs import estimate_energy_cost, power_cost, self_consumption_ratio, surplus_compensation_value
+from .costs import (
+    average_price_per_kwh,
+    estimate_cost_as_tariff,
+    estimate_energy_cost,
+    power_cost,
+    self_consumption_ratio,
+    surplus_compensation_value,
+)
 from .device import hub_device_info
 from .esios import DEFAULT_PVPC_ZONE
+
+_TARIFF_LABELS = {TARIFF_FIJA: "fija", TARIFF_TRAMOS: "tramos", TARIFF_PVPC: "pvpc"}
 
 
 def _latest_daily_total(consumption: dict | None) -> dict | None:
@@ -74,8 +83,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionAveragePriceMonthSensor(coordinator, cont_id, sp))
         if sp.get("tariff_type") == TARIFF_PVPC:
             entities.append(EdistribucionCurrentPvpcPriceSensor(coordinator, cont_id, sp))
+        active_tariff = sp.get("tariff_type") or TARIFF_TRAMOS
+        for simulated_tariff in TARIFF_TYPES:
+            if simulated_tariff == active_tariff:
+                continue  # ya lo cubre el sensor de coste estimado normal, no lo dupliques
+            if simulated_tariff == TARIFF_FIJA and not sp.get("fixed_price"):
+                continue
+            if simulated_tariff == TARIFF_TRAMOS and not (sp.get("price_punta") or sp.get("price_llano") or sp.get("price_valle")):
+                continue
+            entities.append(EdistribucionSimulatedCostMonthSensor(coordinator, cont_id, sp, simulated_tariff))
         if power_cost(sp) > 0:
             entities.append(EdistribucionPowerCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
@@ -394,6 +413,62 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     @property
     def _hourly_source(self) -> dict | None:
         return self._bundle.get("month")
+
+
+class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):
+    """Precio medio real pagado por kWh este mes (coste total ÷ kWh importados) — para comparar
+    contra otras ofertas del mercado sin tener que calcularlo a mano."""
+
+    entity_description = SensorEntityDescription(
+        key="average_price_month",
+        translation_key="average_price_month",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=4,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_average_price_month"
+
+    @property
+    def native_value(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        month = self._bundle.get("month")
+        imported_kwh = month.get("totalImportedKwh") if month else None
+        breakdown = estimate_energy_cost(sp, imported_kwh, month, self.coordinator.pvpc_prices)
+        cost_total = breakdown.get("total") if breakdown else None
+        return average_price_per_kwh(cost_total, imported_kwh)
+
+
+class EdistribucionSimulatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
+    """Cuánto habría costado ESTE MES con una tarifa DISTINTA a la configurada, sobre el mismo
+    consumo real — para comparar sin cambiar de tarifa de verdad. Ver
+    `costs.estimate_cost_as_tariff`. Solo se crea si hay datos suficientes para simular esa tarifa
+    (precio fijo puesto para simular "fija", algún precio de tramos puesto para simular "tramos" —
+    "pvpc" siempre se puede simular, no necesita nada que rellenar)."""
+
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point, simulated_tariff: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "simulated_cost_month")
+        self._attr_unique_id = f"{cont_id}_simulated_cost_{simulated_tariff}_month"
+        self._attr_translation_placeholders = {"tarifa": _TARIFF_LABELS.get(simulated_tariff, simulated_tariff)}
+        self._simulated_tariff = simulated_tariff
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        month = self._bundle.get("month")
+        return month.get("totalImportedKwh") if month else None
+
+    @property
+    def _hourly_source(self) -> dict | None:
+        return self._bundle.get("month")
+
+    @property
+    def _breakdown(self) -> dict | None:
+        sp = self._bundle.get("supply_point") or {}
+        return estimate_cost_as_tariff(sp, self._simulated_tariff, self._imported_kwh, self._hourly_source, self.coordinator.pvpc_prices)
 
 
 class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):

@@ -113,6 +113,12 @@
       },
       "self_consumption_month": {
         "name": "Приблизительная энергетическая самодостаточность (месяц)"
+      },
+      "average_price_month": {
+        "name": "Средняя цена за кВт·ч (месяц)"
+      },
+      "simulated_cost_month": {
+        "name": "Смоделированная стоимость по тарифу {tarifa} (месяц)"
       }
     },
     "binary_sensor": {

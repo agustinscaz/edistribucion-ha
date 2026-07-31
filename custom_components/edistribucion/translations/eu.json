@@ -113,6 +113,12 @@
       },
       "self_consumption_month": {
         "name": "Hilabeteko autosufizientzia hurbildua"
+      },
+      "average_price_month": {
+        "name": "kWh-aren batez besteko prezioa (hilabetea)"
+      },
+      "simulated_cost_month": {
+        "name": "{tarifa} tarifarekin simulatutako kostua (hilabetea)"
       }
     },
     "binary_sensor": {

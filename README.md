@@ -99,6 +99,8 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora y detalle por periodo (P1-P6) como atributos |
 | `sensor.<cups>_comparativa_con_el_mismo_mes_del_año_anterior` | % de cambio del consumo importado de este mes frente al mismo mes de hace un año (sin valor si el contrato es más nuevo que un año) |
 | `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has configurado precio de energía para este suministro — el cálculo depende del tipo de tarifa elegido (fija/tramos/pvpc) |
+| `sensor.<cups>_precio_medio_del_kwh_mes` | Coste total del mes ÷ kWh importados — para comparar contra otras ofertas del mercado |
+| `sensor.<cups>_coste_simulado_con_tarifa_x_mes` | Uno por cada tarifa DISTINTA a la que tengas activa (si hay datos para simularla): cuánto habría costado este mes con esa otra tarifa, sobre tu mismo consumo real — para comparar sin cambiar de tarifa de verdad |
 | `sensor.<cups>_potencia_contratada` | Potencia contratada real (punta, kW), leída de tu contrato con e-distribución — potencia de valle, código de contrato, estado, comercializadora y tarifa como atributos |
 | `sensor.<cups>_termino_de_potencia_dia` / `_mes` | Solo si has puesto precio de potencia en las opciones de este CUPS — kW contratados reales (punta/valle) × precio €/kW/día, un coste fijo que no depende del consumo |
 | `sensor.<cups>_compensacion_por_excedentes_hoy` / `_mes` | Solo si has activado la compensación de excedentes para este suministro — kWh exportados × precio configurado |
@@ -180,6 +182,7 @@ El add-on tiene un panel de estado en HTML (`GET /`, en vez de JSON) con: si hay
 - **Reintentos automáticos**: un fallo de red puntual entre la integración y el add-on se reintenta un par de veces (con espera creciente) antes de darse por vencido.
 - **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro, se intenta rellenar como estadística externa el consumo del último mes ya disponible, para no empezar con el gráfico completamente vacío.
 - **Servicio `edistribucion.consultar_consumo`**: consulta bajo demanda un rango y fecha de referencia concretos (día/semana/mes de un mes anterior, por ejemplo), no solo el periodo actual que ya cachean los sensores — útil desde Herramientas de desarrollo → Acciones, o en tus propias automatizaciones/scripts.
+- **Servicio `edistribucion.exportar_precios_pvpc`**: vuelca a CSV (en la respuesta del servicio) los precios PVPC ya cacheados del mes en curso, opcionalmente filtrados por zona — útil para analizarlos fuera de Home Assistant.
 - **Botón "Actualizar precios PVPC"** (solo si algún suministro usa tarifa `pvpc`): fuerza la petición a ESIOS ya, sin esperar al ciclo diario — útil si falló antes, o para comprobar si ya han publicado los precios de mañana.
 
 ### Ver los precios PVPC del día (sin crear 24 sensores)
@@ -234,6 +237,22 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 - El término de potencia usa periodos punta/valle, que en la 2.0TD tienen un horario **distinto** al de punta/llano/valle de energía (la potencia punta cubre de día entre semana, la valle noches+fin de semana) — no se cruzan las franjas de un término con el otro.
 - La potencia contratada real se lee de un endpoint de e-distribución no documentado oficialmente (ingeniería inversa, como el resto del add-on) — si en el futuro cambian esa página, el sensor `Potencia contratada` podría dejar de actualizarse (se registrará un aviso en el log; el resto de la integración sigue funcionando igual).
 - El sensor de **autosuficiencia aproximada** NO es un % sobre tu generación solar real (e-distribución no la reporta, solo ve el intercambio con la red) — es únicamente exportado/(importado+exportado). Los casos límite son correctos (0% importado → 100%; nunca exportas → 0%), pero los valores intermedios son solo una estimación, no sustituyen a un medidor de generación real si necesitas precisión.
+
+## Tests
+
+La lógica de negocio (tarifas, festivos, PVPC, autosuficiencia, comparador de tarifas) tiene tests unitarios que no dependen de Home Assistant — se ejecutan con `pytest` normal:
+
+```bash
+pip install pytest pytest-asyncio pytest-cov pytest-aiohttp holidays
+pytest tests/test_costs.py tests/test_esios.py tests/test_api.py tests/test_migration.py --cov=custom_components.edistribucion
+```
+
+El resto (config_flow, coordinator, sensor, `__init__`, botones...) necesita objetos reales de Home Assistant (`pytest-homeassistant-custom-component`) y se verifica en CI (ver `.github/workflows/validate.yml`), no en un entorno de desarrollo mínimo:
+
+```bash
+pip install -r requirements_test.txt
+pytest tests/
+```
 
 ## Soporte
 

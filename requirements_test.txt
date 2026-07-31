@@ -1,0 +1,11 @@
+# Dependencias SOLO para ejecutar los tests que necesitan objetos reales de Home Assistant
+# (config_flow.py, coordinator.py, sensor.py, __init__.py, button.py...) — costs.py/esios.py/api.py/
+# migration.py NO las necesitan (ver tests/conftest.py) y se ejecutan con pytest normal.
+#
+# pytest-homeassistant-custom-component instala la propia Home Assistant como dependencia — no está
+# disponible por pip en el sandbox de desarrollo de este proyecto, así que estos tests se verifican
+# vía CI (ver .github/workflows/validate.yml), no en local.
+pytest-homeassistant-custom-component
+pytest-asyncio
+pytest-cov
+holidays>=0.58

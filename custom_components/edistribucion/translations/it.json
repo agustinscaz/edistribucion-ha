@@ -113,6 +113,12 @@
       },
       "self_consumption_month": {
         "name": "Autosufficienza approssimativa (mese)"
+      },
+      "average_price_month": {
+        "name": "Prezzo medio del kWh (mese)"
+      },
+      "simulated_cost_month": {
+        "name": "Costo simulato con tariffa {tarifa} (mese)"
       }
     },
     "binary_sensor": {

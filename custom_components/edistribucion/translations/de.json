@@ -113,6 +113,12 @@
       },
       "self_consumption_month": {
         "name": "Ungefähre Energieautarkie (Monat)"
+      },
+      "average_price_month": {
+        "name": "Durchschnittspreis pro kWh (Monat)"
+      },
+      "simulated_cost_month": {
+        "name": "Simulierte Kosten mit Tarif {tarifa} (Monat)"
       }
     },
     "binary_sensor": {

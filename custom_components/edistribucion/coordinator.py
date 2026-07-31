@@ -21,7 +21,6 @@ from .const import (
     CONSECUTIVE_FAILURES_FOR_REPAIR,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
-    TARIFF_PVPC,
 )
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
 
@@ -53,11 +52,10 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self._consecutive_failures = 0
 
     def _pvpc_zones_needed(self) -> set[str]:
-        return {
-            opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE
-            for opts in self.supply_point_options.values()
-            if opts.get("track", True) is not False and opts.get("tariff_type") == TARIFF_PVPC
-        }
+        """Zonas de las que hace falta precio PVPC — no solo si la tarifa activa es "pvpc": el
+        simulador de tarifas (ver costs.estimate_cost_as_tariff) también necesita el precio real
+        aunque el CUPS esté en fija/tramos, para poder comparar "qué habría costado con pvpc"."""
+        return {opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE for opts in self.supply_point_options.values() if opts.get("track", True) is not False}
 
     async def _async_update_pvpc_prices(self) -> None:
         """Los precios PVPC solo cambian una vez al día (se publican ~20:15 para el día

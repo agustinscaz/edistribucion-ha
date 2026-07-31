@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
+from .esios import pvpc_prices_to_csv
 from .migration import async_migrate_legacy_options
 from .statistics import async_backfill_energy_statistics
 
@@ -26,6 +27,9 @@ SERVICE_CONSULTAR_CONSUMO_SCHEMA = vol.Schema(
         vol.Optional("fecha"): str,
     }
 )
+
+SERVICE_EXPORTAR_PRECIOS_PVPC = "exportar_precios_pvpc"
+SERVICE_EXPORTAR_PRECIOS_PVPC_SCHEMA = vol.Schema({vol.Optional("zona"): str})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -74,6 +78,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_CONSULTAR_CONSUMO,
             _async_service_consultar_consumo,
             schema=SERVICE_CONSULTAR_CONSUMO_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+
+    if not hass.services.has_service(DOMAIN, SERVICE_EXPORTAR_PRECIOS_PVPC):
+
+        async def _async_service_exportar_precios_pvpc(call: ServiceCall) -> dict:
+            """Vuelca a CSV los precios PVPC ya cacheados (de todas las entradas de configuración,
+            no solo una) — para analizarlos fuera de Home Assistant."""
+            zone_filter = call.data.get("zona")
+            prices_by_zone: dict[str, dict[str, float]] = {}
+            for target_coordinator in hass.data.get(DOMAIN, {}).values():
+                for zone, prices in target_coordinator.pvpc_prices.items():
+                    prices_by_zone.setdefault(zone, {}).update(prices)
+            return {"csv": pvpc_prices_to_csv(prices_by_zone, zone_filter)}
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_EXPORTAR_PRECIOS_PVPC,
+            _async_service_exportar_precios_pvpc,
+            schema=SERVICE_EXPORTAR_PRECIOS_PVPC_SCHEMA,
             supports_response=SupportsResponse.ONLY,
         )
 

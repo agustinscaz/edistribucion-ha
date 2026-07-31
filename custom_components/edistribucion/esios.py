@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from aiohttp import ClientError, ClientSession
 
@@ -77,3 +77,24 @@ async def async_get_pvpc_prices_for_day(session: ClientSession, zone: str, day: 
         prices[f"{date_str} {hour}"] = price
 
     return prices
+
+
+def _price_key_sort_key(key: str) -> tuple[datetime, int]:
+    """Para ordenar claves "DD/MM/YYYY H" cronológicamente — ordenar el string tal cual sale mal
+    (DD/MM/YYYY no es lexicográfico, y la hora no lleva cero a la izquierda)."""
+    date_str, hour_str = key.rsplit(" ", 1)
+    return datetime.strptime(date_str, "%d/%m/%Y"), int(hour_str)
+
+
+def pvpc_prices_to_csv(prices_by_zone: dict[str, dict[str, float]], zone_filter: str | None = None) -> str:
+    """Vuelca los precios PVPC ya cacheados (ver coordinator.pvpc_prices) a texto CSV, ordenados
+    cronológicamente — para descargar/analizar fuera de Home Assistant. `zone_filter` (opcional)
+    limita el volcado a una sola zona ("PCB"/"CYM"); sin él, se incluyen todas las que haya."""
+    rows = ["zona,fecha,hora,precio_eur_kwh"]
+    for zone, prices in prices_by_zone.items():
+        if zone_filter and zone != zone_filter:
+            continue
+        for key in sorted(prices, key=_price_key_sort_key):
+            date_str, hour_str = key.rsplit(" ", 1)
+            rows.append(f"{zone},{date_str},{hour_str},{prices[key]}")
+    return "\n".join(rows)

@@ -166,6 +166,28 @@ def estimate_energy_cost(
     return breakdown
 
 
+def estimate_cost_as_tariff(
+    sp_opts: dict,
+    simulated_tariff: str,
+    imported_kwh: float | None,
+    hourly_source: dict | None,
+    pvpc_prices_by_zone: dict[str, dict[str, float]] | None = None,
+) -> dict | None:
+    """Simula el coste que habría dado ESTE CUPS con una tarifa DISTINTA a la configurada, sobre el
+    mismo consumo real — para comparar sin cambiar de tarifa de verdad. Reutiliza los precios ya
+    guardados para ese CUPS (fija/tramos siempre están en `sp_opts`, aunque no sean la tarifa
+    activa) y, para "pvpc", la zona configurada (o la de por defecto si no se ha elegido ninguna)."""
+    return estimate_energy_cost({**sp_opts, "tariff_type": simulated_tariff}, imported_kwh, hourly_source, pvpc_prices_by_zone)
+
+
+def average_price_per_kwh(cost_total: float | None, imported_kwh: float | None) -> float | None:
+    """Precio medio real pagado por kWh (coste total ÷ kWh importados) — útil para comparar contra
+    otras ofertas del mercado sin tener que calcularlo a mano."""
+    if cost_total is None or not imported_kwh:
+        return None
+    return round(cost_total / imported_kwh, 5)
+
+
 def power_cost(sp_opts: dict) -> float:
     """Término de potencia de ESTE CUPS: kW contratados (punta/valle) × precio €/kW/día — se
     factura siempre, sea cual sea la tarifa de energía elegida (fija/tramos/pvpc)."""

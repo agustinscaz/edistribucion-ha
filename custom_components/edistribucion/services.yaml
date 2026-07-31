@@ -26,3 +26,17 @@ consultar_consumo:
       required: false
       selector:
         date:
+
+exportar_precios_pvpc:
+  name: Exportar precios PVPC
+  description: Vuelca a CSV los precios PVPC ya cacheados (del mes en curso), para analizarlos fuera de Home Assistant.
+  fields:
+    zona:
+      name: Zona
+      description: "Limita el volcado a una zona (PCB o CYM). Si se omite, incluye todas las que haya."
+      required: false
+      selector:
+        select:
+          options:
+            - "PCB"
+            - "CYM"
