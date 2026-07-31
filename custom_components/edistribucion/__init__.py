@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
+from .migration import async_migrate_legacy_options
 from .panel import async_register_panel, async_unregister_panel
 from .statistics import async_backfill_energy_statistics
 
@@ -29,6 +30,7 @@ SERVICE_CONSULTAR_CONSUMO_SCHEMA = vol.Schema(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    async_migrate_legacy_options(hass, entry)
     session = async_get_clientsession(hass)
     client = EdistribucionApiClient(session, entry.data[CONF_HOST], entry.data[CONF_PORT])
     coordinator = EdistribucionCoordinator(hass, client, entry)
