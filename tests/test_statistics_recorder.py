@@ -17,7 +17,10 @@ import pytest
 
 from custom_components.edistribucion.statistics import async_backfill_energy_statistics
 
-pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
+# Sin `enable_custom_integrations` a propósito: ese fixture depende de `hass`, así que lo
+# instanciaría ANTES de que `recorder_mock` pueda configurar la base de datos falsa (pytest-
+# homeassistant-custom-component exige recorder_mock antes que hass) — y aquí no hace falta, no se
+# pasa por el cargador de integraciones de HA, se llama a la función directamente.
 
 
 async def test_sum_stays_monotonic_across_a_month_boundary(recorder_mock, hass):
