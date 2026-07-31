@@ -147,3 +147,47 @@ async def test_earlier_days_sum_unchanged_across_three_consecutive_runs(recorder
 
     # Y el sum final (03/08) debe seguir siendo la suma continua correcta, no reiniciada.
     assert await _last_sum(hass) == pytest.approx(8.7 + 2.0 + 3.0 + 1.5)
+
+
+async def test_carry_over_still_works_after_a_gap_longer_than_the_recent_window(recorder_mock, hass):
+    """Si el hueco entre el cierre del mes anterior y el primer punto de este mes es mayor que
+    `_RECENT_WINDOW` (Home Assistant estuvo apagado varias semanas o meses seguidos), el arrastre
+    debe seguir encontrando el sum correcto vía el fallback sin límite de ventana, no perderlo en
+    silencio solo porque la búsqueda "reciente" no encontró nada."""
+    await async_backfill_energy_statistics(hass, _CUPS, {"dailyTotals": [{"date": "01/01/2026", "importedKwh": 5.0}]})
+    await async_wait_recording_done(hass)
+
+    # ~7 meses de hueco hasta el siguiente backfill (bien por encima de _RECENT_WINDOW = 40 días).
+    await async_backfill_energy_statistics(hass, _CUPS, {"dailyTotals": [{"date": "01/08/2026", "importedKwh": 2.0}]})
+    await async_wait_recording_done(hass)
+
+    assert await _last_sum(hass) == pytest.approx(5.0 + 2.0)
+
+
+async def test_carry_over_logged_once_not_on_every_rerun(recorder_mock, hass, caplog):
+    """El aviso de "arrastrando sum" debe verse una vez cuando de verdad aplica (confirmable desde
+    el log sin tener que consultar la base de datos a mano) pero no repetirse en cada re-ejecución
+    dentro del mismo mes, para no ensuciar el log a diario sin necesidad."""
+    import logging
+
+    from custom_components.edistribucion import statistics as statistics_module
+
+    statistics_module._carry_over_logged.clear()  # aislar de otros tests de este módulo
+
+    await async_backfill_energy_statistics(hass, _CUPS, {"dailyTotals": [{"date": "31/07/2026", "importedKwh": 8.7}]})
+    await async_wait_recording_done(hass)
+
+    with caplog.at_level(logging.INFO, logger="custom_components.edistribucion.statistics"):
+        caplog.clear()
+        await async_backfill_energy_statistics(hass, _CUPS, {"dailyTotals": [{"date": "01/08/2026", "importedKwh": 2.0}]})
+        await async_wait_recording_done(hass)
+        assert any("Arrastrando sum" in r.message for r in caplog.records)
+
+        caplog.clear()
+        await async_backfill_energy_statistics(
+            hass,
+            _CUPS,
+            {"dailyTotals": [{"date": "01/08/2026", "importedKwh": 2.0}, {"date": "02/08/2026", "importedKwh": 3.0}]},
+        )
+        await async_wait_recording_done(hass)
+        assert not any("Arrastrando sum" in r.message for r in caplog.records)

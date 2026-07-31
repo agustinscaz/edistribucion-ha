@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
@@ -88,24 +88,25 @@ def _carry_over_sum(last_saved: tuple[datetime, float] | None, first_point_start
     return 0.0
 
 
-async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, before: datetime) -> tuple[datetime, float] | None:
-    """(inicio, sum) del último punto ya guardado ESTRICTAMENTE ANTERIOR a `before`, o None si no
-    hay ninguno (primera vez que se crea el statistic_id).
+_RECENT_WINDOW = timedelta(days=40)  # más que un mes de margen — ver _async_last_saved_stat_before
 
-    A propósito NO se usa `get_last_statistics` (da "el último punto guardado en general", sin
-    importar cuándo — bug real: a partir del segundo día del mes en curso ese "último punto" ya es
-    una hora de ESTE MISMO MES, reescrita el día anterior, no el cierre del mes pasado; usarlo como
-    ancla duplicaba el arrastre en cada re-ejecución del mismo mes). `statistics_during_period` sí
-    acepta `end_time` (exclusivo) para acotar la búsqueda a "antes de donde voy a escribir ahora",
-    sin importar qué día del mes sea este run. Es una consulta BLOQUEANTE a la base de datos del
-    recorder, así que se ejecuta en su executor, nunca en el bucle de eventos."""
+# statistic_id para los que ya se avisó (una vez, ver async_backfill_energy_statistics) de que el
+# arrastre de sum entre meses aplicó — para poder confirmar desde el log que funcionó en un cambio
+# de mes real, sin repetir el mismo aviso en cada ciclo diario dentro del mismo mes. Se reinicia en
+# cada arranque de Home Assistant (a propósito: así se reconfirma tras un reinicio a mitad de mes).
+_carry_over_logged: set[str] = set()
+
+
+async def _query_last_before(hass: HomeAssistant, statistic_id: str, start_time: datetime, before: datetime) -> tuple[datetime, float] | None:
+    """(inicio, sum) del último punto guardado en [start_time, before), o None si no hay ninguno.
+    Consulta BLOQUEANTE a la base de datos del recorder, se ejecuta en su executor."""
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.statistics import statistics_during_period
 
     def _query() -> tuple[datetime, float] | None:
         result = statistics_during_period(
             hass,
-            start_time=dt_util.utc_from_timestamp(0),
+            start_time=start_time,
             end_time=before,
             statistic_ids={statistic_id},
             period="hour",
@@ -122,6 +123,30 @@ async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, 
         return start, last["sum"]
 
     return await get_instance(hass).async_add_executor_job(_query)
+
+
+async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, before: datetime) -> tuple[datetime, float] | None:
+    """(inicio, sum) del último punto ya guardado ESTRICTAMENTE ANTERIOR a `before`, o None si no
+    hay ninguno (primera vez que se crea el statistic_id).
+
+    A propósito NO se usa `get_last_statistics` (da "el último punto guardado en general", sin
+    importar cuándo — bug real: a partir del segundo día del mes en curso ese "último punto" ya es
+    una hora de ESTE MISMO MES, reescrita el día anterior, no el cierre del mes pasado; usarlo como
+    ancla duplicaba el arrastre en cada re-ejecución del mismo mes). `statistics_during_period` sí
+    acepta `end_time` (exclusivo) para acotar la búsqueda a "antes de donde voy a escribir ahora",
+    sin importar qué día del mes sea este run.
+
+    Se busca primero en los últimos `_RECENT_WINDOW` (margen de sobra sobre un mes) en vez de desde
+    el principio de los tiempos — con años de histórico externo por hora, traer TODO el histórico
+    solo para quedarse con el último punto es un escaneo/transferencia innecesaria en el caso normal
+    (el punto que buscamos casi siempre es de ayer). Si esa ventana reciente no tiene nada (p.ej.
+    Home Assistant estuvo apagado semanas seguidas a caballo de un cambio de mes, o incluso meses),
+    se repite sin límite de ventana — sin este fallback, un hueco así perdería en silencio el
+    arrastre real en vez de solo tardar un poco más esa vez."""
+    recent = await _query_last_before(hass, statistic_id, before - _RECENT_WINDOW, before)
+    if recent is not None:
+        return recent
+    return await _query_last_before(hass, statistic_id, dt_util.utc_from_timestamp(0), before)
 
 
 async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month_data: dict | None) -> None:
@@ -164,6 +189,16 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
                 _LOGGER.warning("No se pudo leer el último sum guardado de %s (%s): %s", cups, flow, err)
                 last_saved = None
             running_total = _carry_over_sum(last_saved, points[0][0])
+
+            if last_saved is not None and statistic_id not in _carry_over_logged:
+                _LOGGER.info(
+                    "Arrastrando sum=%.3f de %s (%s) desde antes de %s",
+                    last_saved[1],
+                    cups,
+                    flow,
+                    points[0][0].isoformat(),
+                )
+                _carry_over_logged.add(statistic_id)
 
             stats: list[StatisticData] = []
             for start, value in points:
