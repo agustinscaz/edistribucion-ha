@@ -14,7 +14,6 @@ from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
 from .migration import async_migrate_legacy_options
-from .panel import async_register_panel, async_unregister_panel
 from .statistics import async_backfill_energy_statistics
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.CALENDAR]
@@ -39,7 +38,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    await async_register_panel(hass)
 
     for bundle in coordinator.data.values():
         sp = bundle.get("supply_point") or {}
@@ -91,6 +89,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id)
-        if not hass.data[DOMAIN]:
-            async_unregister_panel(hass)
     return unloaded
