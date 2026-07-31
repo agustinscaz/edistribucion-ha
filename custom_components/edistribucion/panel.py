@@ -1,19 +1,17 @@
-"""Panel nuevo en el menú lateral de Home Assistant: un dashboard de solo lectura con coste,
-potencia y comparativa por CUPS.
+"""Panel nuevo en el menú lateral de Home Assistant: gráficas nativas de HA (history-graph,
+statistics-graph) por CUPS, no cajas de texto hechas a mano.
 
-Deliberadamente NO es un iframe hacia una página servida por el add-on: el add-on no sabe nada de
-tarifas/precios (eso vive solo en la integración, ver costs.py), así que reimplementar el cálculo
-de coste en JS ahí sería duplicar lógica y una fuente más de bugs. En su lugar, esta vista la sirve
-la propia integración (`hass.http.register_view`), reutilizando DIRECTAMENTE `costs.py` — el mismo
-cálculo exacto que usan los sensores, en un único sitio.
+No es un iframe: un iframe cargado por el navegador no puede llevar el token de autenticación de HA
+(vive en JS/localStorage, no en cookies — confirmado contra el código real de `ha-panel-iframe`,
+que usa la URL tal cual sin añadir nada), así que una vista con `requires_auth=True` ahí dentro
+siempre da 401. Se usa `panel_custom`: un web component (JS plano, sin build) al que el propio
+frontend le inyecta `hass` — con eso, `hass.callApi()` autentica de verdad, y `window.
+loadCardHelpers()` (API pública del frontend, ver `custom-card-helpers.ts`) permite instanciar
+tarjetas Lovelace NATIVAS (con sus gráficas, temas e interactividad reales) en vez de reinventarlas.
 
-Tampoco es un panel tipo `component_name="iframe"` (`frontend.async_register_built_in_panel`): un
-iframe cargado por el navegador no puede llevar el token de autenticación de HA (vive en JS/
-localStorage, no en cookies — confirmado contra el código real de `ha-panel-iframe`, que usa la URL
-tal cual sin añadir nada), así que una vista con `requires_auth = True` siempre devuelve 401 ahí
-dentro. La solución soportada por HA es `panel_custom`: registra un WEB COMPONENT (JS plano, sin
-build) al que el propio frontend le inyecta `hass` como propiedad — con eso, `hass.callApi(...)`
-hace la petición autenticada de verdad (con el token), sin necesidad de iframe ni cookies.
+La vista Python solo resuelve qué `entity_id` corresponde a cada sensor de cada CUPS (vía el
+registro de entidades) — todo el renderizado (incluidas las gráficas) lo hace el propio frontend de
+HA con sus tarjetas de siempre.
 """
 
 from __future__ import annotations
@@ -22,10 +20,9 @@ from aiohttp import web
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
-from .costs import estimate_energy_cost, power_cost, surplus_compensation_value
-from .sensor import _latest_daily_total, _latest_day_hourly
 
 PANEL_URL_PATH = "edistribucion-dashboard"
 DATA_VIEW_URL = "/api/edistribucion/dashboard-data"
@@ -33,34 +30,99 @@ MODULE_VIEW_URL = "/api/edistribucion/panel.js"
 WEBCOMPONENT_NAME = "edistribucion-panel"
 _PANEL_REGISTERED_KEY = f"{DOMAIN}_panel_registered"
 
+# unique_id de cada sensor es f"{cont_id}_{sufijo}" (ver sensor.py) — se resuelven a entity_id vía
+# el registro de entidades, para no tener que adivinar el slug (que depende del alias/idioma).
+_ENTITY_SUFFIXES = {
+    "imported_today": "imported_energy_today",
+    "exported_today": "exported_energy_today",
+    "contracted_power": "contracted_power",
+    "power_cost_today": "power_cost_today",
+    "cost_today": "estimated_cost_today",
+    "cost_month": "estimated_cost_month",
+    "surplus_today": "surplus_compensation_today",
+    "month_vs_last_year": "month_vs_last_year",
+}
+
 _PANEL_JS = """
 class EdistribucionPanel extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
-    this._maybeLoad();
+    if (this._cards) {
+      for (const card of this._cards) card.hass = hass;
+    } else {
+      this._maybeBuild();
+    }
   }
   connectedCallback() {
     this._connected = true;
-    this._maybeLoad();
-    this._interval = setInterval(() => this._load(), 60000);
+    this._maybeBuild();
   }
-  disconnectedCallback() {
-    this._connected = false;
-    clearInterval(this._interval);
-  }
-  _maybeLoad() {
-    if (this._connected && this._hass && !this._loaded) {
-      this._loaded = true;
-      this._load();
+  _maybeBuild() {
+    if (this._connected && this._hass && !this._building) {
+      this._building = true;
+      this._build();
     }
   }
-  async _load() {
-    if (!this._hass) return;
+  async _build() {
+    let data;
     try {
-      const data = await this._hass.callApi("GET", "edistribucion/dashboard-data");
-      this.innerHTML = data.html;
+      data = await this._hass.callApi("GET", "edistribucion/dashboard-data");
     } catch (err) {
-      this.innerHTML = '<p style="padding:1rem">Error cargando el panel de e-distribución: ' + err + "</p>";
+      this.innerHTML = '<p style="padding:16px">Error cargando el panel de e-distribución: ' + err + "</p>";
+      return;
+    }
+    const helpers = await window.loadCardHelpers();
+    this.innerHTML = "";
+    this.style.display = "block";
+    this.style.padding = "16px";
+
+    const grid = document.createElement("div");
+    grid.style.display = "grid";
+    grid.style.gap = "16px";
+    grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(360px, 1fr))";
+    this.appendChild(grid);
+
+    this._cards = [];
+    const addCard = (container, config) => {
+      const card = helpers.createCardElement(config);
+      card.hass = this._hass;
+      container.appendChild(card);
+      this._cards.push(card);
+    };
+
+    if (!data.supply_points.length) {
+      grid.innerHTML = "<p>Todavía no hay datos — espera a la próxima actualización.</p>";
+      return;
+    }
+
+    for (const sp of data.supply_points) {
+      const col = document.createElement("div");
+      const e = sp.entities;
+
+      addCard(col, {
+        type: "entities",
+        title: sp.alias + " (" + sp.cups + ")",
+        entities: [e.contracted_power, e.power_cost_today, e.cost_today, e.cost_month, e.surplus_today, e.month_vs_last_year].filter(Boolean),
+      });
+      if (e.imported_today || e.exported_today) {
+        addCard(col, {
+          type: "history-graph",
+          title: "Energía (últimas 48h)",
+          hours_to_show: 48,
+          entities: [e.imported_today, e.exported_today].filter(Boolean),
+        });
+      }
+      if (e.cost_month) {
+        addCard(col, {
+          type: "statistics-graph",
+          title: "Coste estimado por día (mes)",
+          entities: [e.cost_month],
+          stat_types: ["sum"],
+          period: "day",
+          days_to_show: 30,
+        });
+      }
+      grid.appendChild(col);
     }
   }
 }
@@ -68,78 +130,29 @@ customElements.define("edistribucion-panel", EdistribucionPanel);
 """
 
 
-def _fmt_eur(value) -> str:
-    return f"{value:.2f} €" if isinstance(value, (int, float)) else "—"
+def _resolve_entity_id(hass: HomeAssistant, cont_id: str, suffix: str) -> str | None:
+    return er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{cont_id}_{suffix}")
 
 
-def _fmt_kwh(value) -> str:
-    return f"{value:.2f} kWh" if isinstance(value, (int, float)) else "—"
-
-
-def _fmt_kw(value) -> str:
-    return f"{value:.2f} kW" if isinstance(value, (int, float)) else "—"
-
-
-def _card_html(bundle: dict, coordinator) -> str:
-    sp = bundle.get("supply_point") or {}
-    cups = sp.get("cups", "?")
-    alias = sp.get("alias") or cups
-    estado = "activo" if sp.get("active") else "histórico"
-
-    today_total = _latest_daily_total(bundle.get("consumption"))
-    imported_today = today_total["importedKwh"] if today_total else None
-    month = bundle.get("month")
-    imported_month = month.get("totalImportedKwh") if month else None
-    exported_month = month.get("totalExportedKwh") if month else None
-
-    today_hourly = _latest_day_hourly(bundle.get("consumption"))
-    cost_today = estimate_energy_cost(sp, imported_today, today_hourly, coordinator.pvpc_prices)
-    cost_month = estimate_energy_cost(sp, imported_month, month, coordinator.pvpc_prices)
-    power_daily = power_cost(sp)
-    surplus_month = surplus_compensation_value(sp, exported_month)
-    contract = bundle.get("contract") or {}
-
-    return f"""
-    <div class="card">
-      <h2>{alias} <span class="badge">{estado}</span></h2>
-      <p class="cups">{cups} · tarifa {sp.get("tariff_type", "—")}</p>
-      <div class="grid">
-        <div><span class="label">Importada hoy</span><span class="value">{_fmt_kwh(imported_today)}</span></div>
-        <div><span class="label">Importada mes</span><span class="value">{_fmt_kwh(imported_month)}</span></div>
-        <div><span class="label">Coste estimado hoy</span><span class="value">{_fmt_eur(cost_today.get("total") if cost_today else None)}</span></div>
-        <div><span class="label">Coste estimado mes</span><span class="value">{_fmt_eur(cost_month.get("total") if cost_month else None)}</span></div>
-        <div><span class="label">Potencia contratada punta</span><span class="value">{_fmt_kw(contract.get("contractedPowerPuntaKw"))}</span></div>
-        <div><span class="label">Potencia contratada valle</span><span class="value">{_fmt_kw(contract.get("contractedPowerValleKw"))}</span></div>
-        <div><span class="label">Término de potencia (día)</span><span class="value">{_fmt_eur(power_daily)}</span></div>
-        <div><span class="label">Compensación excedentes (mes)</span><span class="value">{_fmt_eur(surplus_month)}</span></div>
-      </div>
-    </div>
-    """
-
-
-def _dashboard_html(hass: HomeAssistant) -> str:
-    cards = []
+def _dashboard_data(hass: HomeAssistant) -> dict:
+    supply_points = []
     for coordinator in hass.data.get(DOMAIN, {}).values():
-        for bundle in coordinator.data.values():
-            cards.append(_card_html(bundle, coordinator))
-    body = "".join(cards) or "<p>Todavía no hay datos — espera a la próxima actualización.</p>"
-
-    return f"""<style>
-  :host, edistribucion-panel {{ display: block; font-family: system-ui, sans-serif; padding: 1rem; }}
-  .card {{ background: var(--card-background-color, #1c1c1c); border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1rem; }}
-  h2 {{ margin: 0 0 .2rem; font-size: 1.1rem; }}
-  .cups {{ color: var(--secondary-text-color, #789); font-size: .8rem; margin: 0 0 .8rem; }}
-  .badge {{ font-size: .7rem; background: rgba(128,128,128,.25); padding: .1rem .5rem; border-radius: 1rem; margin-left: .4rem; }}
-  .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .6rem; }}
-  .label {{ display: block; color: var(--secondary-text-color, #789); font-size: .75rem; }}
-  .value {{ display: block; font-size: 1.05rem; font-weight: 600; }}
-</style>
-{body}"""
+        for cont_id, bundle in coordinator.data.items():
+            sp = bundle.get("supply_point") or {}
+            supply_points.append(
+                {
+                    "cont_id": cont_id,
+                    "alias": sp.get("alias") or sp.get("cups", cont_id),
+                    "cups": sp.get("cups", "?"),
+                    "entities": {key: _resolve_entity_id(hass, cont_id, suffix) for key, suffix in _ENTITY_SUFFIXES.items()},
+                }
+            )
+    return {"supply_points": supply_points}
 
 
 class EdistribucionDashboardDataView(HomeAssistantView):
-    """Devuelve el HTML de las tarjetas como JSON — la llama `hass.callApi()` desde el propio
-    componente del panel, así que SÍ lleva el token de autenticación (a diferencia de un iframe)."""
+    """Devuelve qué entity_id corresponde a cada sensor de cada CUPS — la llama `hass.callApi()`
+    desde el propio componente del panel, así que SÍ lleva el token de autenticación."""
 
     url = DATA_VIEW_URL
     name = "api:edistribucion:dashboard-data"
@@ -147,7 +160,7 @@ class EdistribucionDashboardDataView(HomeAssistantView):
 
     async def get(self, request: web.Request) -> web.Response:
         hass: HomeAssistant = request.app["hass"]
-        return web.json_response({"html": _dashboard_html(hass)})
+        return web.json_response(_dashboard_data(hass))
 
 
 class EdistribucionPanelModuleView(HomeAssistantView):
