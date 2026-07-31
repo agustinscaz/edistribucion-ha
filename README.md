@@ -81,7 +81,7 @@ Se crea automáticamente un dispositivo por cada punto de suministro (CUPS) de t
 - Si **seguirlo** (puedes desmarcar los históricos) y un **alias**.
 - El **tipo de tarifa de energía**:
   - `fija`: un único precio €/kWh.
-  - `tramos`: precio €/kWh en 3 campos separados (punta/llano/valle), calculado hora a hora con tu consumo real.
+  - `tramos`: precio €/kWh en 3 campos separados (punta/llano/valle), calculado hora a hora con tu consumo real. Opcionalmente, elige tu **región de festivos** (comunidad autónoma) para que un festivo entre semana cuente como valle todo el día, igual que el fin de semana — si no eliges ninguna, un festivo cuenta como día laborable normal.
   - `pvpc`: usa el precio real hora a hora del archivo público de PVPC de ESIOS/REE, según la **zona PVPC** que elijas para este CUPS (Península/Baleares/Canarias, o Ceuta y Melilla — **no hace falta clave ni registro**) — **los precios de mañana se publican sobre las 20:15h del día anterior**, así que las horas de después de esa hora ya usan el precio real del día siguiente, y las de un rato antes puede que aún no tengan precio publicado (se reflejan como "horas sin precio" hasta que ESIOS los publique).
 - El **precio del término de potencia** de este CUPS (€/kW/día para los periodos punta y valle) — se factura siempre, sea cual sea la tarifa de energía elegida. La **potencia contratada (kW)** no se pide: se lee automáticamente de tu contrato con e-distribución (sensor `Potencia contratada`), así que si la cambias, se actualiza sola sin tener que tocar nada aquí.
 - La **compensación de excedentes**: si tu comercializadora te paga por lo exportado, actívala y pon el precio €/kWh para tener un sensor de esa compensación estimada.
@@ -102,6 +102,8 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_potencia_contratada` | Potencia contratada real (punta, kW), leída de tu contrato con e-distribución — potencia de valle, código de contrato, estado, comercializadora y tarifa como atributos |
 | `sensor.<cups>_termino_de_potencia_dia` / `_mes` | Solo si has puesto precio de potencia en las opciones de este CUPS — kW contratados reales (punta/valle) × precio €/kW/día, un coste fijo que no depende del consumo |
 | `sensor.<cups>_compensacion_por_excedentes_hoy` / `_mes` | Solo si has activado la compensación de excedentes para este suministro — kWh exportados × precio configurado |
+| `sensor.<cups>_precio_pvpc_actual` | Solo con tarifa `pvpc` — precio de la hora en curso (€/kWh); atributos `precios_hoy`/`precios_manana` con las 24h del día (ver más abajo) |
+| `sensor.<cups>_autoconsumo_aproximado_hoy` / `_mes` | Solo si el suministro ha exportado algo — **% aproximado**, calculado ÚNICAMENTE con importado/exportado del contador de e-distribución (no con tu generación solar real, que la distribuidora no reporta): qué % de la energía intercambiada con la red fue importada en vez de exportada. Sin excedentes, sale 100% aunque no midas autoconsumo real — no lo confundas con un % sobre tu generación. |
 | `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
@@ -178,6 +180,22 @@ El add-on tiene un panel de estado en HTML (`GET /`, en vez de JSON) con: si hay
 - **Reintentos automáticos**: un fallo de red puntual entre la integración y el add-on se reintenta un par de veces (con espera creciente) antes de darse por vencido.
 - **Relleno de histórico en el Dashboard de Energía**: al configurar cada suministro, se intenta rellenar como estadística externa el consumo del último mes ya disponible, para no empezar con el gráfico completamente vacío.
 - **Servicio `edistribucion.consultar_consumo`**: consulta bajo demanda un rango y fecha de referencia concretos (día/semana/mes de un mes anterior, por ejemplo), no solo el periodo actual que ya cachean los sensores — útil desde Herramientas de desarrollo → Acciones, o en tus propias automatizaciones/scripts.
+- **Botón "Actualizar precios PVPC"** (solo si algún suministro usa tarifa `pvpc`): fuerza la petición a ESIOS ya, sin esperar al ciclo diario — útil si falló antes, o para comprobar si ya han publicado los precios de mañana.
+
+### Ver los precios PVPC del día (sin crear 24 sensores)
+
+El sensor `sensor.<cups>_precio_pvpc_actual` tiene como **valor** el precio de la hora en curso, y como **atributos** `precios_hoy` y `precios_manana` con las 24 horas del día (formato `{"00h": 0.123, "01h": 0.118, ...}`). Para verlos en una tabla en vez de en Herramientas de desarrollo → Estados, una tarjeta Markdown como esta funciona sin instalar nada:
+
+```yaml
+type: markdown
+content: >
+  {% set precios = state_attr('sensor.<cups>_precio_pvpc_actual', 'precios_hoy') %}
+  | Hora | €/kWh |
+  |---|---|
+  {% for hora, precio in precios.items() -%}
+  | {{ hora }} | {{ '%.4f'|format(precio) }} |
+  {% endfor %}
+```
 
 ## Endpoints de la API del add-on
 
@@ -211,10 +229,11 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 - Facturas directas de e-distribución no están implementadas — solo aplican a una minoría de clientes con factura directa de la distribuidora (la mayoría paga a su comercializadora).
 - Sin autenticación propia en la API del add-on — no expongas el puerto 8099 a Internet.
 - El relleno de histórico en el Dashboard de Energía usa la Statistics API del `recorder`, una parte más avanzada y menos estable de Home Assistant — está pensado como "mejor esfuerzo": si falla, se registra un aviso en el log y el resto de la integración sigue funcionando con normalidad (solo te quedas sin el relleno retroactivo).
-- Con tarifa `tramos`, se usa el horario estándar de punta/llano/valle de la 2.0TD peninsular (punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana) — **no tiene en cuenta festivos** (que cuentan como valle todo el día en la tarifa real), así que en un día festivo el estimado saldrá algo más caro de lo real.
+- Con tarifa `tramos`, se usa el horario estándar de punta/llano/valle de la 2.0TD peninsular (punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana). Si no eliges una **región de festivos** para el CUPS, los festivos entre semana cuentan como día laborable normal (no como valle, que es como los factura realmente tu comercializadora) — para evitarlo, elige tu comunidad autónoma en las opciones de ese suministro.
 - Con tarifa `pvpc`, se usa el precio real hora a hora del archivo público de PVPC de ESIOS/REE para la zona elegida — se piden los precios del mes en curso una vez al día (no en cada actualización, para no saturar la API pública), un día por petición. Las horas para las que ESIOS aún no haya publicado precio (p.ej. las últimas del día siguiente antes de las ~20:15h) quedan sin coste y se cuentan como "horas sin precio" hasta que se publiquen.
 - El término de potencia usa periodos punta/valle, que en la 2.0TD tienen un horario **distinto** al de punta/llano/valle de energía (la potencia punta cubre de día entre semana, la valle noches+fin de semana) — no se cruzan las franjas de un término con el otro.
 - La potencia contratada real se lee de un endpoint de e-distribución no documentado oficialmente (ingeniería inversa, como el resto del add-on) — si en el futuro cambian esa página, el sensor `Potencia contratada` podría dejar de actualizarse (se registrará un aviso en el log; el resto de la integración sigue funcionando igual).
+- El sensor de **autoconsumo aproximado** NO es un % sobre tu generación solar real (e-distribución no la reporta, solo ve el intercambio con la red) — es únicamente importado/(importado+exportado). Es una aproximación razonable, pero no sustituye a un medidor de generación real si necesitas precisión.
 
 ## Soporte
 

@@ -44,6 +44,7 @@
           "price_punta": "Peak price (€/kWh, if tariff is 'time-of-use')",
           "price_llano": "Flat price (€/kWh, if tariff is 'time-of-use')",
           "price_valle": "Off-peak price (€/kWh, if tariff is 'time-of-use')",
+          "holiday_region": "Holiday region (if tariff is 'time-of-use'): a weekday holiday counts as off-peak",
           "surplus_compensation": "Surplus compensation",
           "surplus_price": "Compensation price (€/kWh, if enabled)",
           "pvpc_zone": "PVPC zone (if tariff is 'pvpc'): Peninsula/Balearic Islands/Canary Islands, or Ceuta and Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Power term (month)" },
       "surplus_compensation_today": { "name": "Surplus compensation today" },
       "surplus_compensation_month": { "name": "Surplus compensation (month)" },
-      "month_vs_last_year": { "name": "Comparison vs. same month last year" }
+      "month_vs_last_year": { "name": "Comparison vs. same month last year" },
+      "current_pvpc_price": { "name": "Current PVPC price" },
+      "self_consumption_today": { "name": "Approximate self-consumption today" },
+      "self_consumption_month": { "name": "Approximate self-consumption (month)" }
     },
     "binary_sensor": {
       "connected": { "name": "Connected" }
     },
     "button": {
       "refresh": { "name": "Refresh now" },
-      "relogin": { "name": "Force reconnect" }
+      "relogin": { "name": "Force reconnect" },
+      "refresh_pvpc": { "name": "Update PVPC prices" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Consumption calendar" }

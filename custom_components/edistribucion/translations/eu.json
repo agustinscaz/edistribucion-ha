@@ -44,6 +44,7 @@
           "price_punta": "Gailur-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",
           "price_llano": "Arrunt-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",
           "price_valle": "Sakonaldiko prezioa (€/kWh, tarifa 'tarteak' bada)",
+          "holiday_region": "Jai-egunen eskualdea (tarifa 'tarteak' bada): asteko jaieguna sakonaldi gisa zenbatzen da",
           "surplus_compensation": "Soberakinen konpentsazioa",
           "surplus_price": "Konpentsazioaren prezioa (€/kWh, aktibatuta badago)",
           "pvpc_zone": "PVPC eremua (tarifa 'pvpc' bada): Penintsula/Balear uharteak/Kanaria uharteak, edo Ceuta eta Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Potentzia terminoa (hilabetea)" },
       "surplus_compensation_today": { "name": "Gaurko soberakinen konpentsazioa" },
       "surplus_compensation_month": { "name": "Hilabeteko soberakinen konpentsazioa" },
-      "month_vs_last_year": { "name": "Iazko hilabete berarekin alderatuta" }
+      "month_vs_last_year": { "name": "Iazko hilabete berarekin alderatuta" },
+      "current_pvpc_price": { "name": "Uneko PVPC prezioa" },
+      "self_consumption_today": { "name": "Gaurko autokontsumo hurbildua" },
+      "self_consumption_month": { "name": "Hilabeteko autokontsumo hurbildua" }
     },
     "binary_sensor": {
       "connected": { "name": "Konektatuta" }
     },
     "button": {
       "refresh": { "name": "Eguneratu orain" },
-      "relogin": { "name": "Berkonexioa behartu" }
+      "relogin": { "name": "Berkonexioa behartu" },
+      "refresh_pvpc": { "name": "Eguneratu PVPC prezioak" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Kontsumo egutegia" }

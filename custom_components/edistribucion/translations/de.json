@@ -44,6 +44,7 @@
           "price_punta": "Preis Spitzenlast (€/kWh, wenn Tarif 'zeitgestaffelt')",
           "price_llano": "Preis Mittellast (€/kWh, wenn Tarif 'zeitgestaffelt')",
           "price_valle": "Preis Schwachlast (€/kWh, wenn Tarif 'zeitgestaffelt')",
+          "holiday_region": "Feiertagsregion (wenn Tarif 'zeitgestaffelt'): ein Feiertag unter der Woche zählt als Schwachlast",
           "surplus_compensation": "Einspeisevergütung",
           "surplus_price": "Vergütungspreis (€/kWh, wenn aktiviert)",
           "pvpc_zone": "PVPC-Zone (wenn Tarif 'pvpc'): Festland/Balearen/Kanaren, oder Ceuta und Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Leistungsterm (Monat)" },
       "surplus_compensation_today": { "name": "Einspeisevergütung heute" },
       "surplus_compensation_month": { "name": "Einspeisevergütung (Monat)" },
-      "month_vs_last_year": { "name": "Vergleich mit demselben Monat des Vorjahres" }
+      "month_vs_last_year": { "name": "Vergleich mit demselben Monat des Vorjahres" },
+      "current_pvpc_price": { "name": "Aktueller PVPC-Preis" },
+      "self_consumption_today": { "name": "Ungefährer Eigenverbrauch heute" },
+      "self_consumption_month": { "name": "Ungefährer Eigenverbrauch (Monat)" }
     },
     "binary_sensor": {
       "connected": { "name": "Verbunden" }
     },
     "button": {
       "refresh": { "name": "Jetzt aktualisieren" },
-      "relogin": { "name": "Neuverbindung erzwingen" }
+      "relogin": { "name": "Neuverbindung erzwingen" },
+      "refresh_pvpc": { "name": "PVPC-Preise aktualisieren" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Verbrauchskalender" }

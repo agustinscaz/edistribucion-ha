@@ -44,6 +44,7 @@
           "price_punta": "Prezo en punta (€/kWh, se a tarifa é 'tramos')",
           "price_llano": "Prezo en chaira (€/kWh, se a tarifa é 'tramos')",
           "price_valle": "Prezo en val (€/kWh, se a tarifa é 'tramos')",
+          "holiday_region": "Rexión de festivos (se a tarifa é 'tramos'): un festivo entre semana conta como val",
           "surplus_compensation": "Compensación de excedentes",
           "surplus_price": "Prezo da compensación (€/kWh, se está activada)",
           "pvpc_zone": "Zona PVPC (se a tarifa é 'pvpc'): Península/Baleares/Canarias, ou Ceuta e Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Termo de potencia (mes)" },
       "surplus_compensation_today": { "name": "Compensación por excedentes hoxe" },
       "surplus_compensation_month": { "name": "Compensación por excedentes (mes)" },
-      "month_vs_last_year": { "name": "Comparativa co mesmo mes do ano anterior" }
+      "month_vs_last_year": { "name": "Comparativa co mesmo mes do ano anterior" },
+      "current_pvpc_price": { "name": "Prezo PVPC actual" },
+      "self_consumption_today": { "name": "Autoconsumo aproximado hoxe" },
+      "self_consumption_month": { "name": "Autoconsumo aproximado (mes)" }
     },
     "binary_sensor": {
       "connected": { "name": "Conectado" }
     },
     "button": {
       "refresh": { "name": "Actualizar agora" },
-      "relogin": { "name": "Forzar reconexión" }
+      "relogin": { "name": "Forzar reconexión" },
+      "refresh_pvpc": { "name": "Actualizar prezos PVPC" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Calendario de consumo" }

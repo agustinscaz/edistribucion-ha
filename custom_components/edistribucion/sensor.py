@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -11,16 +11,18 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, TARIFF_FIJA, TARIFF_PVPC
 from .coordinator import EdistribucionCoordinator
-from .costs import estimate_energy_cost, power_cost, surplus_compensation_value
+from .costs import estimate_energy_cost, power_cost, self_consumption_ratio, surplus_compensation_value
 from .device import hub_device_info
+from .esios import DEFAULT_PVPC_ZONE
 
 
 def _latest_daily_total(consumption: dict | None) -> dict | None:
@@ -72,12 +74,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
+        if sp.get("tariff_type") == TARIFF_PVPC:
+            entities.append(EdistribucionCurrentPvpcPriceSensor(coordinator, cont_id, sp))
         if power_cost(sp) > 0:
             entities.append(EdistribucionPowerCostTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
         if sp.get("surplus_compensation") and sp.get("surplus_price"):
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
+        if (bundle.get("month") or {}).get("totalExportedKwh"):
+            entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionSelfConsumptionMonthSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
 
@@ -389,6 +396,58 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
         return self._bundle.get("month")
 
 
+class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
+    """Precio PVPC de la hora en curso — UN solo sensor (no 24 por hora): el resto de precios del
+    día (y de mañana, si ya están publicados) van como atributo, no como entidades separadas."""
+
+    entity_description = SensorEntityDescription(
+        key="current_pvpc_price",
+        translation_key="current_pvpc_price",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=5,
+        state_class=SensorStateClass.MEASUREMENT,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_current_pvpc_price"
+
+    @property
+    def _zone(self) -> str:
+        sp = self._bundle.get("supply_point") or {}
+        return sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+
+    @property
+    def _zone_prices(self) -> dict[str, float]:
+        return self.coordinator.pvpc_prices.get(self._zone, {})
+
+    @property
+    def native_value(self) -> float | None:
+        now = dt_util.now()
+        return self._zone_prices.get(f"{now.strftime('%d/%m/%Y')} {now.hour}")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        prices = self._zone_prices
+        now = dt_util.now()
+        tomorrow = now + timedelta(days=1)
+
+        def _day_prices(day) -> dict[str, float]:
+            date_str = day.strftime("%d/%m/%Y")
+            return {f"{h:02d}h": prices[f"{date_str} {h}"] for h in range(24) if f"{date_str} {h}" in prices}
+
+        return {
+            "zona": self._zone,
+            "precios_hoy": _day_prices(now),
+            "precios_manana": _day_prices(tomorrow),
+        }
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool(self._zone_prices)
+
+
 class _EdistribucionSurplusCompensationSensor(_EdistribucionBaseSensor):
     """Compensación estimada por excedentes exportados: kWh exportados × precio configurado para
     este CUPS. Solo existe si se ha activado la compensación de excedentes en las opciones."""
@@ -430,6 +489,64 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
     def __init__(self, coordinator, cont_id, supply_point) -> None:
         super().__init__(coordinator, cont_id, supply_point, "surplus_compensation_month")
         self._attr_unique_id = f"{cont_id}_surplus_compensation_month"
+
+    @property
+    def _exported_kwh(self) -> float | None:
+        month = self._bundle.get("month")
+        return month.get("totalExportedKwh") if month else None
+
+
+class _EdistribucionSelfConsumptionSensor(_EdistribucionBaseSensor):
+    """Autoconsumo APROXIMADO (%) — calculado solo con importado/exportado de e-distribución, no
+    con generación solar real (que el contador no reporta). Ver `costs.self_consumption_ratio`
+    para la definición exacta y sus limitaciones. Solo se crea si el CUPS ha exportado algo."""
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, cont_id, supply_point, translation_key: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_translation_key = translation_key
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        raise NotImplementedError
+
+    @property
+    def _exported_kwh(self) -> float | None:
+        raise NotImplementedError
+
+    @property
+    def native_value(self) -> float | None:
+        return self_consumption_ratio(self._imported_kwh, self._exported_kwh)
+
+
+class EdistribucionSelfConsumptionTodaySensor(_EdistribucionSelfConsumptionSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "self_consumption_today")
+        self._attr_unique_id = f"{cont_id}_self_consumption_today"
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        day = _latest_daily_total(self._bundle.get("consumption"))
+        return day["importedKwh"] if day else None
+
+    @property
+    def _exported_kwh(self) -> float | None:
+        day = _latest_daily_total(self._bundle.get("consumption"))
+        return day["exportedKwh"] if day else None
+
+
+class EdistribucionSelfConsumptionMonthSensor(_EdistribucionSelfConsumptionSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "self_consumption_month")
+        self._attr_unique_id = f"{cont_id}_self_consumption_month"
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        month = self._bundle.get("month")
+        return month.get("totalImportedKwh") if month else None
 
     @property
     def _exported_kwh(self) -> float | None:

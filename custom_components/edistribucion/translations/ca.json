@@ -44,6 +44,7 @@
           "price_punta": "Preu en punta (€/kWh, si la tarifa és 'trams')",
           "price_llano": "Preu en pla (€/kWh, si la tarifa és 'trams')",
           "price_valle": "Preu en vall (€/kWh, si la tarifa és 'trams')",
+          "holiday_region": "Regió de festius (si la tarifa és 'trams'): un festiu entre setmana compta com a vall",
           "surplus_compensation": "Compensació d'excedents",
           "surplus_price": "Preu de la compensació (€/kWh, si està activada)",
           "pvpc_zone": "Zona PVPC (si la tarifa és 'pvpc'): Península/Balears/Canàries, o Ceuta i Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Terme de potència (mes)" },
       "surplus_compensation_today": { "name": "Compensació per excedents avui" },
       "surplus_compensation_month": { "name": "Compensació per excedents (mes)" },
-      "month_vs_last_year": { "name": "Comparativa amb el mateix mes de l'any anterior" }
+      "month_vs_last_year": { "name": "Comparativa amb el mateix mes de l'any anterior" },
+      "current_pvpc_price": { "name": "Preu PVPC actual" },
+      "self_consumption_today": { "name": "Autoconsum aproximat avui" },
+      "self_consumption_month": { "name": "Autoconsum aproximat (mes)" }
     },
     "binary_sensor": {
       "connected": { "name": "Connectat" }
     },
     "button": {
       "refresh": { "name": "Actualitza ara" },
-      "relogin": { "name": "Força reconnexió" }
+      "relogin": { "name": "Força reconnexió" },
+      "refresh_pvpc": { "name": "Actualitza preus PVPC" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Calendari de consum" }

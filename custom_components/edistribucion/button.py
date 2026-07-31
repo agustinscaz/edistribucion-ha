@@ -8,19 +8,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, TARIFF_PVPC
 from .coordinator import EdistribucionCoordinator
 from .device import hub_device_info
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: EdistribucionCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            EdistribucionRefreshButton(coordinator, entry),
-            EdistribucionReloginButton(coordinator, entry),
-        ]
-    )
+    entities: list[ButtonEntity] = [
+        EdistribucionRefreshButton(coordinator, entry),
+        EdistribucionReloginButton(coordinator, entry),
+    ]
+    if any(opts.get("tariff_type") == TARIFF_PVPC for opts in coordinator.supply_point_options.values()):
+        entities.append(EdistribucionRefreshPvpcButton(coordinator, entry))
+    async_add_entities(entities)
 
 
 class _EdistribucionHubButton(CoordinatorEntity[EdistribucionCoordinator], ButtonEntity):
@@ -56,3 +57,17 @@ class EdistribucionReloginButton(_EdistribucionHubButton):
     async def async_press(self) -> None:
         await self.coordinator.client.async_relogin()
         await self.coordinator.async_request_refresh()
+
+
+class EdistribucionRefreshPvpcButton(_EdistribucionHubButton):
+    """Fuerza un refresco de precios PVPC ya, sin esperar al ciclo diario (p.ej. si ESIOS falló
+    antes, o para comprobar si ya han publicado los precios de mañana)."""
+
+    entity_description = ButtonEntityDescription(key="refresh_pvpc", translation_key="refresh_pvpc")
+
+    def __init__(self, coordinator: EdistribucionCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_refresh_pvpc"
+
+    async def async_press(self) -> None:
+        await self.coordinator.async_force_refresh_pvpc_prices()

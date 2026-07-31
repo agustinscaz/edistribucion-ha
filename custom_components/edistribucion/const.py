@@ -48,6 +48,35 @@ CONF_CONTRACTED_POWER_VALLE = "contracted_power_valle_kw"
 CONF_PRICE_POWER_PUNTA = "price_power_punta"  # €/kW/día
 CONF_PRICE_POWER_VALLE = "price_power_valle"  # €/kW/día
 
+# Región (CCAA) para festivos, por CUPS — con tarifa "tramos", un festivo entre semana cuenta como
+# valle todo el día (igual que fin de semana), en vez de como si fuera un día laborable normal. Los
+# códigos son los que usa la librería `holidays` (paquete "holidays" del manifest). "none" = no
+# aplicar festivos (comportamiento anterior, por defecto).
+CONF_HOLIDAY_REGION = "holiday_region"
+DEFAULT_HOLIDAY_REGION = "none"
+HOLIDAY_REGIONS = {
+    "none": "No usar (todos los días laborables cuentan igual)",
+    "AN": "Andalucía",
+    "AR": "Aragón",
+    "AS": "Asturias",
+    "CB": "Cantabria",
+    "CE": "Ceuta",
+    "CL": "Castilla y León",
+    "CM": "Castilla-La Mancha",
+    "CN": "Canarias",
+    "CT": "Cataluña",
+    "EX": "Extremadura",
+    "GA": "Galicia",
+    "IB": "Illes Balears",
+    "MC": "Murcia",
+    "MD": "Madrid",
+    "ML": "Melilla",
+    "NC": "Navarra",
+    "PV": "País Vasco",
+    "RI": "La Rioja",
+    "VC": "C. Valenciana",
+}
+
 # Umbral de fallos consecutivos del coordinator antes de levantar un Repair issue (ver repairs.py)
 CONSECUTIVE_FAILURES_FOR_REPAIR = 3
 

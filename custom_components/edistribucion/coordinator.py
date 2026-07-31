@@ -89,6 +89,13 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 day += timedelta(days=1)
         self._pvpc_fetched_date = today_key
 
+    async def async_force_refresh_pvpc_prices(self) -> None:
+        """Fuerza un refresco de precios PVPC ya (botón de la integración), sin esperar al ciclo
+        diario — útil si ESIOS falló antes, o si acaban de publicar los precios de mañana."""
+        self._pvpc_fetched_date = None
+        await self._async_update_pvpc_prices()
+        await self.async_request_refresh()
+
     async def _async_update_data(self) -> dict:
         try:
             await self._async_update_pvpc_prices()

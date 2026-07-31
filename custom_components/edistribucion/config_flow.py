@@ -16,18 +16,44 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
+    CONF_HOLIDAY_REGION,
     CONF_PRICE_POWER_PUNTA,
     CONF_PRICE_POWER_VALLE,
     CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
+    DEFAULT_HOLIDAY_REGION,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    HOLIDAY_REGIONS,
     TARIFF_TRAMOS,
     TARIFF_TYPES,
 )
 from .esios import DEFAULT_PVPC_ZONE, PVPC_ZONES
+
+# Traducción de "activo"/"histórico" para el placeholder {estado} del paso por CUPS — no puede ir
+# en strings.json porque description_placeholders son sustituciones de DATOS, no de texto (HA no
+# las vuelve a traducir), así que sin esto el estado saldría siempre en español pese al idioma
+# elegido en Home Assistant. Mismos idiomas que las traducciones de la integración.
+_ESTADO_TRANSLATIONS = {
+    "es": ("activo", "histórico"),
+    "en": ("active", "historical"),
+    "ca": ("actiu", "històric"),
+    "gl": ("activo", "histórico"),
+    "eu": ("aktibo", "historikoa"),
+    "it": ("attivo", "storico"),
+    "de": ("aktiv", "historisch"),
+    "fr": ("actif", "historique"),
+    "ru": ("активен", "исторический"),
+}
+
+
+def _estado_word(hass, active: bool) -> str:
+    lang = (hass.config.language or "es").split("-")[0]
+    active_word, historic_word = _ESTADO_TRANSLATIONS.get(lang, _ESTADO_TRANSLATIONS["es"])
+    return active_word if active else historic_word
+
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -104,6 +130,7 @@ _SUPPLY_POINT_FIELD_DEFAULTS = {
     "price_punta": 0,
     "price_llano": 0,
     "price_valle": 0,
+    CONF_HOLIDAY_REGION: DEFAULT_HOLIDAY_REGION,
     "surplus_compensation": False,
     "surplus_price": 0,
     CONF_PVPC_ZONE: DEFAULT_PVPC_ZONE,
@@ -171,6 +198,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 "price_punta": user_input.get("price_punta", 0),
                 "price_llano": user_input.get("price_llano", 0),
                 "price_valle": user_input.get("price_valle", 0),
+                CONF_HOLIDAY_REGION: user_input.get(CONF_HOLIDAY_REGION, DEFAULT_HOLIDAY_REGION),
                 "surplus_compensation": user_input.get("surplus_compensation", False),
                 "surplus_price": user_input.get("surplus_price", 0),
                 CONF_PVPC_ZONE: user_input.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE),
@@ -201,6 +229,12 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional("price_punta", default=prev.get("price_punta", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("price_llano", default=prev.get("price_llano", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional("price_valle", default=prev.get("price_valle", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional(CONF_HOLIDAY_REGION, default=prev.get(CONF_HOLIDAY_REGION, DEFAULT_HOLIDAY_REGION)): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=k, label=v) for k, v in HOLIDAY_REGIONS.items()],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
                 vol.Optional("surplus_compensation", default=prev.get("surplus_compensation", False)): bool,
                 vol.Optional("surplus_price", default=prev.get("surplus_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional(CONF_PVPC_ZONE, default=prev.get(CONF_PVPC_ZONE, DEFAULT_PVPC_ZONE)): selector.SelectSelector(
@@ -211,7 +245,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
-        estado = "activo" if sp.get("active") else "histórico"
+        estado = _estado_word(self.hass, bool(sp.get("active")))
         return self.async_show_form(
             step_id="supply_point",
             data_schema=schema,

@@ -44,6 +44,7 @@
           "price_punta": "Prezzo in punta (€/kWh, se la tariffa è 'a fasce')",
           "price_llano": "Prezzo intermedio (€/kWh, se la tariffa è 'a fasce')",
           "price_valle": "Prezzo in fuori punta (€/kWh, se la tariffa è 'a fasce')",
+          "holiday_region": "Regione festività (se la tariffa è 'a fasce'): un festivo infrasettimanale conta come fuori punta",
           "surplus_compensation": "Compensazione delle eccedenze",
           "surplus_price": "Prezzo della compensazione (€/kWh, se attivata)",
           "pvpc_zone": "Zona PVPC (se la tariffa è 'pvpc'): Penisola/Baleari/Canarie, o Ceuta e Melilla"
@@ -69,14 +70,18 @@
       "power_cost_month": { "name": "Termine di potenza (mese)" },
       "surplus_compensation_today": { "name": "Compensazione eccedenze oggi" },
       "surplus_compensation_month": { "name": "Compensazione eccedenze (mese)" },
-      "month_vs_last_year": { "name": "Confronto con lo stesso mese dell'anno precedente" }
+      "month_vs_last_year": { "name": "Confronto con lo stesso mese dell'anno precedente" },
+      "current_pvpc_price": { "name": "Prezzo PVPC attuale" },
+      "self_consumption_today": { "name": "Autoconsumo approssimativo oggi" },
+      "self_consumption_month": { "name": "Autoconsumo approssimativo (mese)" }
     },
     "binary_sensor": {
       "connected": { "name": "Connesso" }
     },
     "button": {
       "refresh": { "name": "Aggiorna ora" },
-      "relogin": { "name": "Forza riconnessione" }
+      "relogin": { "name": "Forza riconnessione" },
+      "refresh_pvpc": { "name": "Aggiorna prezzi PVPC" }
     },
     "calendar": {
       "consumption_calendar": { "name": "Calendario dei consumi" }

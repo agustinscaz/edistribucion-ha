@@ -7,7 +7,9 @@ Horario de tramos usado (2.0TD peninsular, el más común en residencial):
 - Valle: 0-8h todos los días, y todo el fin de semana.
 
 OJO — limitaciones conocidas:
-- "tramos" no tiene en cuenta festivos (cuentan como valle todo el día en la tarifa real).
+- "tramos" cuenta un festivo entre semana como día laborable normal, SALVO que configures una
+  región (CCAA) de festivos para el CUPS — en ese caso, un festivo cuenta como valle todo el día
+  (igual que fin de semana), usando la librería `holidays` (paquete del manifest).
 - "pvpc" usa precios reales hora a hora del archivo público de PVPC de ESIOS/REE (ver esios.py) —
   no hace falta ninguna clave, solo la zona (Península/Baleares/Canarias o Ceuta/Melilla)
   configurada en el propio CUPS. Sin precio para alguna hora concreta (p.ej. si aún no se ha
@@ -19,6 +21,8 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+import holidays
+
 from .const import TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS
 from .esios import DEFAULT_PVPC_ZONE
 
@@ -29,14 +33,26 @@ VALLE = "valle"
 _PUNTA_HOURS = {10, 11, 12, 13, 18, 19, 20, 21}
 _LLANO_HOURS = {8, 9, 14, 15, 16, 17, 22, 23}
 
+# Un `holidays.Spain(subdiv=...)` por región, reutilizado entre llamadas — construirlo es barato
+# (calcula los años sobre la marcha), pero no hace falta rehacerlo en cada refresco de sensor.
+_holiday_calendars: dict[str, holidays.HolidayBase] = {}
 
-def hour_period(date_str: str, hour_label: str) -> str:
+
+def _get_holiday_calendar(region: str | None) -> holidays.HolidayBase | None:
+    if not region or region == "none":
+        return None
+    if region not in _holiday_calendars:
+        _holiday_calendars[region] = holidays.Spain(subdiv=region)
+    return _holiday_calendars[region]
+
+
+def hour_period(date_str: str, hour_label: str, holiday_calendar: holidays.HolidayBase | None = None) -> str:
     """`date_str` en formato DD/MM/YYYY, `hour_label` tipo '13 - 14 h' (el que usa el add-on)."""
     try:
         day = datetime.strptime(date_str, "%d/%m/%Y")
     except ValueError:
         return LLANO
-    if day.weekday() >= 5:  # sábado=5, domingo=6
+    if day.weekday() >= 5 or (holiday_calendar is not None and day.date() in holiday_calendar):  # sáb/dom o festivo
         return VALLE
     match = re.match(r"(\d+)", hour_label or "")
     if not match:
@@ -54,16 +70,18 @@ def _leading_hour(hour_label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def cost_breakdown(consumption: dict | None, prices: dict[str, float]) -> dict[str, float] | None:
+def cost_breakdown(consumption: dict | None, prices: dict[str, float], holiday_region: str | None = None) -> dict[str, float] | None:
     """kWh importados y coste, desglosados por periodo, para un consumo con `hourlyByDate`.
-    None si no hay datos horarios."""
+    None si no hay datos horarios. `holiday_region` (CCAA) es opcional — sin ella, los festivos
+    cuentan como día laborable normal (ver limitación conocida más arriba)."""
     if not consumption or not consumption.get("hourlyByDate"):
         return None
 
+    holiday_calendar = _get_holiday_calendar(holiday_region)
     kwh_by_period = {PUNTA: 0.0, LLANO: 0.0, VALLE: 0.0}
     for date_str, hours in consumption["hourlyByDate"].items():
         for h in hours:
-            period = hour_period(date_str, h.get("hour", ""))
+            period = hour_period(date_str, h.get("hour", ""), holiday_calendar)
             kwh_by_period[period] += h.get("importedKwh") or 0
 
     cost_by_period = {period: round(kwh * prices.get(period, 0), 4) for period, kwh in kwh_by_period.items()}
@@ -142,7 +160,7 @@ def estimate_energy_cost(
         LLANO: sp_opts.get("price_llano") or 0,
         VALLE: sp_opts.get("price_valle") or 0,
     }
-    breakdown = cost_breakdown(hourly_source, prices)
+    breakdown = cost_breakdown(hourly_source, prices, sp_opts.get("holiday_region"))
     if breakdown:
         breakdown["tariff_type"] = TARIFF_TRAMOS
     return breakdown
@@ -156,6 +174,21 @@ def power_cost(sp_opts: dict) -> float:
     price_punta = sp_opts.get("price_power_punta") or 0
     price_valle = sp_opts.get("price_power_valle") or 0
     return round(punta_kw * price_punta + valle_kw * price_valle, 4)
+
+
+def self_consumption_ratio(imported_kwh: float | None, exported_kwh: float | None) -> float | None:
+    """Autoconsumo APROXIMADO (%), calculado solo con importado/exportado del contador de
+    e-distribución — no con generación solar real (e-distribución no la reporta, solo ve el
+    intercambio con la red). Representa qué % de toda la energía que cruzó el contador (en
+    cualquier dirección) fue importada en vez de exportada: cuanto menos exportes en proporción a
+    lo que importas, más alto sale. Sin excedentes (0 exportado), sale 100% aunque no haya
+    autoconsumo real que medir — no es un % sobre tu generación solar."""
+    if imported_kwh is None or exported_kwh is None:
+        return None
+    total = imported_kwh + exported_kwh
+    if total <= 0:
+        return None
+    return round(100 * imported_kwh / total, 1)
 
 
 def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> float | None:
