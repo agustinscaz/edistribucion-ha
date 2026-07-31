@@ -177,10 +177,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_RELLENAR_HISTORICO):
 
         async def _async_service_rellenar_historico(call: ServiceCall) -> dict:
-            """Rellena el histórico de estadísticas del Dashboard de Energía para meses ANTERIORES
-            al actual (el backfill normal del coordinator solo cubre el mes en curso) — útil recién
-            instalada la integración, o si vienes de otra solución y quieres recuperar el histórico
-            completo. Sin `device_id`, rellena todos los suministros seguidos."""
+            """Rellena el histórico de estadísticas del Dashboard de Energía para los últimos
+            `meses` (incluido el mes en curso, ver `months_back`) — el backfill automático del
+            coordinator solo se repite día a día para el mes en curso, así que esto sirve para
+            recuperar de golpe meses anteriores (recién instalada la integración, o si vienes de
+            otra solución). Sin `device_id`, rellena todos los suministros seguidos."""
             meses = call.data["meses"]
             device_id = call.data.get("device_id")
 

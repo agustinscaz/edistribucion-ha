@@ -99,6 +99,23 @@ def latest_hour_flow_kwh(consumption: dict | None, field: str) -> tuple[str, flo
     return latest_key, latest_value
 
 
+def hours_since_flow_kwh(latest: tuple[str, float] | None, now: datetime) -> float | None:
+    """Horas transcurridas desde la hora de `latest` (ver `latest_hour_flow_kwh`) hasta `now` —
+    para detectar un dato "de hoy" que en realidad lleva muchas horas sin sincronizar (la curva
+    horaria de e-distribución se publica con retraso, puede tardar horas). None si no hay dato o
+    la clave no se puede interpretar. `now` puede ser tz-aware o no, solo se usa su fecha/hora
+    local (igual que el resto de comparaciones con `hourlyByDate` en este módulo)."""
+    if latest is None:
+        return None
+    try:
+        date_str, hour_str = latest[0].rsplit(" ", 1)
+        moment = datetime.strptime(date_str, "%d/%m/%Y").replace(hour=int(hour_str))
+    except ValueError:
+        return None
+    naive_now = now.replace(tzinfo=None) if now.tzinfo else now
+    return round((naive_now - moment).total_seconds() / 3600, 1)
+
+
 def cost_breakdown(consumption: dict | None, prices: dict[str, float], holiday_region: str | None = None) -> dict[str, float] | None:
     """kWh importados y coste, desglosados por periodo, para un consumo con `hourlyByDate`.
     None si no hay datos horarios. `holiday_region` (CCAA) es opcional — sin ella, los festivos
@@ -254,17 +271,31 @@ def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> flo
     return round(exported_kwh * price, 4)
 
 
+def _safe_float(value) -> float | None:
+    """Convierte a float sin reventar — el add-on (o el propio contrato) a veces devuelve números
+    como texto (o con coma decimal, ver esios.py). Sin esto, cualquier comparación (`>`) con un
+    valor así propaga un TypeError y tira abajo la entidad entera al añadirla en Home Assistant."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).replace(",", "."))
+    except (ValueError, TypeError):
+        return None
+
+
 def max_power_reported(max_power_demand: dict | None) -> float | None:
     """Máximo real reportado por e-distribución en todo el periodo devuelto (no solo el último
     punto, ver `maxValue`) — si el add-on no trae `maxValue`, se calcula como el mayor `valueKw` de
     todos los `points`."""
     if not max_power_demand:
         return None
-    max_value = max_power_demand.get("maxValue")
+    max_value = _safe_float(max_power_demand.get("maxValue"))
     if max_value is not None:
         return max_value
     points = max_power_demand.get("points") or []
-    values = [p.get("valueKw") for p in points if p.get("valueKw") is not None]
+    values = [v for v in (_safe_float(p.get("valueKw")) for p in points if isinstance(p, dict)) if v is not None]
     return max(values) if values else None
 
 
@@ -283,8 +314,8 @@ def power_excess_detected(max_power_demand: dict | None, contract: dict | None) 
     by_period = max_power_by_period(max_power_demand)
     punta_label = next((label for label in by_period if "punta" in label.lower()), None)
     valle_label = next((label for label in by_period if "valle" in label.lower()), None)
-    punta_limit = contract.get("contractedPowerPuntaKw") or 0
-    valle_limit = contract.get("contractedPowerValleKw") or 0
+    punta_limit = _safe_float(contract.get("contractedPowerPuntaKw")) or 0
+    valle_limit = _safe_float(contract.get("contractedPowerValleKw")) or 0
 
     if punta_label and valle_label and (punta_limit or valle_limit):
         exceeded_punta = bool(punta_limit) and by_period[punta_label] > punta_limit
@@ -302,16 +333,20 @@ def power_excess_detected(max_power_demand: dict | None, contract: dict | None) 
 
 def _extract_period_value(period_entry) -> tuple[str, float] | tuple[None, None]:
     """Intenta sacar (nombre_periodo, valor_kw) de una entrada de "periods" sin asumir un nombre de
-    clave concreto (el add-on no documenta el formato exacto) — usa la primera clave con valor
-    numérico como el valor, y la primera clave de texto como la etiqueta."""
+    clave concreto ni que el valor venga como número de verdad (a veces llega como texto, ver
+    `_safe_float`) — usa el primer campo interpretable como número como el valor, y el primer
+    campo de texto NO numérico como la etiqueta."""
     if not isinstance(period_entry, dict):
         return None, None
     label = None
     value = None
-    for key, val in period_entry.items():
-        if isinstance(val, (int, float)) and value is None:
-            value = float(val)
-        elif isinstance(val, str) and label is None:
+    for val in period_entry.values():
+        if value is None:
+            numeric = val if isinstance(val, (int, float)) and not isinstance(val, bool) else _safe_float(val)
+            if numeric is not None:
+                value = float(numeric)
+                continue
+        if label is None and isinstance(val, str):
             label = val
     return (label, value) if label is not None and value is not None else (None, None)
 
@@ -320,16 +355,20 @@ def max_power_by_period(max_power_demand: dict | None) -> dict[str, float]:
     """Máximo por periodo (punta/valle...) si `periods` lo distingue, agregando el mayor valor de
     CADA periodo a lo largo de todos los puntos — no se asume una forma concreta de `periods` (el
     add-on no la documenta): admite tanto un dict {periodo: valor} como una lista de entradas con
-    alguna clave numérica y otra de texto. Vacío si no hay nada reconocible."""
+    alguna clave numérica y otra de texto, y puntos que no sean dict (se ignoran). Vacío si no hay
+    nada reconocible."""
     if not max_power_demand:
         return {}
     result: dict[str, float] = {}
     for point in max_power_demand.get("points") or []:
+        if not isinstance(point, dict):
+            continue
         periods = point.get("periods")
         if isinstance(periods, dict):
             for label, val in periods.items():
-                if isinstance(val, (int, float)):
-                    result[label] = max(result.get(label, 0.0), float(val))
+                numeric = val if isinstance(val, (int, float)) and not isinstance(val, bool) else _safe_float(val)
+                if numeric is not None:
+                    result[label] = max(result.get(label, 0.0), float(numeric))
         elif isinstance(periods, list):
             for entry in periods:
                 label, val = _extract_period_value(entry)

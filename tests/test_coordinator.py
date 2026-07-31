@@ -265,7 +265,7 @@ async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
     assert completed == {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0}
 
 
-async def test_year_to_date_refetched_once_per_day(hass, monkeypatch):
+async def test_year_to_date_checks_at_most_once_per_day(hass, monkeypatch):
     entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
     client = _make_client()
     calls = {"n": 0}
@@ -288,7 +288,42 @@ async def test_year_to_date_refetched_once_per_day(hass, monkeypatch):
     await coordinator._async_update_data()
     assert calls["n"] == 1  # mismo día, no se repite
 
-    coordinator._year_to_date_fetched_day = None  # simula que cambió el día
+
+async def test_year_to_date_never_refetches_an_already_closed_month(hass, monkeypatch):
+    """El punto clave de la caché permanente: un mes ya cerrado y cacheado no se vuelve a pedir
+    NUNCA, ni siquiera al "cambiar de día" (a diferencia del backfill/pvpc, que sí se repiten cada
+    día) — un mes cerrado no cambia jamás, así que solo cambiar de MES (revelar un mes nuevo
+    completado) debe generar una petición nueva."""
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    client = _make_client()
+    calls = {"n": 0}
+
+    async def fake_consumption(cont_id, range_type=None, date=None):
+        if date in ("2026-01-01", "2026-02-01"):
+            calls["n"] += 1
+            return {"totalImportedKwh": 10.0, "totalExportedKwh": 0.0}
+        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
+
+    client.async_get_consumption.side_effect = fake_consumption
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 2, 15, tzinfo=timezone.utc)
+    )
+
+    await coordinator._async_update_data()
+    assert calls["n"] == 1  # solo enero está completado en febrero
+
+    # Simula que pasó un día (sin cambiar de mes): enero ya está cacheado, NO debe volver a pedirse.
+    coordinator._year_to_date_fetched_day = None
+    await coordinator._async_update_data()
+    assert calls["n"] == 1
+
+    # Cambia el mes: ahora febrero también está completado -> una petición nueva, SOLO para febrero
+    # (enero sigue en caché, no se vuelve a pedir).
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
+    )
+    coordinator._year_to_date_fetched_day = None
     await coordinator._async_update_data()
     assert calls["n"] == 2
 

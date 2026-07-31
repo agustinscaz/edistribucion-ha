@@ -13,11 +13,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import EdistribucionCoordinator
-from .costs import latest_hour_flow_kwh, max_power_by_period, max_power_reported, power_excess_detected
+from .costs import hours_since_flow_kwh, latest_hour_flow_kwh, max_power_by_period, max_power_reported, power_excess_detected
 from .device import hub_device_info
+
+# Pasado este número de horas sin que se sincronice una hora nueva, el dato "más reciente" ya no
+# es de fiar para automatizar decisiones en tiempo casi-real (la curva horaria de e-distribución
+# se publica con retraso, pero no debería tardar tanto) — ver EdistribucionExportingNowSensor.
+_STALE_HOURS_THRESHOLD = 8
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -110,11 +116,17 @@ class EdistribucionPowerExcessSensor(CoordinatorEntity[EdistribucionCoordinator]
 
 class EdistribucionExportingNowSensor(CoordinatorEntity[EdistribucionCoordinator], BinarySensorEntity):
     """ON si la hora MÁS RECIENTE con dato horario (de `consumption`, "hoy") tiene excedente
-    exportado > 0 — casi en tiempo real, según lo último que haya sincronizado el distribuidor (ver
-    atributos `ultimo_cambio`/`minutos_sin_cambiar` de los sensores de energía para saber cuán
-    reciente es de verdad ese dato). Pensado para automatizaciones oportunistas (encender el termo
-    eléctrico cuando hay excedente solar). Solo se crea si el CUPS ha exportado algo alguna vez
-    (ver async_setup_entry)."""
+    exportado > 0 — casi en tiempo real, según lo último que haya sincronizado el distribuidor.
+    Pensado para automatizaciones oportunistas (encender el termo eléctrico cuando hay excedente
+    solar). Solo se crea si el CUPS ha exportado algo alguna vez (ver async_setup_entry).
+
+    La curva horaria de e-distribución se publica con retraso — a veces varias horas — así que el
+    dato "más reciente" puede no ser tan reciente como parece. Si lleva más de
+    `_STALE_HOURS_THRESHOLD` horas sin sincronizar una hora nueva, `is_on` pasa a None (estado
+    "unknown", no "unavailable": sigue habiendo dato, solo que demasiado viejo para fiarse) en vez
+    de reportar en silencio un valor de ayer como si fuera de ahora mismo — una automatización
+    enganchada directo a este binary_sensor no tiene otra forma de saberlo. El atributo
+    `horas_de_retraso` sigue visible en ese caso, para poder ver por qué."""
 
     _attr_has_entity_name = True
     entity_description = BinarySensorEntityDescription(
@@ -146,9 +158,18 @@ class EdistribucionExportingNowSensor(CoordinatorEntity[EdistribucionCoordinator
         return latest_hour_flow_kwh(self._bundle.get("consumption"), "exportedKwh")
 
     @property
+    def _hours_stale(self) -> float | None:
+        return hours_since_flow_kwh(self._latest, dt_util.now())
+
+    @property
     def is_on(self) -> bool | None:
         latest = self._latest
-        return latest[1] > 0 if latest is not None else None
+        if latest is None:
+            return None
+        hours_stale = self._hours_stale
+        if hours_stale is not None and hours_stale > _STALE_HOURS_THRESHOLD:
+            return None  # dato demasiado viejo para fiarse de que sea "ahora mismo"
+        return latest[1] > 0
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -156,8 +177,12 @@ class EdistribucionExportingNowSensor(CoordinatorEntity[EdistribucionCoordinator
         if latest is None:
             return {}
         key, kwh = latest
-        return {"ultima_hora_con_dato": key, "kwh_exportados_esa_hora": kwh}
+        return {"ultima_hora_con_dato": key, "kwh_exportados_esa_hora": kwh, "horas_de_retraso": self._hours_stale}
 
     @property
     def available(self) -> bool:
+        # OJO: depende de si hay datos en absoluto (_latest), NO de si están stale — un dato viejo
+        # deja is_on en None ("unknown", con el atributo horas_de_retraso visible para explicar por
+        # qué), pero la entidad sigue "disponible" en el sentido de HA. "unavailable" es solo para
+        # cuando no hay NINGÚN dato horario todavía.
         return super().available and self._latest is not None

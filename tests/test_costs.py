@@ -3,17 +3,21 @@ autosuficiencia y comparador de tarifas. No depende de Home Assistant."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from custom_components.edistribucion.costs import (  # noqa: E402
     LLANO,
     PUNTA,
     VALLE,
+    _safe_float,
     average_price_per_kwh,
     cost_breakdown,
     estimate_cost_as_tariff,
     estimate_energy_cost,
     hour_period,
+    hours_since_flow_kwh,
     latest_hour_flow_kwh,
     max_power_by_period,
     max_power_reported,
@@ -334,6 +338,29 @@ class TestSurplusCompensationValue:
         assert surplus_compensation_value(sp, 10.0) == 0.5
 
 
+class TestSafeFloat:
+    def test_passes_through_numbers(self):
+        assert _safe_float(3.5) == 3.5
+        assert _safe_float(4) == 4.0
+
+    def test_parses_numeric_strings(self):
+        assert _safe_float("3.5") == 3.5
+
+    def test_parses_comma_decimal_strings(self):
+        assert _safe_float("3,5") == 3.5
+
+    def test_none_for_none_and_garbage(self):
+        assert _safe_float(None) is None
+        assert _safe_float("no-es-un-numero") is None
+        assert _safe_float([1, 2]) is None
+
+    def test_none_for_bool(self):
+        """bool es subclase de int en Python — sin excluirlo a propósito, True/False colarían
+        como 1.0/0.0 en comparaciones que no tienen sentido."""
+        assert _safe_float(True) is None
+        assert _safe_float(False) is None
+
+
 class TestMaxPowerReported:
     def test_none_without_data(self):
         assert max_power_reported(None) is None
@@ -348,6 +375,19 @@ class TestMaxPowerReported:
 
     def test_none_without_max_value_or_points(self):
         assert max_power_reported({"points": []}) is None
+
+    def test_max_value_as_string_is_coerced(self):
+        """El add-on (o alguna variante de la API) puede devolver los números como texto — sin
+        coerción esto revienta más adelante con TypeError en cuanto se compara con `>`."""
+        assert max_power_reported({"maxValue": "4.2"}) == 4.2
+
+    def test_value_kw_as_string_is_coerced(self):
+        power = {"points": [{"valueKw": "2.0"}, {"valueKw": "4.2"}]}
+        assert max_power_reported(power) == 4.2
+
+    def test_non_dict_points_are_ignored_not_fatal(self):
+        power = {"points": ["no-es-un-punto", None, {"valueKw": 3.0}]}
+        assert max_power_reported(power) == 3.0
 
 
 class TestPowerExcessDetected:
@@ -393,6 +433,18 @@ class TestPowerExcessDetected:
         contract = {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
         assert power_excess_detected(power, contract) is True
 
+    def test_contracted_power_as_string_does_not_crash(self):
+        """Bug real: contractedPowerPuntaKw/Valle como texto rompía la comparación `>` con
+        TypeError, tirando abajo la entidad entera al añadirla en Home Assistant."""
+        contract = {"contractedPowerPuntaKw": "3.5", "contractedPowerValleKw": "3.5"}
+        assert power_excess_detected({"maxValue": 4.0}, contract) is True
+        assert power_excess_detected({"maxValue": 3.0}, contract) is False
+
+    def test_non_dict_points_do_not_crash(self):
+        power = {"points": ["no-es-un-punto", {"periods": {"punta": 4.0, "valle": 1.0}}]}
+        contract = {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
+        assert power_excess_detected(power, contract) is True
+
 
 class TestMaxPowerByPeriod:
     def test_empty_without_data(self):
@@ -425,6 +477,18 @@ class TestMaxPowerByPeriod:
         power = {"points": [{"periods": [{"onlytext": "x"}, {"onlynum": 5}]}]}
         assert max_power_by_period(power) == {}
 
+    def test_non_dict_points_are_ignored_not_fatal(self):
+        power = {"points": ["no-es-un-punto", None, {"periods": {"punta": 2.0}}]}
+        assert max_power_by_period(power) == {"punta": 2.0}
+
+    def test_dict_shaped_periods_with_string_values_are_coerced(self):
+        power = {"points": [{"periods": {"punta": "3.0", "valle": "1.0"}}]}
+        assert max_power_by_period(power) == {"punta": 3.0, "valle": 1.0}
+
+    def test_list_shaped_periods_with_string_values_are_coerced(self):
+        power = {"points": [{"periods": [{"tipo": "punta", "valueKw": "3.0"}]}]}
+        assert max_power_by_period(power) == {"punta": 3.0}
+
 
 class TestLatestHourFlowKwh:
     def test_none_without_hourly_by_date(self):
@@ -448,6 +512,29 @@ class TestLatestHourFlowKwh:
     def test_malformed_date_is_skipped(self):
         consumption = {"hourlyByDate": {"no-es-fecha": [{"hour": "0 - 1 h", "exportedKwh": 5.0}]}}
         assert latest_hour_flow_kwh(consumption, "exportedKwh") is None
+
+
+class TestHoursSinceFlowKwh:
+    def test_none_without_latest(self):
+        assert hours_since_flow_kwh(None, datetime(2026, 7, 31, 22)) is None
+
+    def test_zero_when_same_hour(self):
+        assert hours_since_flow_kwh(("30/07/2026 22", 1.0), datetime(2026, 7, 30, 22)) == 0.0
+
+    def test_hours_elapsed_same_day(self):
+        assert hours_since_flow_kwh(("30/07/2026 10", 1.0), datetime(2026, 7, 30, 22)) == 12.0
+
+    def test_hours_elapsed_across_days(self):
+        """Caso real reportado: dato de las 23h de ayer, consultado a las 22h de hoy -> 23h de
+        retraso, no ~1h (el bug que se estaría comprobando es NO tener en cuenta el cambio de
+        día)."""
+        assert hours_since_flow_kwh(("30/07/2026 23", 1.0), datetime(2026, 7, 31, 22)) == 23.0
+
+    def test_works_with_tz_aware_now(self):
+        assert hours_since_flow_kwh(("30/07/2026 22", 1.0), datetime(2026, 7, 30, 22, tzinfo=timezone.utc)) == 0.0
+
+    def test_none_for_malformed_key(self):
+        assert hours_since_flow_kwh(("no-es-fecha", 1.0), datetime(2026, 7, 31, 22)) is None
 
 
 class TestMonthlySummaryCsv:

@@ -412,7 +412,10 @@ class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
 
 
 class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    # device_class=MONETARY (heredado de _EdistribucionEstimatedCostSensor) solo admite None o
+    # TOTAL como state_class — TOTAL_INCREASING es inválido para "monetary" y HA rechaza la
+    # entidad entera al añadirla ("Error adding entity ... impossible considering device class").
+    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
         super().__init__(coordinator, cont_id, supply_point, "estimated_cost_today")
@@ -620,7 +623,9 @@ class _EdistribucionSurplusCompensationSensor(_EdistribucionBaseSensor):
 
 
 class EdistribucionSurplusCompensationTodaySensor(_EdistribucionSurplusCompensationSensor):
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    # Igual que en EdistribucionEstimatedCostTodaySensor: device_class=MONETARY no admite
+    # TOTAL_INCREASING como state_class.
+    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
         super().__init__(coordinator, cont_id, supply_point, "surplus_compensation_today")
@@ -715,7 +720,9 @@ class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement="EUR",
         suggested_display_precision=2,
-        state_class=SensorStateClass.MEASUREMENT,
+        # MEASUREMENT es inválido combinado con device_class=MONETARY (HA solo admite None o
+        # TOTAL) — HA rechazaba la entidad entera al añadirla.
+        state_class=SensorStateClass.TOTAL,
     )
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:

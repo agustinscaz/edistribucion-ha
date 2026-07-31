@@ -67,9 +67,13 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         # signifique que la integración esté fallando.
         self._last_value_change: dict[str, dict[str, datetime]] = {}
         self._previous_values: dict[str, dict[str, float]] = {}
-        # kWh/coste acumulados de los meses YA COMPLETADOS de este año, por CUPS — ver
-        # _async_update_year_to_date_if_needed. El mes en curso se suma en vivo aparte (con lo que
-        # ya se tiene en `bundle["month"]`), no hace falta guardarlo aquí.
+        # Total (kWh/coste) de cada mes YA COMPLETADO, cacheado por (cont_id, año, mes) — un mes
+        # cerrado no vuelve a cambiar nunca, así que una vez pedido no hace falta volver a pedirlo
+        # (ver _async_update_year_to_date_if_needed). `_year_to_date_completed` es la SUMA ya
+        # hecha de esta caché para el año en curso, recalculada a partir de ella cada día (barato,
+        # sin llamadas al add-on) — el mes en curso se suma en vivo aparte, con lo que ya se tiene
+        # en `bundle["month"]`, no hace falta guardarlo en ninguna de las dos cachés.
+        self._year_to_date_month_cache: dict[tuple[str, int, int], dict[str, float]] = {}
         self._year_to_date_completed: dict[str, dict[str, float]] = {}
         self._year_to_date_fetched_day: str | None = None
 
@@ -222,11 +226,13 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self._last_backfill_day = today_key
 
     async def _async_update_year_to_date_if_needed(self, data: dict) -> None:
-        """Una vez al día, recalcula consumo/coste de los meses YA COMPLETADOS de este año (el mes
-        en curso se suma en vivo cada ciclo con lo que ya se tiene en `bundle["month"]`, no hace
-        falta repetirlo). No se hace en cada ciclo porque implica una llamada extra al add-on POR
-        MES completado y por CUPS — el total de meses completados no cambia salvo que cambie el
-        mes, así que sobra pedirlo cada 15 minutos.
+        """Una vez al día, se asegura de tener cacheado el total de CADA mes ya completado de este
+        año (el mes en curso se suma en vivo cada ciclo con lo que ya se tiene en
+        `bundle["month"]`, no hace falta repetirlo). Un mes cerrado no vuelve a cambiar NUNCA, así
+        que solo se le pide al add-on la primera vez que hace falta (ver
+        `_year_to_date_month_cache`) — no todos los meses completados en cada ejecución diaria,
+        que en diciembre serían 11 llamadas de más por CUPS y por día, para siempre, sin ganar nada
+        (el número no cambia hasta que cierra un mes nuevo).
 
         LIMITACIÓN conocida con tarifa "pvpc": el coste de meses anteriores usa los precios PVPC
         que haya cacheados en `self.pvpc_prices` (solo el mes en curso, ver
@@ -239,10 +245,10 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         now = dt_util.now()
         for cont_id, bundle in data.items():
             sp = bundle.get("supply_point") or {}
-            imported = 0.0
-            exported = 0.0
-            cost = 0.0
             for month in range(1, now.month):  # meses ya completados de este año (1..mes_actual-1)
+                cache_key = (cont_id, now.year, month)
+                if cache_key in self._year_to_date_month_cache:
+                    continue  # mes cerrado, ya cacheado — no cambia, no hace falta volver a pedirlo
                 month_date = now.replace(month=month, day=1).strftime("%Y-%m-%d")
                 try:
                     month_data = await self.client.async_get_consumption(cont_id, RANGE_MONTH, month_date)
@@ -251,12 +257,23 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                         "Sin consumo de %s/%s para el acumulado del año de %s: %s", month, now.year, sp.get("cups"), err
                     )
                     continue
-                imported += month_data.get("totalImportedKwh") or 0.0
-                exported += month_data.get("totalExportedKwh") or 0.0
                 breakdown = estimate_energy_cost(sp, month_data.get("totalImportedKwh"), month_data, self.pvpc_prices)
-                if breakdown:
-                    cost += breakdown.get("total") or 0.0
-            self._year_to_date_completed[cont_id] = {"imported_kwh": imported, "exported_kwh": exported, "cost": cost}
+                self._year_to_date_month_cache[cache_key] = {
+                    "imported_kwh": month_data.get("totalImportedKwh") or 0.0,
+                    "exported_kwh": month_data.get("totalExportedKwh") or 0.0,
+                    "cost": (breakdown.get("total") or 0.0) if breakdown else 0.0,
+                }
+
+            # Suma SOLO los meses de ESTE cont_id y de ESTE año ya cacheados — filtrar por año
+            # evita arrastrar totales de años anteriores si Home Assistant lleva corriendo sin
+            # reiniciar más de un año (la caché en memoria no se limpia sola al cambiar de año).
+            totals = {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0}
+            for (c_id, year, _month), values in self._year_to_date_month_cache.items():
+                if c_id == cont_id and year == now.year:
+                    totals["imported_kwh"] += values["imported_kwh"]
+                    totals["exported_kwh"] += values["exported_kwh"]
+                    totals["cost"] += values["cost"]
+            self._year_to_date_completed[cont_id] = totals
         self._year_to_date_fetched_day = today_key
 
     def year_to_date_completed_months(self, cont_id: str) -> dict[str, float]:
