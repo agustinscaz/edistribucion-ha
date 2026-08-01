@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Enerxía exportada (mes)"
       },
-      "max_power_demand": {
-        "name": "Potencia máxima demandada"
-      },
       "contracted_power": {
         "name": "Potencia contratada"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Compensación por excedentes (mes)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "kWh exportados en punta (hoxe)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "kWh exportados en punta (mes)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Compensación en punta (hoxe)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Compensación en punta (mes)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "kWh exportados en chaira (hoxe)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "kWh exportados en chaira (mes)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Compensación en chaira (hoxe)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Compensación en chaira (mes)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "kWh exportados en val (hoxe)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "kWh exportados en val (mes)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Compensación en val (hoxe)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Compensación en val (mes)"
       },
       "punta_kwh_today": {
         "name": "kWh en punta (hoxe)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Conectado"
-      },
-      "power_excess": {
-        "name": "Exceso de potencia detectado"
-      },
-      "exporting_now": {
-        "name": "Exportando excedente agora"
       }
     },
     "button": {

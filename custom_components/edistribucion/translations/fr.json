@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Énergie exportée (mois)"
       },
-      "max_power_demand": {
-        "name": "Puissance maximale appelée"
-      },
       "contracted_power": {
         "name": "Puissance souscrite"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Compensation des excédents (mois)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Énergie exportée en heures pleines (aujourd'hui)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Énergie exportée en heures pleines (mois)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Compensation en heures pleines (aujourd'hui)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Compensation en heures pleines (mois)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Énergie exportée en heures intermédiaires (aujourd'hui)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Énergie exportée en heures intermédiaires (mois)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Compensation en heures intermédiaires (aujourd'hui)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Compensation en heures intermédiaires (mois)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Énergie exportée en heures creuses (aujourd'hui)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Énergie exportée en heures creuses (mois)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Compensation en heures creuses (aujourd'hui)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Compensation en heures creuses (mois)"
       },
       "punta_kwh_today": {
         "name": "Énergie en heures pleines (aujourd'hui)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Connecté"
-      },
-      "power_excess": {
-        "name": "Dépassement de puissance détecté"
-      },
-      "exporting_now": {
-        "name": "Excédent exporté maintenant"
       }
     },
     "button": {

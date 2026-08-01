@@ -117,7 +117,6 @@ def _bundle(sp_overrides=None, has_export=False):
         "week": None,
         "month": month,
         "month_last_year": None,
-        "max_power_demand": None,
         "contract": {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
     }
 
@@ -304,6 +303,49 @@ async def test_surplus_compensation_week_none_without_week_data(hass):
     assert by_id["contA_surplus_compensation_week"].native_value is None
 
 
+async def test_no_export_tramo_sensors_without_surplus_compensation(hass):
+    bundles = {"contA": _bundle({"surplus_compensation": False})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    ids = _unique_ids(entities)
+    assert "contA_punta_exported_kwh_today" not in ids
+    assert "contA_punta_exported_compensation_month" not in ids
+
+
+async def test_export_tramo_sensors_created_with_surplus_compensation(hass):
+    bundles = {"contA": _bundle({"surplus_compensation": True, "surplus_price": 0.06})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    ids = _unique_ids(entities)
+    for tramo in ("punta", "llano", "valle"):
+        for kind in ("kwh", "compensation"):
+            for period in ("today", "month"):
+                assert f"contA_{tramo}_exported_{kind}_{period}" in ids
+
+
+async def test_export_tramo_sensor_values_use_flat_price(hass):
+    """El precio de compensación de excedentes es PLANO (tarifa "niba Solar"): mismo €/kWh en los
+    tres tramos, a diferencia del consumo importado. 27/07/2026 es lunes (ver TestHourPeriod en
+    test_costs.py): 10-11h -> punta, 8-9h -> llano, 0-1h -> valle."""
+    bundle = _bundle({"surplus_compensation": True, "surplus_price": 0.06})
+    hourly = {
+        "27/07/2026": [
+            {"hour": "10 - 11 h", "importedKwh": 0.0, "exportedKwh": 2.0},
+            {"hour": "8 - 9 h", "importedKwh": 0.0, "exportedKwh": 3.0},
+            {"hour": "0 - 1 h", "importedKwh": 0.0, "exportedKwh": 1.0},
+        ]
+    }
+    bundle["consumption"] = {"dailyTotals": [], "hourlyByDate": hourly}
+    bundle["month"] = {"totalImportedKwh": 0.0, "totalExportedKwh": 6.0, "hourlyByDate": hourly}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_punta_exported_kwh_today"].native_value == 2.0
+    assert by_id["contA_punta_exported_compensation_today"].native_value == 0.12
+    assert by_id["contA_llano_exported_kwh_month"].native_value == 3.0
+    assert by_id["contA_llano_exported_compensation_month"].native_value == 0.18
+    assert by_id["contA_valle_exported_kwh_today"].native_value == 1.0
+    assert by_id["contA_valle_exported_compensation_today"].native_value == 0.06
+
+
 async def test_estimated_cost_today_exposes_freshness_alongside_breakdown(hass):
     """El coste estimado de hoy depende del importado "de hoy" — sin frescura, no hay forma de
     saber si el número viene de una hora vieja sin cruzarlo con otro sensor (ver
@@ -370,6 +412,5 @@ async def test_always_created_sensors_present(hass):
     ids = _unique_ids(entities)
     assert "contA_imported_energy_today" in ids
     assert "contA_exported_energy_today" in ids
-    assert "contA_max_power_demand" in ids
     assert "contA_contracted_power" in ids
     assert "contA_month_vs_last_year" in ids

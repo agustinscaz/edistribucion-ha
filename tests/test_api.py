@@ -96,14 +96,6 @@ async def test_get_consumption_with_range_and_date():
         assert captured["raw"] == "range=3&date=2026-07-01"
 
 
-async def test_get_max_power_demand():
-    app = web.Application()
-    app.router.add_get("/max-power-demand/{cups_id}", _json_handler({"maxValue": 3.5}))
-    async with _make_client(app) as (client, _):
-        result = await client.async_get_max_power_demand("cups1")
-        assert result == {"maxValue": 3.5}
-
-
 async def test_get_contracted_power():
     app = web.Application()
     app.router.add_get("/contracted-power/{cont_id}", _json_handler({"contractedPowerPuntaKw": 3.5}))

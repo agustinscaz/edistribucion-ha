@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Экспортированная энергия (месяц)"
       },
-      "max_power_demand": {
-        "name": "Максимальная потребляемая мощность"
-      },
       "contracted_power": {
         "name": "Заявленная мощность"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Компенсация за излишки (месяц)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Экспортированная энергия в пиковый период (сегодня)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Экспортированная энергия в пиковый период (месяц)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Компенсация в пиковый период (сегодня)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Компенсация в пиковый период (месяц)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Экспортированная энергия в средний период (сегодня)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Экспортированная энергия в средний период (месяц)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Компенсация в средний период (сегодня)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Компенсация в средний период (месяц)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Экспортированная энергия в непиковый период (сегодня)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Экспортированная энергия в непиковый период (месяц)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Компенсация в непиковый период (сегодня)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Компенсация в непиковый период (месяц)"
       },
       "punta_kwh_today": {
         "name": "Энергия в пиковый период (сегодня)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Подключено"
-      },
-      "power_excess": {
-        "name": "Обнаружено превышение мощности"
-      },
-      "exporting_now": {
-        "name": "Экспорт излишков сейчас"
       }
     },
     "button": {

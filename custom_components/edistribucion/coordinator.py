@@ -173,14 +173,12 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 # propio dict del suministro, para que sensor.py los tenga a mano sin plumbing extra.
                 sp = {**sp, **{k: v for k, v in opts.items() if k != "track"}}
 
-                cups_id = sp["cupsId"]
                 bundle: dict = {
                     "supply_point": sp,
                     "consumption": None,
                     "week": None,
                     "month": None,
                     "month_last_year": None,
-                    "max_power_demand": None,
                     "contract": None,
                 }
 
@@ -211,10 +209,6 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 except EdistribucionApiError as err:
                     # Normal si el contrato es más nuevo que un año — no hay nada que comparar todavía.
                     _LOGGER.debug("Sin histórico de hace un año para %s: %s", sp.get("cups"), err)
-                try:
-                    bundle["max_power_demand"] = await self.client.async_get_max_power_demand(cups_id)
-                except EdistribucionApiError as err:
-                    _LOGGER.debug("Sin potencia máxima para %s (normal si no tiene telegestión): %s", sp.get("cups"), err)
 
                 self._track_value_freshness(cont_id, bundle)
                 data[cont_id] = bundle

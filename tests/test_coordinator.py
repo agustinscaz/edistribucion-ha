@@ -36,7 +36,6 @@ def _make_client(supply_points=None):
     client = AsyncMock()
     client.async_get_supply_points.return_value = supply_points if supply_points is not None else [_supply_point()]
     client.async_get_consumption.return_value = {"totalImportedKwh": 5.0, "hourlyByDate": {}}
-    client.async_get_max_power_demand.return_value = {"maxValue": 3.5, "points": []}
     client.async_get_contracted_power.return_value = {
         "contractedPowerPuntaKw": 3.5,
         "contractedPowerValleKw": 3.5,
@@ -63,7 +62,6 @@ async def test_basic_bundle_shape(hass):
     assert bundle["supply_point"]["cups"] == "ES123"
     assert bundle["consumption"]["totalImportedKwh"] == 5.0
     assert bundle["contract"]["contractedPowerPuntaKw"] == 3.5
-    assert bundle["max_power_demand"]["maxValue"] == 3.5
 
 
 async def test_untracked_supply_point_is_excluded(hass):
@@ -114,19 +112,6 @@ async def test_contracted_power_failure_does_not_crash_bundle(hass):
     data = await coordinator._async_update_data()
 
     assert data["cont1"]["contract"] is None
-
-
-async def test_max_power_demand_failure_is_non_fatal(hass):
-    """Normal en suministros sin telegestión — no debe tirar el resto del bundle."""
-    entry = _make_entry(hass)
-    client = _make_client()
-    client.async_get_max_power_demand.side_effect = EdistribucionApiError("sin telegestión")
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-
-    data = await coordinator._async_update_data()
-
-    assert data["cont1"]["max_power_demand"] is None
-    assert data["cont1"]["consumption"] is not None  # el resto sigue funcionando
 
 
 async def test_invalid_credentials_raises_update_failed_and_creates_repair(hass):

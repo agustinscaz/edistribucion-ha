@@ -84,9 +84,6 @@ class EdistribucionApiClient:
             path += "?" + "&".join(params)
         return await self._get(path)
 
-    async def async_get_max_power_demand(self, cups_id: str) -> dict:
-        return await self._get(f"/max-power-demand/{cups_id}")
-
     async def async_get_contracted_power(self, cont_id: str) -> dict:
         """Potencia contratada real (punta/valle, kW) + metadatos del contrato, sacados
         directamente de e-distribución — no hace falta que el usuario los teclee."""

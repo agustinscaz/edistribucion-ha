@@ -1,4 +1,5 @@
-"""Sensores de e-distribución: importado/exportado (hoy/semana/mes) y potencia máxima demandada."""
+"""Sensores de e-distribución: importado/exportado (hoy/semana/mes), potencia contratada y coste
+estimado (con desglose por tramo, importado y exportado)."""
 
 from __future__ import annotations
 
@@ -28,8 +29,6 @@ from .costs import (
     cost_breakdown,
     estimate_cost_as_tariff,
     estimate_energy_cost,
-    max_power_by_period,
-    max_power_reported,
     power_cost,
     self_consumption_ratio,
     surplus_compensation_value,
@@ -83,7 +82,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for period_key, period_label in (("week", "week"), ("month", "month")):
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "imported", f"imported_energy_{period_label}"))
             entities.append(_EdistribucionPeriodEnergySensor(coordinator, cont_id, sp, period_key, "exported", f"exported_energy_{period_label}"))
-        entities.append(EdistribucionMaxPowerSensor(coordinator, cont_id, sp))
         entities.append(EdistribucionContractedPowerSensor(coordinator, cont_id, sp))
         entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
         if _energy_cost_configured(sp):
@@ -109,6 +107,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
+            for period_key in ("today", "month"):
+                for tramo in (PUNTA, LLANO, VALLE):
+                    entities.append(_EdistribucionExportTramoSensor(coordinator, cont_id, sp, period_key, tramo, "kwh"))
+                    entities.append(_EdistribucionExportTramoSensor(coordinator, cont_id, sp, period_key, tramo, "compensation"))
         if active_tariff == TARIFF_TRAMOS and _energy_cost_configured(sp):
             for period_key in ("today", "month"):
                 for tramo in (PUNTA, LLANO, VALLE):
@@ -301,53 +303,6 @@ class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
         return super().available and self._period is not None
 
 
-class EdistribucionMaxPowerSensor(_EdistribucionBaseSensor):
-    entity_description = SensorEntityDescription(
-        key="max_power_demand",
-        translation_key="max_power_demand",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.KILO_WATT,
-        suggested_display_precision=3,
-        entity_registry_enabled_default=True,
-    )
-
-    def __init__(self, coordinator, cont_id, supply_point) -> None:
-        super().__init__(coordinator, cont_id, supply_point)
-        self._attr_unique_id = f"{cont_id}_max_power_demand"
-
-    @property
-    def native_value(self) -> float | None:
-        power = self._bundle.get("max_power_demand")
-        points = power.get("points") if power else None
-        if not points:
-            return None
-        return points[-1].get("valueKw")
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        power = self._bundle.get("max_power_demand")
-        points = power.get("points") if power else None
-        if not points:
-            return {}
-        last = points[-1]
-        by_period = max_power_by_period(power)
-        return {
-            "date": last.get("date"),
-            "hour": last.get("hour"),
-            "periods": last.get("periods"),
-            "max_value_reported": power.get("maxValue"),
-            # Máximo real de TODO el periodo devuelto (no solo el último punto) — ver
-            # binary_sensor.EdistribucionPowerExcessSensor para la comparación contra lo contratado.
-            "maximo_real_kw": max_power_reported(power),
-            **({"maximo_por_periodo_kw": by_period} if by_period else {}),
-        }
-
-    @property
-    def available(self) -> bool:
-        return super().available and self._bundle.get("max_power_demand") is not None
-
-
 class EdistribucionContractedPowerSensor(_EdistribucionBaseSensor):
     """Potencia contratada (punta) leída EN VIVO de e-distribución — no es un valor que teclees tú,
     así que refleja cambios reales de contrato sin tener que enterarte por la factura. La de valle,
@@ -506,6 +461,53 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
         sp = self._bundle.get("supply_point") or {}
         prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
         breakdown = cost_breakdown(self._hourly_source, prices, sp.get("holiday_region"))
+        if not breakdown:
+            return None
+        breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
+        return breakdown.get(breakdown_key)
+
+
+class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
+    """kWh exportados o compensación de UN tramo (punta/llano/valle) — mismo bucketing horario/
+    festivo que `_EdistribucionTramoSensor`, pero sobre `exportedKwh` en vez de `importedKwh`. El
+    precio de compensación es PLANO (mismo €/kWh todo el día, sin franjas horarias) — el € por
+    tramo es solo proporcional al kWh exportado en ESE tramo, no hay un precio distinto que aplicar
+    (a diferencia del consumo importado). Solo se crea con compensación de excedentes activada y
+    precio configurado — independiente de la tarifa de importación activa, ya que el bucketing
+    horario punta/llano/valle no depende de qué tarifa factura el consumo."""
+
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator, cont_id, supply_point, period_key: str, tramo: str, kind: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._period_key = period_key  # "today" | "month"
+        self._tramo = tramo  # "punta" | "llano" | "valle"
+        self._kind = kind  # "kwh" | "compensation"
+        translation_key = f"{tramo}_exported_{kind}_{period_key}"
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{cont_id}_{translation_key}"
+        if kind == "kwh":
+            self._attr_device_class = SensorDeviceClass.ENERGY
+            self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+            self._attr_state_class = SensorStateClass.TOTAL_INCREASING if period_key == "today" else SensorStateClass.TOTAL
+        else:
+            # device_class=MONETARY solo admite None o TOTAL como state_class (ver v1.21.1).
+            self._attr_device_class = SensorDeviceClass.MONETARY
+            self._attr_native_unit_of_measurement = "EUR"
+            self._attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def _hourly_source(self) -> dict | None:
+        if self._period_key == "today":
+            return _latest_day_hourly(self._bundle.get("consumption"))
+        return self._bundle.get("month")
+
+    @property
+    def native_value(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        price = sp.get("surplus_price") or 0
+        prices = {PUNTA: price, LLANO: price, VALLE: price}
+        breakdown = cost_breakdown(self._hourly_source, prices, sp.get("holiday_region"), field="exportedKwh")
         if not breakdown:
             return None
         breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"

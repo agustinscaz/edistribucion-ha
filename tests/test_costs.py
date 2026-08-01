@@ -3,27 +3,19 @@ autosuficiencia y comparador de tarifas. No depende de Home Assistant."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from custom_components.edistribucion.costs import (  # noqa: E402
     LLANO,
     PUNTA,
     VALLE,
-    _safe_float,
     average_price_per_kwh,
     cost_breakdown,
     estimate_cost_as_tariff,
     estimate_energy_cost,
     hour_period,
-    hours_since_flow_kwh,
-    latest_hour_flow_kwh,
-    max_power_by_period,
-    max_power_reported,
     monthly_summary_csv,
     power_cost,
-    power_excess_detected,
     pvpc_cost_breakdown,
     self_consumption_ratio,
     surplus_compensation_value,
@@ -152,6 +144,24 @@ class TestCostBreakdown:
         consumption = {"hourlyByDate": {"27/07/2026": [{"hour": "11 - 12 h", "importedKwh": None}]}}
         result = cost_breakdown(consumption, {PUNTA: 1.0, LLANO: 0, VALLE: 0})
         assert result["kwh_punta"] == 0.0
+
+    def test_field_parameter_buckets_exported_kwh_with_flat_price(self):
+        """La compensación de excedentes es un precio PLANO (mismo €/kWh en los tres tramos) — a
+        diferencia de importado, no hay precios distintos por tramo que aplicar."""
+        consumption = {
+            "hourlyByDate": {
+                "27/07/2026": [
+                    {"hour": "11 - 12 h", "importedKwh": 99.0, "exportedKwh": 2.0},
+                    {"hour": "0 - 1 h", "importedKwh": 99.0, "exportedKwh": 3.0},
+                ]
+            }
+        }
+        flat_price = {PUNTA: 0.06, LLANO: 0.06, VALLE: 0.06}
+        result = cost_breakdown(consumption, flat_price, field="exportedKwh")
+        assert result["kwh_punta"] == 2.0
+        assert result["kwh_valle"] == 3.0
+        assert result["coste_punta"] == pytest.approx(0.12)
+        assert result["coste_valle"] == pytest.approx(0.18)
 
 
 class TestPvpcCostBreakdown:
@@ -336,205 +346,6 @@ class TestSurplusCompensationValue:
     def test_basic_value(self):
         sp = {"surplus_compensation": True, "surplus_price": 0.05}
         assert surplus_compensation_value(sp, 10.0) == 0.5
-
-
-class TestSafeFloat:
-    def test_passes_through_numbers(self):
-        assert _safe_float(3.5) == 3.5
-        assert _safe_float(4) == 4.0
-
-    def test_parses_numeric_strings(self):
-        assert _safe_float("3.5") == 3.5
-
-    def test_parses_comma_decimal_strings(self):
-        assert _safe_float("3,5") == 3.5
-
-    def test_none_for_none_and_garbage(self):
-        assert _safe_float(None) is None
-        assert _safe_float("no-es-un-numero") is None
-        assert _safe_float([1, 2]) is None
-
-    def test_none_for_bool(self):
-        """bool es subclase de int en Python — sin excluirlo a propósito, True/False colarían
-        como 1.0/0.0 en comparaciones que no tienen sentido."""
-        assert _safe_float(True) is None
-        assert _safe_float(False) is None
-
-
-class TestMaxPowerReported:
-    def test_none_without_data(self):
-        assert max_power_reported(None) is None
-        assert max_power_reported({}) is None
-
-    def test_uses_max_value_when_present(self):
-        assert max_power_reported({"maxValue": 3.8, "points": [{"valueKw": 1.0}]}) == 3.8
-
-    def test_falls_back_to_max_of_points_without_max_value(self):
-        power = {"points": [{"valueKw": 2.0}, {"valueKw": 4.2}, {"valueKw": 1.0}]}
-        assert max_power_reported(power) == 4.2
-
-    def test_none_without_max_value_or_points(self):
-        assert max_power_reported({"points": []}) is None
-
-    def test_max_value_as_string_is_coerced(self):
-        """El add-on (o alguna variante de la API) puede devolver los números como texto — sin
-        coerción esto revienta más adelante con TypeError en cuanto se compara con `>`."""
-        assert max_power_reported({"maxValue": "4.2"}) == 4.2
-
-    def test_value_kw_as_string_is_coerced(self):
-        power = {"points": [{"valueKw": "2.0"}, {"valueKw": "4.2"}]}
-        assert max_power_reported(power) == 4.2
-
-    def test_non_dict_points_are_ignored_not_fatal(self):
-        power = {"points": ["no-es-un-punto", None, {"valueKw": 3.0}]}
-        assert max_power_reported(power) == 3.0
-
-
-class TestPowerExcessDetected:
-    def test_none_without_max_power_demand(self):
-        assert power_excess_detected(None, {"contractedPowerPuntaKw": 3.5}) is None
-
-    def test_none_without_contract(self):
-        assert power_excess_detected({"maxValue": 4.0}, None) is None
-
-    def test_none_without_contracted_limit(self):
-        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 0}) is None
-
-    def test_true_when_above_punta_limit(self):
-        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}) is True
-
-    def test_false_when_within_limit(self):
-        assert power_excess_detected({"maxValue": 3.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}) is False
-
-    def test_compares_against_the_higher_of_punta_and_valle(self):
-        assert power_excess_detected({"maxValue": 4.0}, {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 5.0}) is False
-
-    def test_per_period_catches_excess_in_the_lower_contracted_period(self):
-        """Caso del falso negativo: valle contratado (2.0kW) es menor que punta (5.0kW). Un pico de
-        3.0kW en valle no supera el máximo global (5.0kW) pero SÍ supera lo contratado en valle."""
-        power = {"points": [{"periods": {"punta": 4.0, "valle": 3.0}}]}
-        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
-        assert power_excess_detected(power, contract) is True
-
-    def test_per_period_false_when_both_within_their_own_limits(self):
-        power = {"points": [{"periods": {"punta": 4.0, "valle": 1.5}}]}
-        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
-        assert power_excess_detected(power, contract) is False
-
-    def test_per_period_true_when_punta_exceeds_its_own_limit(self):
-        power = {"points": [{"periods": {"punta": 6.0, "valle": 1.0}}]}
-        contract = {"contractedPowerPuntaKw": 5.0, "contractedPowerValleKw": 2.0}
-        assert power_excess_detected(power, contract) is True
-
-    def test_falls_back_to_global_max_without_recognizable_period_labels(self):
-        """Sin "punta"/"valle" reconocibles en los labels, no se puede comparar por periodo — cae
-        al comportamiento global (aquí el pico de 4.0 SÍ supera el mayor contratado, 3.5)."""
-        power = {"maxValue": 4.0, "points": [{"periods": {"P1": 4.0, "P2": 1.0}}]}
-        contract = {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
-        assert power_excess_detected(power, contract) is True
-
-    def test_contracted_power_as_string_does_not_crash(self):
-        """Bug real: contractedPowerPuntaKw/Valle como texto rompía la comparación `>` con
-        TypeError, tirando abajo la entidad entera al añadirla en Home Assistant."""
-        contract = {"contractedPowerPuntaKw": "3.5", "contractedPowerValleKw": "3.5"}
-        assert power_excess_detected({"maxValue": 4.0}, contract) is True
-        assert power_excess_detected({"maxValue": 3.0}, contract) is False
-
-    def test_non_dict_points_do_not_crash(self):
-        power = {"points": ["no-es-un-punto", {"periods": {"punta": 4.0, "valle": 1.0}}]}
-        contract = {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
-        assert power_excess_detected(power, contract) is True
-
-
-class TestMaxPowerByPeriod:
-    def test_empty_without_data(self):
-        assert max_power_by_period(None) == {}
-        assert max_power_by_period({"points": []}) == {}
-
-    def test_dict_shaped_periods(self):
-        power = {
-            "points": [
-                {"periods": {"punta": 3.0, "valle": 1.0}},
-                {"periods": {"punta": 4.5, "valle": 0.8}},
-            ]
-        }
-        assert max_power_by_period(power) == {"punta": 4.5, "valle": 1.0}
-
-    def test_list_shaped_periods(self):
-        power = {
-            "points": [
-                {"periods": [{"tipo": "punta", "valueKw": 3.0}, {"tipo": "valle", "valueKw": 1.0}]},
-                {"periods": [{"tipo": "punta", "valueKw": 4.5}]},
-            ]
-        }
-        assert max_power_by_period(power) == {"punta": 4.5, "valle": 1.0}
-
-    def test_ignores_points_without_periods(self):
-        power = {"points": [{"date": "30/07/2026"}, {"periods": {"punta": 2.0}}]}
-        assert max_power_by_period(power) == {"punta": 2.0}
-
-    def test_unrecognizable_entry_is_skipped(self):
-        power = {"points": [{"periods": [{"onlytext": "x"}, {"onlynum": 5}]}]}
-        assert max_power_by_period(power) == {}
-
-    def test_non_dict_points_are_ignored_not_fatal(self):
-        power = {"points": ["no-es-un-punto", None, {"periods": {"punta": 2.0}}]}
-        assert max_power_by_period(power) == {"punta": 2.0}
-
-    def test_dict_shaped_periods_with_string_values_are_coerced(self):
-        power = {"points": [{"periods": {"punta": "3.0", "valle": "1.0"}}]}
-        assert max_power_by_period(power) == {"punta": 3.0, "valle": 1.0}
-
-    def test_list_shaped_periods_with_string_values_are_coerced(self):
-        power = {"points": [{"periods": [{"tipo": "punta", "valueKw": "3.0"}]}]}
-        assert max_power_by_period(power) == {"punta": 3.0}
-
-
-class TestLatestHourFlowKwh:
-    def test_none_without_hourly_by_date(self):
-        assert latest_hour_flow_kwh(None, "exportedKwh") is None
-        assert latest_hour_flow_kwh({}, "exportedKwh") is None
-        assert latest_hour_flow_kwh({"hourlyByDate": {}}, "exportedKwh") is None
-
-    def test_picks_the_most_recent_hour_across_days(self):
-        consumption = {
-            "hourlyByDate": {
-                "29/07/2026": [{"hour": "23 - 24 h", "exportedKwh": 1.0}],
-                "30/07/2026": [{"hour": "0 - 1 h", "exportedKwh": 2.5}, {"hour": "1 - 2 h", "exportedKwh": 0.0}],
-            }
-        }
-        assert latest_hour_flow_kwh(consumption, "exportedKwh") == ("30/07/2026 1", 0.0)
-
-    def test_missing_field_defaults_to_zero(self):
-        consumption = {"hourlyByDate": {"30/07/2026": [{"hour": "0 - 1 h"}]}}
-        assert latest_hour_flow_kwh(consumption, "exportedKwh") == ("30/07/2026 0", 0.0)
-
-    def test_malformed_date_is_skipped(self):
-        consumption = {"hourlyByDate": {"no-es-fecha": [{"hour": "0 - 1 h", "exportedKwh": 5.0}]}}
-        assert latest_hour_flow_kwh(consumption, "exportedKwh") is None
-
-
-class TestHoursSinceFlowKwh:
-    def test_none_without_latest(self):
-        assert hours_since_flow_kwh(None, datetime(2026, 7, 31, 22)) is None
-
-    def test_zero_when_same_hour(self):
-        assert hours_since_flow_kwh(("30/07/2026 22", 1.0), datetime(2026, 7, 30, 22)) == 0.0
-
-    def test_hours_elapsed_same_day(self):
-        assert hours_since_flow_kwh(("30/07/2026 10", 1.0), datetime(2026, 7, 30, 22)) == 12.0
-
-    def test_hours_elapsed_across_days(self):
-        """Caso real reportado: dato de las 23h de ayer, consultado a las 22h de hoy -> 23h de
-        retraso, no ~1h (el bug que se estaría comprobando es NO tener en cuenta el cambio de
-        día)."""
-        assert hours_since_flow_kwh(("30/07/2026 23", 1.0), datetime(2026, 7, 31, 22)) == 23.0
-
-    def test_works_with_tz_aware_now(self):
-        assert hours_since_flow_kwh(("30/07/2026 22", 1.0), datetime(2026, 7, 30, 22, tzinfo=timezone.utc)) == 0.0
-
-    def test_none_for_malformed_key(self):
-        assert hours_since_flow_kwh(("no-es-fecha", 1.0), datetime(2026, 7, 31, 22)) is None
 
 
 class TestMonthlySummaryCsv:

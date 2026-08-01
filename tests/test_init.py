@@ -45,7 +45,6 @@ def mock_add_on(aioclient_mock):
         json={"totalImportedKwh": 20.0, "hourlyByDate": {}},
     )
     aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
-    aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
     aioclient_mock.get(
         "http://localhost:8099/contracted-power/contA",
         json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},

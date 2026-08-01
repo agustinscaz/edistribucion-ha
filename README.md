@@ -1,6 +1,6 @@
 <div align="center">
   <h1>e-distribución para Home Assistant</h1>
-  <p><strong>Consumo importado/exportado y potencia máxima demandada de tu contador de e-distribución, directamente en Home Assistant — corre por completo en tu propia instalación, sin depender de ningún servidor externo.</strong></p>
+  <p><strong>Consumo importado/exportado y potencia contratada de tu contador de e-distribución, directamente en Home Assistant — corre por completo en tu propia instalación, sin depender de ningún servidor externo.</strong></p>
 
   <p>
     <img src="https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5?logo=home-assistant&logoColor=white" alt="Home Assistant Add-on">
@@ -27,7 +27,7 @@ Este repositorio trae **todo lo necesario** en un único sitio: el add-on que ha
 
 - Proyecto **no oficial**, sin relación con e-distribución. Los datos se obtienen mediante ingeniería inversa de su portal privado (una app Salesforce Experience Cloud) — puede dejar de funcionar si cambian su web, sin previo aviso.
 - El login usa un navegador Chromium real (vía Playwright) porque el portal tiene una comprobación anti-bot que un cliente HTTP simple no puede pasar. Ese navegador **solo se enciende para loguear** — el resto de consultas van por HTTP ligero, sin navegador (ver [Cómo funciona](#cómo-funciona)).
-- Si lo único que necesitas es el consumo (no potencia máxima ni otros detalles del contador), valora también [Datadis](https://datadis.es), la API **oficial** española para datos de consumo eléctrico.
+- Si lo único que necesitas es el consumo (no potencia contratada ni otros detalles del contador), valora también [Datadis](https://datadis.es), la API **oficial** española para datos de consumo eléctrico.
 - La API que expone el add-on no lleva autenticación propia — pensada para tu red doméstica de confianza, no para exponerla a Internet.
 
 ## ¿Por qué un add-on Y una integración HACS en el mismo repo?
@@ -96,11 +96,10 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_energia_exportada_hoy` | Energía exportada a la red hoy (kWh, si tienes autoconsumo con excedentes) — mismos atributos `ultimo_cambio`/`minutos_sin_cambiar` |
 | `sensor.<cups>_energia_importada_semana` / `_mes` | Total importado en los últimos ~7/30 días |
 | `sensor.<cups>_energia_exportada_semana` / `_mes` | Total exportado en los últimos ~7/30 días |
-| `sensor.<cups>_potencia_maxima_demandada` | Último valor de potencia máxima demandada (kW) — solo suministros en BT con telegestión y <50kW contratados, con fecha/hora, detalle por periodo (P1-P6), y el máximo real de TODO el periodo devuelto (`maximo_real_kw`, no solo el último punto) como atributos |
-| `binary_sensor.<cups>_exceso_de_potencia_detectado` | ON si la potencia máxima real demandada (dato oficial de e-distribución) ha superado la potencia contratada — con el máximo real y, si el add-on lo distingue, el máximo por periodo (punta/valle) como atributos |
 | `sensor.<cups>_comparativa_con_el_mismo_mes_del_año_anterior` | % de cambio del consumo importado de este mes frente al mismo mes de hace un año (sin valor si el contrato es más nuevo que un año) |
 | `sensor.<cups>_coste_estimado_hoy` / `_mes` | Solo si has configurado precio de energía para este suministro — el cálculo depende del tipo de tarifa elegido (fija/tramos/pvpc). El de "hoy" incluye atributos `ultimo_cambio`/`minutos_sin_cambiar` (ver nota de frescura más abajo) |
 | `sensor.<cups>_kwh_en_punta` / `_llano` / `_valle` (`_hoy` / `_mes`) y `sensor.<cups>_coste_en_punta` / `_llano` / `_valle` (`_hoy` / `_mes`) | Solo con tarifa `tramos` y algún precio de tramo configurado — el mismo desglose kWh/€ por periodo que ya trae `coste_estimado` como atributo anidado, pero como 12 sensores propios (3 tramos × kWh/coste × hoy/mes) para poder graficarlos o usarlos en automatizaciones sin tener que leer un atributo |
+| `sensor.<cups>_kwh_exportados_en_punta` / `_llano` / `_valle` (`_hoy` / `_mes`) y `sensor.<cups>_compensacion_en_punta` / `_llano` / `_valle` (`_hoy` / `_mes`) | Solo si has activado la compensación de excedentes — mismo bucketing horario que arriba, pero sobre kWh EXPORTADOS. El precio de compensación es plano (mismo €/kWh todo el día): el € de cada tramo es solo proporcional al kWh exportado en ese tramo, no hay un precio distinto por tramo |
 | `sensor.<cups>_precio_medio_del_kwh_mes` | Coste total del mes ÷ kWh importados — para comparar contra otras ofertas del mercado |
 | `sensor.<cups>_coste_acumulado_del_año` | Coste estimado en lo que va de año (meses completados, recalculados una vez al día, + el mes en curso en vivo); atributos con los kWh importados/exportados del año. Con tarifa `pvpc`, los meses anteriores al actual pueden salir con coste incompleto (no se re-piden precios PVPC históricos a ESIOS día a día) |
 | `sensor.<cups>_coste_simulado_con_tarifa_x_mes` | Uno por cada tarifa DISTINTA a la que tengas activa (si hay datos para simularla): cuánto habría costado este mes con esa otra tarifa, sobre tu mismo consumo real — para comparar sin cambiar de tarifa de verdad |
@@ -109,7 +108,6 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_compensacion_por_excedentes_hoy` / `_semana` / `_mes` | Solo si has activado la compensación de excedentes para este suministro — kWh exportados × precio configurado. El de "hoy" incluye atributos `ultimo_cambio`/`minutos_sin_cambiar` (ver nota de frescura más abajo) |
 | `sensor.<cups>_precio_pvpc_actual` | Solo con tarifa `pvpc` — precio de la hora en curso (€/kWh); atributos `precios_hoy`/`precios_manana` con las 24h del día (ver más abajo) |
 | `sensor.<cups>_autosuficiencia_aproximada_hoy` / `_mes` | Solo si el suministro ha exportado algo — **% aproximado**, calculado ÚNICAMENTE con importado/exportado del contador de e-distribución (no con tu generación solar real, que la distribuidora no reporta): qué parte de la energía intercambiada con la red fue exportada en vez de importada. Si no importas nada de la red, sale 100% (autosuficiente del todo); si nunca exportas nada, sale 0%. Los valores intermedios son solo una estimación, no un % exacto sobre tu generación real. |
-| `binary_sensor.<cups>_exportando_excedente_ahora` | Solo si el suministro ha exportado algo alguna vez — ON si la hora MÁS RECIENTE con dato horario tiene excedente exportado > 0 (casi en tiempo real, según lo último sincronizado); atributos con esa hora y los kWh exportados. Pensado para automatizaciones oportunistas (encender el termo eléctrico con excedente solar) |
 | `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
 Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose día a día (fecha + kWh), visible en Herramientas de desarrollo → Estados, o usable en una tarjeta de plantilla/tabla.
@@ -150,8 +148,8 @@ cards:
       - sensor.<cups>_energia_importada_hoy
       - sensor.<cups>_energia_exportada_hoy
   - type: gauge
-    entity: sensor.<cups>_potencia_maxima_demandada
-    name: Potencia máxima demandada
+    entity: sensor.<cups>_potencia_contratada
+    name: Potencia contratada
   - type: entities
     title: Estado del add-on
     entities:

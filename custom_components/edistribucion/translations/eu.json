@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Esportatutako energia (hilabetea)"
       },
-      "max_power_demand": {
-        "name": "Eskatutako potentzia maximoa"
-      },
       "contracted_power": {
         "name": "Kontratatutako potentzia"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Hilabeteko soberakinen konpentsazioa"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Gaurko gailur-orduko esportatutako energia"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Hilabeteko gailur-orduko esportatutako energia"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Gaurko gailur-orduko konpentsazioa"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Hilabeteko gailur-orduko konpentsazioa"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Gaurko arrunt-orduko esportatutako energia"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Hilabeteko arrunt-orduko esportatutako energia"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Gaurko arrunt-orduko konpentsazioa"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Hilabeteko arrunt-orduko konpentsazioa"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Gaurko sakonaldiko esportatutako energia"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Hilabeteko sakonaldiko esportatutako energia"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Gaurko sakonaldiko konpentsazioa"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Hilabeteko sakonaldiko konpentsazioa"
       },
       "punta_kwh_today": {
         "name": "Gaurko gailur-orduko energia"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Konektatuta"
-      },
-      "power_excess": {
-        "name": "Potentzia gehiegikeria detektatuta"
-      },
-      "exporting_now": {
-        "name": "Soberakina esportatzen orain"
       }
     },
     "button": {

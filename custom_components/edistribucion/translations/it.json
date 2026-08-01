@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Energia esportata (mese)"
       },
-      "max_power_demand": {
-        "name": "Potenza massima richiesta"
-      },
       "contracted_power": {
         "name": "Potenza contrattuale"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Compensazione eccedenze (mese)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Energia esportata in punta (oggi)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Energia esportata in punta (mese)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Compensazione in punta (oggi)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Compensazione in punta (mese)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Energia esportata intermedia (oggi)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Energia esportata intermedia (mese)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Compensazione intermedia (oggi)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Compensazione intermedia (mese)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Energia esportata fuori punta (oggi)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Energia esportata fuori punta (mese)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Compensazione fuori punta (oggi)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Compensazione fuori punta (mese)"
       },
       "punta_kwh_today": {
         "name": "Energia in punta (oggi)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Connesso"
-      },
-      "power_excess": {
-        "name": "Eccesso di potenza rilevato"
-      },
-      "exporting_now": {
-        "name": "Esportazione surplus in corso"
       }
     },
     "button": {

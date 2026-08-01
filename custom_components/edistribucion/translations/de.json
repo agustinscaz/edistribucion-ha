@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Exportierte Energie (Monat)"
       },
-      "max_power_demand": {
-        "name": "Maximale Leistungsaufnahme"
-      },
       "contracted_power": {
         "name": "Vertraglich vereinbarte Leistung"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Einspeisevergütung (Monat)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Exportierte Energie Spitzenlast (heute)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Exportierte Energie Spitzenlast (Monat)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Vergütung Spitzenlast (heute)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Vergütung Spitzenlast (Monat)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Exportierte Energie Mittellast (heute)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Exportierte Energie Mittellast (Monat)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Vergütung Mittellast (heute)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Vergütung Mittellast (Monat)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Exportierte Energie Schwachlast (heute)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Exportierte Energie Schwachlast (Monat)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Vergütung Schwachlast (heute)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Vergütung Schwachlast (Monat)"
       },
       "punta_kwh_today": {
         "name": "Energie Spitzenlast (heute)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Verbunden"
-      },
-      "power_excess": {
-        "name": "Leistungsüberschreitung erkannt"
-      },
-      "exporting_now": {
-        "name": "Überschuss wird jetzt exportiert"
       }
     },
     "button": {

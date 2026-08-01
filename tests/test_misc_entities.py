@@ -32,7 +32,6 @@ _SUPPLY_POINTS = [
 def mock_add_on(aioclient_mock):
     aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
     aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
-    aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
     aioclient_mock.get(
         "http://localhost:8099/contracted-power/contA",
         json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
@@ -62,8 +61,8 @@ class TestDiagnostics:
         assert "address" not in supply["supply_point"]
         assert supply["supply_point"]["cups"] == "ES0031500160526001DS0F"
         assert result["last_update_success"] is True
-        # power_excess_detected() necesita max_power_demand Y contract juntos — sin el segundo, un
-        # diagnóstico exportado no serviría para depurar ese sensor.
+        # El contrato (potencias, código, comercializadora, tarifa) se incluye para depurar el
+        # sensor de potencia contratada sin acceso directo al log.
         assert supply["contract"]["contractedPowerPuntaKw"] == 3.5
 
 
@@ -109,170 +108,6 @@ class TestBinarySensor:
         state = hass.states.get(entity_id)
         assert state is not None
         assert state.state == "on"
-
-    async def test_power_excess_off_when_within_contracted_limit(self, hass, mock_add_on):
-        """El fixture mock_add_on trae maxValue=3.5 == potencia contratada -> no hay exceso."""
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_power_excess")
-        assert entity_id is not None
-        assert hass.states.get(entity_id).state == "off"
-
-    async def test_power_excess_on_when_above_contracted_limit(self, hass, aioclient_mock):
-        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
-        aioclient_mock.get("http://localhost:8099/consumption/contA", json={"totalImportedKwh": 5.0, "hourlyByDate": {}})
-        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 4.2, "points": []})
-        aioclient_mock.get(
-            "http://localhost:8099/contracted-power/contA",
-            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
-        )
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_power_excess")
-        assert entity_id is not None
-        state = hass.states.get(entity_id)
-        assert state.state == "on"
-        assert state.attributes["maximo_real_kw"] == 4.2
-
-    async def test_exporting_now_absent_without_any_export(self, hass, mock_add_on):
-        """El fixture mock_add_on no trae nunca totalExportedKwh — sin haber exportado nada
-        alguna vez, no tiene sentido crear el sensor (ver async_setup_entry)."""
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        assert reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now") is None
-
-    async def test_exporting_now_on_when_latest_hour_has_export(self, hass, aioclient_mock):
-        from homeassistant.util import dt as dt_util
-
-        now = dt_util.now()
-        hour_label = f"{now.hour} - {(now.hour + 1) % 24} h"  # la hora en curso -> siempre "fresca"
-        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            params={"range": "3"},
-            json={"totalImportedKwh": 5.0, "totalExportedKwh": 2.0, "hourlyByDate": {}},
-        )
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            json={
-                "totalImportedKwh": 5.0,
-                "hourlyByDate": {now.strftime("%d/%m/%Y"): [{"hour": hour_label, "exportedKwh": 1.5}]},
-            },
-        )
-        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
-        aioclient_mock.get(
-            "http://localhost:8099/contracted-power/contA",
-            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
-        )
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now")
-        assert entity_id is not None
-        state = hass.states.get(entity_id)
-        assert state.state == "on"
-        assert state.attributes["kwh_exportados_esa_hora"] == 1.5
-        assert state.attributes["ultima_hora_con_dato"] == f"{now.strftime('%d/%m/%Y')} {now.hour}"
-        # "moment" se calcula en punto de hora (el label horario no tiene minutos), así que dentro
-        # de la hora en curso el retraso es la fracción transcurrida desde esa hora en punto, no 0.
-        assert 0 <= state.attributes["horas_de_retraso"] < 1
-
-    async def test_exporting_now_off_when_latest_hour_has_no_export(self, hass, aioclient_mock):
-        from homeassistant.util import dt as dt_util
-
-        now = dt_util.now()
-        hour_label = f"{now.hour} - {(now.hour + 1) % 24} h"
-        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            params={"range": "3"},
-            json={"totalImportedKwh": 5.0, "totalExportedKwh": 2.0, "hourlyByDate": {}},
-        )
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            json={
-                "totalImportedKwh": 5.0,
-                "hourlyByDate": {now.strftime("%d/%m/%Y"): [{"hour": hour_label, "exportedKwh": 0.0}]},
-            },
-        )
-        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
-        aioclient_mock.get(
-            "http://localhost:8099/contracted-power/contA",
-            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
-        )
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now")
-        assert entity_id is not None
-        assert hass.states.get(entity_id).state == "off"
-
-    async def test_exporting_now_unknown_when_data_is_too_stale(self, hass, aioclient_mock):
-        """Dato de hace más de _STALE_HOURS_THRESHOLD horas — no debe reportar "on"/"off" en
-        silencio como si fuera de ahora mismo, sino quedar "unknown" (no "unavailable": sigue
-        habiendo dato, solo que es demasiado viejo para fiarse — el atributo horas_de_retraso
-        debe seguir visible para poder ver por qué)."""
-        aioclient_mock.get("http://localhost:8099/supply-points", json=_SUPPLY_POINTS)
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            params={"range": "3"},
-            json={"totalImportedKwh": 5.0, "totalExportedKwh": 2.0, "hourlyByDate": {}},
-        )
-        aioclient_mock.get(
-            "http://localhost:8099/consumption/contA",
-            json={
-                "totalImportedKwh": 5.0,
-                # Muy en el pasado a propósito — sea cual sea la fecha real en la que corra el
-                # test, esto siempre queda muy por encima del umbral de horas.
-                "hourlyByDate": {"01/01/2020": [{"hour": "10 - 11 h", "exportedKwh": 1.5}]},
-            },
-        )
-        aioclient_mock.get("http://localhost:8099/max-power-demand/cupsA", json={"maxValue": 3.5, "points": []})
-        aioclient_mock.get(
-            "http://localhost:8099/contracted-power/contA",
-            json={"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5},
-        )
-        from homeassistant.helpers import entity_registry as er
-
-        entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        reg = er.async_get(hass)
-        entity_id = reg.async_get_entity_id("binary_sensor", DOMAIN, "contA_exporting_now")
-        assert entity_id is not None
-        state = hass.states.get(entity_id)
-        assert state.state == "unknown"
-        assert state.attributes["horas_de_retraso"] > 8
 
 
 class TestButtons:

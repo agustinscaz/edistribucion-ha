@@ -75,9 +75,6 @@
       "exported_energy_month": {
         "name": "Exported energy (month)"
       },
-      "max_power_demand": {
-        "name": "Maximum power demand"
-      },
       "contracted_power": {
         "name": "Contracted power"
       },
@@ -107,6 +104,42 @@
       },
       "surplus_compensation_month": {
         "name": "Surplus compensation (month)"
+      },
+      "punta_exported_kwh_today": {
+        "name": "Peak exported energy (today)"
+      },
+      "punta_exported_kwh_month": {
+        "name": "Peak exported energy (month)"
+      },
+      "punta_exported_compensation_today": {
+        "name": "Peak compensation (today)"
+      },
+      "punta_exported_compensation_month": {
+        "name": "Peak compensation (month)"
+      },
+      "llano_exported_kwh_today": {
+        "name": "Flat exported energy (today)"
+      },
+      "llano_exported_kwh_month": {
+        "name": "Flat exported energy (month)"
+      },
+      "llano_exported_compensation_today": {
+        "name": "Flat compensation (today)"
+      },
+      "llano_exported_compensation_month": {
+        "name": "Flat compensation (month)"
+      },
+      "valle_exported_kwh_today": {
+        "name": "Off-peak exported energy (today)"
+      },
+      "valle_exported_kwh_month": {
+        "name": "Off-peak exported energy (month)"
+      },
+      "valle_exported_compensation_today": {
+        "name": "Off-peak compensation (today)"
+      },
+      "valle_exported_compensation_month": {
+        "name": "Off-peak compensation (month)"
       },
       "punta_kwh_today": {
         "name": "Peak energy (today)"
@@ -169,12 +202,6 @@
     "binary_sensor": {
       "connected": {
         "name": "Connected"
-      },
-      "power_excess": {
-        "name": "Power excess detected"
-      },
-      "exporting_now": {
-        "name": "Exporting surplus now"
       }
     },
     "button": {
