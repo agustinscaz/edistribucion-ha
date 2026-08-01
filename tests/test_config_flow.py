@@ -203,6 +203,24 @@ class TestOptionsFlow:
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_SUPPLY_POINTS] == {}
 
+    async def test_addon_failure_aborts_without_wiping_existing_config(self, hass, aioclient_mock):
+        """Si /supply-points falla (add-on caído/reiniciando), NO debe tratarse como "sin
+        suministros": eso borraría de un plumazo el alias/tarifa/precios ya configurados de cada
+        CUPS al terminar el flow (ver config_flow._async_ensure_supply_points)."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "localhost", "port": 8099},
+            options={CONF_SUPPLY_POINTS: {"contA": {"alias": "Casa", "tariff_type": "fija", "fixed_price": 0.2}}},
+        )
+        entry.add_to_hass(hass)
+        aioclient_mock.get("http://localhost:8099/supply-points", exc=aiohttp.ClientError("caído"))
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "cannot_connect"
+        assert entry.options[CONF_SUPPLY_POINTS]["contA"]["alias"] == "Casa"
+
     async def test_existing_options_prefill_defaults(self, hass, mock_add_on):
         entry = MockConfigEntry(
             domain=DOMAIN,

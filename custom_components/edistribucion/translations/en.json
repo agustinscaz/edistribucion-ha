@@ -50,6 +50,9 @@
           "pvpc_zone": "PVPC zone (if tariff is 'pvpc'): Peninsula/Balearic Islands/Canary Islands, or Ceuta and Melilla"
         }
       }
+    },
+    "abort": {
+      "cannot_connect": "Could not connect to the add-on to read your supply points — no changes were saved. Try again in a few seconds."
     }
   },
   "entity": {

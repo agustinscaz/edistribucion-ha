@@ -50,6 +50,9 @@
           "pvpc_zone": "PVPC-Zone (wenn Tarif 'pvpc'): Festland/Balearen/Kanaren, oder Ceuta und Melilla"
         }
       }
+    },
+    "abort": {
+      "cannot_connect": "Verbindung zum Add-on zum Auslesen deiner Anschlüsse fehlgeschlagen — es wurde nichts gespeichert. Versuch es in ein paar Sekunden erneut."
     }
   },
   "entity": {

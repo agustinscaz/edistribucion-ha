@@ -50,6 +50,9 @@
           "pvpc_zone": "PVPC eremua (tarifa 'pvpc' bada): Penintsula/Balear uharteak/Kanaria uharteak, edo Ceuta eta Melilla"
         }
       }
+    },
+    "abort": {
+      "cannot_connect": "Ezin izan da gehigarriarekin konektatu zure hornidurak irakurtzeko — ez da aldaketarik gorde. Saiatu berriro segundo batzuen buruan."
     }
   },
   "entity": {

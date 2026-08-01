@@ -148,6 +148,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
         self._supply_points: list[dict] | None = None
+        self._supply_points_fetch_failed = False
         self._collected: dict[str, Any] = {}
         self._collected_supply_points: dict[str, dict] = {}
         self._current_index = 0
@@ -160,10 +161,19 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
         try:
             self._supply_points = await client.async_get_supply_points()
         except EdistribucionApiError:
+            # OJO: NO seguir con lista vacía como si de verdad no hubiera suministros — eso llevaría
+            # a async_step_supply_point a guardar CONF_SUPPLY_POINTS = {}, borrando de un plumazo el
+            # alias/tarifa/precios ya configurados de CADA CUPS. Se distingue esta causa ("falló la
+            # llamada") de "de verdad no hay suministros" con este flag, y se aborta sin tocar
+            # entry.options (ver async_step_init).
             self._supply_points = []
+            self._supply_points_fetch_failed = True
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         await self._async_ensure_supply_points()
+
+        if self._supply_points_fetch_failed:
+            return self.async_abort(reason="cannot_connect")
 
         if user_input is not None:
             self._collected = dict(user_input)

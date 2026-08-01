@@ -27,6 +27,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             "week": bundle.get("week"),
             "month": bundle.get("month"),
             "max_power_demand": bundle.get("max_power_demand"),
+            # power_excess_detected() (costs.py) necesita max_power_demand Y contract juntos — sin
+            # este, un diagnóstico exportado no trae lo necesario para depurar ese sensor sin acceso
+            # directo al log. No tiene datos tan sensibles como la dirección (código de contrato,
+            # potencias, comercializadora, tarifa — ya visibles igual como atributos del sensor de
+            # potencia contratada).
+            "contract": bundle.get("contract"),
         }
 
     return {

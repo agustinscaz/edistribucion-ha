@@ -50,6 +50,9 @@
           "pvpc_zone": "Zona PVPC (si la tarifa es 'pvpc'): Península/Baleares/Canarias, o Ceuta y Melilla"
         }
       }
+    },
+    "abort": {
+      "cannot_connect": "No se pudo conectar con el add-on para leer tus suministros — no se guardó ningún cambio. Probá de nuevo en unos segundos."
     }
   },
   "entity": {

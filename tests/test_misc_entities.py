@@ -62,6 +62,9 @@ class TestDiagnostics:
         assert "address" not in supply["supply_point"]
         assert supply["supply_point"]["cups"] == "ES0031500160526001DS0F"
         assert result["last_update_success"] is True
+        # power_excess_detected() necesita max_power_demand Y contract juntos — sin el segundo, un
+        # diagnóstico exportado no serviría para depurar ese sensor.
+        assert supply["contract"]["contractedPowerPuntaKw"] == 3.5
 
 
 class TestCalendarDayToEvent:

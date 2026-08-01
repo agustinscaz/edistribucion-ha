@@ -50,6 +50,9 @@
           "pvpc_zone": "Zone PVPC (si le tarif est 'pvpc') : Péninsule/Baléares/Canaries, ou Ceuta et Melilla"
         }
       }
+    },
+    "abort": {
+      "cannot_connect": "Impossible de se connecter à l'add-on pour lire vos points de fourniture — aucune modification n'a été enregistrée. Réessayez dans quelques secondes."
     }
   },
   "entity": {
