@@ -258,8 +258,9 @@ async def test_estimated_cost_today_exposes_freshness_alongside_breakdown(hass):
     coordinator.last_value_change / sensor._freshness_attributes)."""
     from datetime import datetime, timezone
 
-    bundles = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
-    entities = await _setup_with_fake_coordinator(hass, bundles)
+    bundle = _bundle({"tariff_type": "fija", "fixed_price": 0.2})
+    bundle["consumption"]["dailyTotals"] = [{"date": "01/08/2026", "importedKwh": 10.0, "exportedKwh": 0.0}]
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
     coordinator = next(iter(hass.data[DOMAIN].values()))
     changed_at = datetime(2026, 8, 1, 6, 0, tzinfo=timezone.utc)
     coordinator._last_value_change["contA"] = {"imported": changed_at}
