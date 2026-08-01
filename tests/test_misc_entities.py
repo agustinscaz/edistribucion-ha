@@ -193,7 +193,9 @@ class TestBinarySensor:
         assert state.state == "on"
         assert state.attributes["kwh_exportados_esa_hora"] == 1.5
         assert state.attributes["ultima_hora_con_dato"] == f"{now.strftime('%d/%m/%Y')} {now.hour}"
-        assert state.attributes["horas_de_retraso"] == 0.0
+        # "moment" se calcula en punto de hora (el label horario no tiene minutos), así que dentro
+        # de la hora en curso el retraso es la fracción transcurrida desde esa hora en punto, no 0.
+        assert 0 <= state.attributes["horas_de_retraso"] < 1
 
     async def test_exporting_now_off_when_latest_hour_has_no_export(self, hass, aioclient_mock):
         from homeassistant.util import dt as dt_util
