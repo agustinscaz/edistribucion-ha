@@ -108,6 +108,42 @@
       "surplus_compensation_month": {
         "name": "Compensation des excédents (mois)"
       },
+      "punta_kwh_today": {
+        "name": "Énergie en heures pleines (aujourd'hui)"
+      },
+      "punta_kwh_month": {
+        "name": "Énergie en heures pleines (mois)"
+      },
+      "punta_cost_today": {
+        "name": "Coût en heures pleines (aujourd'hui)"
+      },
+      "punta_cost_month": {
+        "name": "Coût en heures pleines (mois)"
+      },
+      "llano_kwh_today": {
+        "name": "Énergie en heures intermédiaires (aujourd'hui)"
+      },
+      "llano_kwh_month": {
+        "name": "Énergie en heures intermédiaires (mois)"
+      },
+      "llano_cost_today": {
+        "name": "Coût en heures intermédiaires (aujourd'hui)"
+      },
+      "llano_cost_month": {
+        "name": "Coût en heures intermédiaires (mois)"
+      },
+      "valle_kwh_today": {
+        "name": "Énergie en heures creuses (aujourd'hui)"
+      },
+      "valle_kwh_month": {
+        "name": "Énergie en heures creuses (mois)"
+      },
+      "valle_cost_today": {
+        "name": "Coût en heures creuses (aujourd'hui)"
+      },
+      "valle_cost_month": {
+        "name": "Coût en heures creuses (mois)"
+      },
       "month_vs_last_year": {
         "name": "Comparaison avec le même mois de l'année précédente"
       },

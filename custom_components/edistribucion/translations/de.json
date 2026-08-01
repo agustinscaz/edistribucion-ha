@@ -108,6 +108,42 @@
       "surplus_compensation_month": {
         "name": "Einspeisevergütung (Monat)"
       },
+      "punta_kwh_today": {
+        "name": "Energie Spitzenlast (heute)"
+      },
+      "punta_kwh_month": {
+        "name": "Energie Spitzenlast (Monat)"
+      },
+      "punta_cost_today": {
+        "name": "Kosten Spitzenlast (heute)"
+      },
+      "punta_cost_month": {
+        "name": "Kosten Spitzenlast (Monat)"
+      },
+      "llano_kwh_today": {
+        "name": "Energie Mittellast (heute)"
+      },
+      "llano_kwh_month": {
+        "name": "Energie Mittellast (Monat)"
+      },
+      "llano_cost_today": {
+        "name": "Kosten Mittellast (heute)"
+      },
+      "llano_cost_month": {
+        "name": "Kosten Mittellast (Monat)"
+      },
+      "valle_kwh_today": {
+        "name": "Energie Schwachlast (heute)"
+      },
+      "valle_kwh_month": {
+        "name": "Energie Schwachlast (Monat)"
+      },
+      "valle_cost_today": {
+        "name": "Kosten Schwachlast (heute)"
+      },
+      "valle_cost_month": {
+        "name": "Kosten Schwachlast (Monat)"
+      },
       "month_vs_last_year": {
         "name": "Vergleich mit demselben Monat des Vorjahres"
       },

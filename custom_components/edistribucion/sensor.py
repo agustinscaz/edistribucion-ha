@@ -21,7 +21,11 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS, TARIFF_TYPES
 from .coordinator import EdistribucionCoordinator
 from .costs import (
+    LLANO,
+    PUNTA,
+    VALLE,
     average_price_per_kwh,
+    cost_breakdown,
     estimate_cost_as_tariff,
     estimate_energy_cost,
     max_power_by_period,
@@ -105,6 +109,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
+        if active_tariff == TARIFF_TRAMOS and _energy_cost_configured(sp):
+            for period_key in ("today", "month"):
+                for tramo in (PUNTA, LLANO, VALLE):
+                    entities.append(_EdistribucionTramoSensor(coordinator, cont_id, sp, period_key, tramo, "kwh"))
+                    entities.append(_EdistribucionTramoSensor(coordinator, cont_id, sp, period_key, tramo, "cost"))
         if (bundle.get("month") or {}).get("totalExportedKwh"):
             entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSelfConsumptionMonthSensor(coordinator, cont_id, sp))
@@ -456,6 +465,51 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     @property
     def _hourly_source(self) -> dict | None:
         return self._bundle.get("month")
+
+
+class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
+    """kWh o coste de UN tramo (punta/llano/valle) de la tarifa 'tramos' (ver costs.cost_breakdown)
+    — mismo cálculo que ya usa EdistribucionEstimatedCostTodaySensor/MonthSensor (que lo trae solo
+    como atributo anidado), pero como entidad propia por tramo, para poder graficar o automatizar
+    sobre un tramo concreto sin tener que leer un atributo. Solo se crea con tarifa 'tramos' activa
+    y algún precio de tramo configurado (ver async_setup_entry) — punta/llano/valle no existen en
+    fija/pvpc."""
+
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator, cont_id, supply_point, period_key: str, tramo: str, kind: str) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._period_key = period_key  # "today" | "month"
+        self._tramo = tramo  # "punta" | "llano" | "valle"
+        self._kind = kind  # "kwh" | "cost"
+        translation_key = f"{tramo}_{kind}_{period_key}"
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{cont_id}_{translation_key}"
+        if kind == "kwh":
+            self._attr_device_class = SensorDeviceClass.ENERGY
+            self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+            self._attr_state_class = SensorStateClass.TOTAL_INCREASING if period_key == "today" else SensorStateClass.TOTAL
+        else:
+            # device_class=MONETARY solo admite None o TOTAL como state_class (ver v1.21.1).
+            self._attr_device_class = SensorDeviceClass.MONETARY
+            self._attr_native_unit_of_measurement = "EUR"
+            self._attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def _hourly_source(self) -> dict | None:
+        if self._period_key == "today":
+            return _latest_day_hourly(self._bundle.get("consumption"))
+        return self._bundle.get("month")
+
+    @property
+    def native_value(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
+        breakdown = cost_breakdown(self._hourly_source, prices, sp.get("holiday_region"))
+        if not breakdown:
+            return None
+        breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
+        return breakdown.get(breakdown_key)
 
 
 class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):

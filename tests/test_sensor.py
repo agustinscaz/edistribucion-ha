@@ -165,6 +165,58 @@ async def test_cost_sensors_created_when_price_configured(hass):
     assert "contA_year_to_date_cost" in ids
 
 
+async def test_no_tramo_sensors_without_price_configured(hass):
+    bundles = {"contA": _bundle({"tariff_type": "tramos"})}  # sin ningún precio de tramos puesto
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    ids = _unique_ids(entities)
+    assert "contA_punta_kwh_today" not in ids
+    assert "contA_punta_cost_month" not in ids
+
+
+async def test_tramo_sensors_only_created_for_tramos_tariff(hass):
+    bundles_tramos = {"contA": _bundle({"tariff_type": "tramos", "price_punta": 0.25})}
+    entities_tramos = await _setup_with_fake_coordinator(hass, bundles_tramos)
+    ids_tramos = _unique_ids(entities_tramos)
+    for tramo in ("punta", "llano", "valle"):
+        for kind in ("kwh", "cost"):
+            for period in ("today", "month"):
+                assert f"contA_{tramo}_{kind}_{period}" in ids_tramos
+
+    hass.data[DOMAIN].clear()
+    bundles_fija = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
+    entities_fija = await _setup_with_fake_coordinator(hass, bundles_fija)
+    assert "contA_punta_kwh_today" not in _unique_ids(entities_fija)
+
+    hass.data[DOMAIN].clear()
+    bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
+    entities_pvpc = await _setup_with_fake_coordinator(hass, bundles_pvpc)
+    assert "contA_punta_kwh_today" not in _unique_ids(entities_pvpc)
+
+
+async def test_tramo_sensor_values_match_cost_breakdown(hass):
+    """27/07/2026 es lunes (ver TestHourPeriod en test_costs.py): 10-11h -> punta, 8-9h -> llano,
+    0-1h -> valle. Mismo hourlyByDate en "hoy" y en "mes" para poder comparar ambos periodos."""
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05})
+    hourly = {
+        "27/07/2026": [
+            {"hour": "10 - 11 h", "importedKwh": 2.0},
+            {"hour": "8 - 9 h", "importedKwh": 3.0},
+            {"hour": "0 - 1 h", "importedKwh": 1.0},
+        ]
+    }
+    bundle["consumption"] = {"dailyTotals": [], "hourlyByDate": hourly}
+    bundle["month"] = {"totalImportedKwh": 6.0, "totalExportedKwh": 0.0, "hourlyByDate": hourly}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_punta_kwh_today"].native_value == 2.0
+    assert by_id["contA_punta_cost_today"].native_value == 0.5
+    assert by_id["contA_llano_kwh_month"].native_value == 3.0
+    assert by_id["contA_llano_cost_month"].native_value == 0.45
+    assert by_id["contA_valle_kwh_today"].native_value == 1.0
+    assert by_id["contA_valle_cost_today"].native_value == 0.05
+
+
 async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
     bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
     bundles_fija = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}

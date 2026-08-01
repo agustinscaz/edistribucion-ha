@@ -108,6 +108,42 @@
       "surplus_compensation_month": {
         "name": "Surplus compensation (month)"
       },
+      "punta_kwh_today": {
+        "name": "Peak energy (today)"
+      },
+      "punta_kwh_month": {
+        "name": "Peak energy (month)"
+      },
+      "punta_cost_today": {
+        "name": "Peak cost (today)"
+      },
+      "punta_cost_month": {
+        "name": "Peak cost (month)"
+      },
+      "llano_kwh_today": {
+        "name": "Flat energy (today)"
+      },
+      "llano_kwh_month": {
+        "name": "Flat energy (month)"
+      },
+      "llano_cost_today": {
+        "name": "Flat cost (today)"
+      },
+      "llano_cost_month": {
+        "name": "Flat cost (month)"
+      },
+      "valle_kwh_today": {
+        "name": "Off-peak energy (today)"
+      },
+      "valle_kwh_month": {
+        "name": "Off-peak energy (month)"
+      },
+      "valle_cost_today": {
+        "name": "Off-peak cost (today)"
+      },
+      "valle_cost_month": {
+        "name": "Off-peak cost (month)"
+      },
       "month_vs_last_year": {
         "name": "Comparison vs. same month last year"
       },

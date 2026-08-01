@@ -108,6 +108,42 @@
       "surplus_compensation_month": {
         "name": "Compensazione eccedenze (mese)"
       },
+      "punta_kwh_today": {
+        "name": "Energia in punta (oggi)"
+      },
+      "punta_kwh_month": {
+        "name": "Energia in punta (mese)"
+      },
+      "punta_cost_today": {
+        "name": "Costo in punta (oggi)"
+      },
+      "punta_cost_month": {
+        "name": "Costo in punta (mese)"
+      },
+      "llano_kwh_today": {
+        "name": "Energia intermedia (oggi)"
+      },
+      "llano_kwh_month": {
+        "name": "Energia intermedia (mese)"
+      },
+      "llano_cost_today": {
+        "name": "Costo intermedio (oggi)"
+      },
+      "llano_cost_month": {
+        "name": "Costo intermedio (mese)"
+      },
+      "valle_kwh_today": {
+        "name": "Energia fuori punta (oggi)"
+      },
+      "valle_kwh_month": {
+        "name": "Energia fuori punta (mese)"
+      },
+      "valle_cost_today": {
+        "name": "Costo fuori punta (oggi)"
+      },
+      "valle_cost_month": {
+        "name": "Costo fuori punta (mese)"
+      },
       "month_vs_last_year": {
         "name": "Confronto con lo stesso mese dell'anno precedente"
       },

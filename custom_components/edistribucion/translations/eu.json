@@ -108,6 +108,42 @@
       "surplus_compensation_month": {
         "name": "Hilabeteko soberakinen konpentsazioa"
       },
+      "punta_kwh_today": {
+        "name": "Gaurko gailur-orduko energia"
+      },
+      "punta_kwh_month": {
+        "name": "Hilabeteko gailur-orduko energia"
+      },
+      "punta_cost_today": {
+        "name": "Gaurko gailur-orduko kostua"
+      },
+      "punta_cost_month": {
+        "name": "Hilabeteko gailur-orduko kostua"
+      },
+      "llano_kwh_today": {
+        "name": "Gaurko arrunt-orduko energia"
+      },
+      "llano_kwh_month": {
+        "name": "Hilabeteko arrunt-orduko energia"
+      },
+      "llano_cost_today": {
+        "name": "Gaurko arrunt-orduko kostua"
+      },
+      "llano_cost_month": {
+        "name": "Hilabeteko arrunt-orduko kostua"
+      },
+      "valle_kwh_today": {
+        "name": "Gaurko sakonaldiko energia"
+      },
+      "valle_kwh_month": {
+        "name": "Hilabeteko sakonaldiko energia"
+      },
+      "valle_cost_today": {
+        "name": "Gaurko sakonaldiko kostua"
+      },
+      "valle_cost_month": {
+        "name": "Hilabeteko sakonaldiko kostua"
+      },
       "month_vs_last_year": {
         "name": "Iazko hilabete berarekin alderatuta"
       },
