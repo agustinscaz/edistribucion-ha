@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Einspeisevergütung heute"
       },
+      "surplus_compensation_week": {
+        "name": "Einspeisevergütung (Woche)"
+      },
       "surplus_compensation_month": {
         "name": "Einspeisevergütung (Monat)"
       },

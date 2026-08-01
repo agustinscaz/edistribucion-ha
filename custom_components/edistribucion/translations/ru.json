@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Компенсация за излишки сегодня"
       },
+      "surplus_compensation_week": {
+        "name": "Компенсация за излишки (неделя)"
+      },
       "surplus_compensation_month": {
         "name": "Компенсация за излишки (месяц)"
       },

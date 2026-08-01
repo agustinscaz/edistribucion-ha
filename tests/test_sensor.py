@@ -221,11 +221,31 @@ async def test_surplus_compensation_sensors_only_if_enabled_with_price(hass):
     bundles_disabled = {"contA": _bundle({"surplus_compensation": False})}
 
     entities_enabled = await _setup_with_fake_coordinator(hass, bundles_enabled)
-    assert "contA_surplus_compensation_today" in _unique_ids(entities_enabled)
+    ids_enabled = _unique_ids(entities_enabled)
+    assert "contA_surplus_compensation_today" in ids_enabled
+    assert "contA_surplus_compensation_week" in ids_enabled
+    assert "contA_surplus_compensation_month" in ids_enabled
 
     hass.data[DOMAIN].clear()
     entities_disabled = await _setup_with_fake_coordinator(hass, bundles_disabled)
-    assert "contA_surplus_compensation_today" not in _unique_ids(entities_disabled)
+    ids_disabled = _unique_ids(entities_disabled)
+    assert "contA_surplus_compensation_today" not in ids_disabled
+    assert "contA_surplus_compensation_week" not in ids_disabled
+
+
+async def test_surplus_compensation_week_value_is_exported_kwh_times_price(hass):
+    bundle = _bundle({"surplus_compensation": True, "surplus_price": 0.05})
+    bundle["week"] = {"totalExportedKwh": 12.0}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_surplus_compensation_week"].native_value == 0.6
+
+
+async def test_surplus_compensation_week_none_without_week_data(hass):
+    bundle = _bundle({"surplus_compensation": True, "surplus_price": 0.05})  # bundle["week"] es None
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_surplus_compensation_week"].native_value is None
 
 
 async def test_year_to_date_cost_adds_completed_months_and_current_month(hass):

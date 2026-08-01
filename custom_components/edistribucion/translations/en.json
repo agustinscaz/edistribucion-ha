@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Surplus compensation today"
       },
+      "surplus_compensation_week": {
+        "name": "Surplus compensation (week)"
+      },
       "surplus_compensation_month": {
         "name": "Surplus compensation (month)"
       },

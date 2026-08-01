@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Compensació per excedents avui"
       },
+      "surplus_compensation_week": {
+        "name": "Compensació per excedents (setmana)"
+      },
       "surplus_compensation_month": {
         "name": "Compensació per excedents (mes)"
       },

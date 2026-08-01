@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Gaurko soberakinen konpentsazioa"
       },
+      "surplus_compensation_week": {
+        "name": "Asteko soberakinen konpentsazioa"
+      },
       "surplus_compensation_month": {
         "name": "Hilabeteko soberakinen konpentsazioa"
       },

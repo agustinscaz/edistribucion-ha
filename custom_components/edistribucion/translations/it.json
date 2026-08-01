@@ -99,6 +99,9 @@
       "surplus_compensation_today": {
         "name": "Compensazione eccedenze oggi"
       },
+      "surplus_compensation_week": {
+        "name": "Compensazione eccedenze (settimana)"
+      },
       "surplus_compensation_month": {
         "name": "Compensazione eccedenze (mese)"
       },

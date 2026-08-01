@@ -103,6 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
         if sp.get("surplus_compensation") and sp.get("surplus_price"):
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionSurplusCompensationWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
         if (bundle.get("month") or {}).get("totalExportedKwh"):
             entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
@@ -635,6 +636,19 @@ class EdistribucionSurplusCompensationTodaySensor(_EdistribucionSurplusCompensat
     def _exported_kwh(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["exportedKwh"] if day else None
+
+
+class EdistribucionSurplusCompensationWeekSensor(_EdistribucionSurplusCompensationSensor):
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "surplus_compensation_week")
+        self._attr_unique_id = f"{cont_id}_surplus_compensation_week"
+
+    @property
+    def _exported_kwh(self) -> float | None:
+        week = self._bundle.get("week")
+        return week.get("totalExportedKwh") if week else None
 
 
 class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensationSensor):
