@@ -81,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     client = EdistribucionApiClient(session, entry.data[CONF_HOST], entry.data[CONF_PORT])
     coordinator = EdistribucionCoordinator(hass, client, entry)
+    await coordinator.async_load_pvpc_prices_cache()
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

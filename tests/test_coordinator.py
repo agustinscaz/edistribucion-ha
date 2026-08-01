@@ -4,7 +4,7 @@ CI, no en el sandbox de desarrollo local (sin pip)."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -421,3 +421,88 @@ async def test_esios_error_does_not_crash_update(hass, monkeypatch):
 
     await coordinator._async_update_pvpc_prices()  # no debe lanzar
     assert coordinator.pvpc_prices.get("PCB", {}) == {}
+
+
+async def test_pvpc_cache_survives_simulated_restart(hass, monkeypatch):
+    """Un reinicio de HA crea una instancia NUEVA de EdistribucionCoordinator — sin persistencia a
+    disco, el caché en memoria se perdía por completo (issue reportado: "reinicié hoy y tuvo que
+    volver a pedir todo el mes"). Simulamos el reinicio con dos instancias distintas sobre el mismo
+    entry_id (mismo Store)."""
+    from homeassistant.util import dt as dt_util
+
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"c1": {"track": True, "pvpc_zone": "PCB"}}})
+
+    async def fake_fetch(session, zone, day):
+        return {f"{day.strftime('%d/%m/%Y')} 0": 0.1}
+
+    monkeypatch.setattr("custom_components.edistribucion.coordinator.async_get_pvpc_prices_for_day", fake_fetch)
+
+    coordinator_before = EdistribucionCoordinator(hass, _make_client(), entry)
+    await coordinator_before._async_update_pvpc_prices()
+    assert coordinator_before.pvpc_prices["PCB"]  # se rellenó de verdad
+
+    # "Reinicio": instancia nueva, memoria en blanco, mismo entry_id (mismo archivo de Store)
+    coordinator_after = EdistribucionCoordinator(hass, _make_client(), entry)
+    assert coordinator_after.pvpc_prices == {}
+    await coordinator_after.async_load_pvpc_prices_cache()
+    assert coordinator_after.pvpc_prices["PCB"] == coordinator_before.pvpc_prices["PCB"]
+
+    call_count = {"n": 0}
+
+    async def counting_fetch(session, zone, day):
+        call_count["n"] += 1
+        return {f"{day.strftime('%d/%m/%Y')} 0": 0.1}
+
+    monkeypatch.setattr("custom_components.edistribucion.coordinator.async_get_pvpc_prices_for_day", counting_fetch)
+    await coordinator_after._async_update_pvpc_prices()
+    assert call_count["n"] == 0  # ya estaba todo cacheado — no hizo falta volver a pedirle nada a ESIOS
+
+
+async def test_pvpc_cache_load_discards_stale_month_entries(hass):
+    """Precios de un mes YA PASADO en el archivo (p.ej. quedaron de antes de este cambio, o el
+    reinicio ocurrió cruzando un mes) no sirven para nada — no deberían colarse en memoria."""
+    from homeassistant.util import dt as dt_util
+
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"c1": {"track": True, "pvpc_zone": "PCB"}}})
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+
+    now = dt_util.now()
+    stale_month = now.replace(day=1) - timedelta(days=1)
+    await coordinator._pvpc_store.async_save(
+        {
+            "PCB": {
+                f"{stale_month.strftime('%d/%m/%Y')} 0": 0.05,
+                f"{now.strftime('%d/%m/%Y')} 0": 0.1,
+            }
+        }
+    )
+
+    await coordinator.async_load_pvpc_prices_cache()
+    assert set(coordinator.pvpc_prices["PCB"]) == {f"{now.strftime('%d/%m/%Y')} 0"}
+
+
+async def test_pvpc_save_prunes_stale_month_entries(hass):
+    """Simétrico al de carga: al guardar, tampoco se debe volcar a disco un mes ya pasado que
+    hubiera quedado en memoria (evita que el archivo crezca sin límite ciclo a ciclo)."""
+    from homeassistant.util import dt as dt_util
+
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"c1": {"track": True, "pvpc_zone": "PCB"}}})
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+
+    now = dt_util.now()
+    stale_month = now.replace(day=1) - timedelta(days=1)
+    coordinator.pvpc_prices["PCB"] = {
+        f"{stale_month.strftime('%d/%m/%Y')} 0": 0.05,
+        f"{now.strftime('%d/%m/%Y')} 0": 0.1,
+    }
+
+    await coordinator._async_save_pvpc_prices_cache()
+    stored = await coordinator._pvpc_store.async_load()
+    assert set(stored["PCB"]) == {f"{now.strftime('%d/%m/%Y')} 0"}
+
+
+async def test_load_pvpc_cache_noop_without_stored_file(hass):
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"c1": {"track": True, "pvpc_zone": "PCB"}}})
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+    await coordinator.async_load_pvpc_prices_cache()  # no debe lanzar sin archivo previo
+    assert coordinator.pvpc_prices == {}

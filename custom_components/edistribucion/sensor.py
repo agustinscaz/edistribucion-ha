@@ -189,7 +189,12 @@ def _freshness_attributes(coordinator: EdistribucionCoordinator, cont_id: str, f
     """Cuándo cambió por última vez este valor — la curva horaria de e-distribución se publica con
     retraso, así que "hoy" puede quedarse igual varias horas sin que sea un fallo de la integración
     (ver coordinator._track_value_freshness). Permite distinguir eso de un dato realmente atascado
-    sin tener que mirar el histórico a mano."""
+    sin tener que mirar el histórico a mano.
+
+    OJO: `ultimo_cambio` es "cuándo lo detectó por primera vez ESTE coordinator", no "cuándo cambió
+    de verdad del lado de e-distribución" — solo hay polling (cada `scan_interval`, minutos), no
+    push, así que tiene ese margen de error. Es una COTA INFERIOR de antigüedad ("como mínimo así
+    de viejo"), no una medición exacta al segundo."""
     last_change = coordinator.last_value_change(cont_id, flow)
     if last_change is None:
         return {}
@@ -431,6 +436,10 @@ class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
     def _hourly_source(self) -> dict | None:
         return _latest_day_hourly(self._bundle.get("consumption"))
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {**super().extra_state_attributes, **_freshness_attributes(self.coordinator, self._cont_id, "imported")}
+
 
 class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     _attr_state_class = SensorStateClass.TOTAL
@@ -636,6 +645,10 @@ class EdistribucionSurplusCompensationTodaySensor(_EdistribucionSurplusCompensat
     def _exported_kwh(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["exportedKwh"] if day else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _freshness_attributes(self.coordinator, self._cont_id, "exported")
 
 
 class EdistribucionSurplusCompensationWeekSensor(_EdistribucionSurplusCompensationSensor):

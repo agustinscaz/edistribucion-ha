@@ -10,6 +10,7 @@ from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -33,6 +34,14 @@ RANGE_WEEK = "2"
 
 ISSUE_CONNECTION = "addon_connection_failed"
 ISSUE_INVALID_CREDENTIALS = "invalid_credentials"
+
+_PVPC_STORAGE_VERSION = 1
+
+
+def _is_current_month_price_key(key: str, now: datetime) -> bool:
+    """¿La clave "DD/MM/YYYY H" de un precio PVPC cacheado pertenece al mes/año de `now`?"""
+    date_part = key.split(" ", 1)[0]
+    return len(date_part) == 10 and date_part[3:10] == now.strftime("%m/%Y")
 
 
 def _latest_daily_values(consumption: dict | None) -> dict[str, float] | None:
@@ -58,6 +67,10 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         # usar zonas distintas (poco habitual, pero posible).
         self.pvpc_prices: dict[str, dict[str, float]] = {}
         self._pvpc_fetched_date: str | None = None
+        # Persistencia en disco del caché de precios PVPC — sin esto, un reinicio de HA lo perdía
+        # por completo y había que volver a pedirle a ESIOS el mes en curso día a día de nuevo (ver
+        # async_load_pvpc_prices_cache / _async_save_pvpc_prices_cache).
+        self._pvpc_store: Store = Store(hass, _PVPC_STORAGE_VERSION, f"{DOMAIN}_pvpc_prices_{entry.entry_id}")
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
         self._last_backfill_day: str | None = None
@@ -112,6 +125,32 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                         break  # si ESIOS falla (red, baneo...), se reintenta en el próximo ciclo
                 day += timedelta(days=1)
         self._pvpc_fetched_date = today_key
+        await self._async_save_pvpc_prices_cache()
+
+    async def async_load_pvpc_prices_cache(self) -> None:
+        """Restaura, si lo hay, el caché de precios PVPC guardado en disco antes del último
+        reinicio de HA — para no depender de volver a pedirle a ESIOS desde cero todo el mes en
+        curso. Se llama una vez, antes del primer refresh (ver __init__.py). Solo se conservan las
+        horas del MES ACTUAL: los precios de un mes ya pasado no sirven para nada (nadie los pide)
+        y así el archivo en disco no crece sin límite ciclo a ciclo."""
+        stored = await self._pvpc_store.async_load()
+        if not stored:
+            return
+        now = dt_util.now()
+        for zone, prices in stored.items():
+            if not isinstance(prices, dict):
+                continue
+            zone_prices = self.pvpc_prices.setdefault(zone, {})
+            zone_prices.update({k: v for k, v in prices.items() if _is_current_month_price_key(k, now)})
+
+    async def _async_save_pvpc_prices_cache(self) -> None:
+        """Vuelca a disco el caché de precios PVPC en memoria — solo las horas del mes en curso
+        (ver `async_load_pvpc_prices_cache`, mismo motivo: no acumular meses pasados sin límite)."""
+        now = dt_util.now()
+        to_store = {
+            zone: {k: v for k, v in prices.items() if _is_current_month_price_key(k, now)} for zone, prices in self.pvpc_prices.items()
+        }
+        await self._pvpc_store.async_save(to_store)
 
     async def async_force_refresh_pvpc_prices(self) -> None:
         """Fuerza un refresco de precios PVPC ya (botón de la integración), sin esperar al ciclo

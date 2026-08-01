@@ -82,6 +82,7 @@ class FakeCoordinator:
         self.pvpc_prices: dict[str, dict[str, float]] = {}
         self.last_success_time = None
         self._year_to_date: dict[str, dict[str, float]] = {}
+        self._last_value_change: dict[str, dict[str, object]] = {}
         from datetime import timedelta
 
         self.update_interval = timedelta(minutes=15)
@@ -91,6 +92,9 @@ class FakeCoordinator:
 
     def year_to_date_completed_months(self, cont_id):
         return self._year_to_date.get(cont_id, {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0})
+
+    def last_value_change(self, cont_id, flow):
+        return self._last_value_change.get(cont_id, {}).get(flow)
 
 
 def _bundle(sp_overrides=None, has_export=False):
@@ -246,6 +250,48 @@ async def test_surplus_compensation_week_none_without_week_data(hass):
     entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     assert by_id["contA_surplus_compensation_week"].native_value is None
+
+
+async def test_estimated_cost_today_exposes_freshness_alongside_breakdown(hass):
+    """El coste estimado de hoy depende del importado "de hoy" — sin frescura, no hay forma de
+    saber si el número viene de una hora vieja sin cruzarlo con otro sensor (ver
+    coordinator.last_value_change / sensor._freshness_attributes)."""
+    from datetime import datetime, timezone
+
+    bundles = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = next(iter(hass.data[DOMAIN].values()))
+    changed_at = datetime(2026, 8, 1, 6, 0, tzinfo=timezone.utc)
+    coordinator._last_value_change["contA"] = {"imported": changed_at}
+
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    attrs = by_id["contA_estimated_cost_today"].extra_state_attributes
+    assert attrs["ultimo_cambio"] == changed_at.isoformat()
+    assert "minutos_sin_cambiar" in attrs
+    assert "total" in attrs  # el desglose de costes (heredado de _EdistribucionEstimatedCostSensor) sigue ahí
+
+
+async def test_estimated_cost_today_freshness_absent_without_tracked_change(hass):
+    bundles = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    attrs = by_id["contA_estimated_cost_today"].extra_state_attributes
+    assert "ultimo_cambio" not in attrs
+
+
+async def test_surplus_compensation_today_exposes_freshness(hass):
+    from datetime import datetime, timezone
+
+    bundles = {"contA": _bundle({"surplus_compensation": True, "surplus_price": 0.05})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = next(iter(hass.data[DOMAIN].values()))
+    changed_at = datetime(2026, 8, 1, 6, 0, tzinfo=timezone.utc)
+    coordinator._last_value_change["contA"] = {"exported": changed_at}
+
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    attrs = by_id["contA_surplus_compensation_today"].extra_state_attributes
+    assert attrs["ultimo_cambio"] == changed_at.isoformat()
+    assert "minutos_sin_cambiar" in attrs
 
 
 async def test_year_to_date_cost_adds_completed_months_and_current_month(hass):
