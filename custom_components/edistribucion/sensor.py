@@ -25,13 +25,18 @@ from .costs import (
     LLANO,
     PUNTA,
     VALLE,
+    apply_iee,
+    apply_iva,
     average_price_per_kwh,
     cost_breakdown,
+    current_period,
     estimate_cost_as_tariff,
     estimate_energy_cost,
+    next_period_change,
     power_cost,
     self_consumption_ratio,
     surplus_compensation_value,
+    tramo_prices_today,
 )
 from .device import hub_device_info
 from .esios import DEFAULT_PVPC_ZONE
@@ -119,6 +124,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 for tramo in (PUNTA, LLANO, VALLE):
                     entities.append(_EdistribucionTramoSensor(coordinator, cont_id, sp, period_key, tramo, "kwh"))
                     entities.append(_EdistribucionTramoSensor(coordinator, cont_id, sp, period_key, tramo, "cost"))
+            entities.append(EdistribucionCurrentTramoPriceSensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionNextTramoPeriodChangeSensor(coordinator, cont_id, sp))
         if (bundle.get("month") or {}).get("totalExportedKwh"):
             entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSelfConsumptionMonthSensor(coordinator, cont_id, sp))
@@ -472,6 +479,7 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
             sp.get("holiday_region"),
             iee_percent=sp.get("iee_percent") or 0,
             iva_percent=sp.get("iva_percent") or 0,
+            zone=sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE,
         )
         if not breakdown:
             return None
@@ -519,7 +527,9 @@ class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
         sp = self._bundle.get("supply_point") or {}
         price = sp.get("surplus_price") or 0
         prices = {PUNTA: price, LLANO: price, VALLE: price}
-        breakdown = cost_breakdown(self._hourly_source, prices, sp.get("holiday_region"), field="exportedKwh")
+        breakdown = cost_breakdown(
+            self._hourly_source, prices, sp.get("holiday_region"), field="exportedKwh", zone=sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+        )
         if not breakdown:
             return None
         breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
@@ -702,6 +712,91 @@ class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
     @property
     def available(self) -> bool:
         return super().available and bool(self._zone_prices)
+
+
+class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
+    """Precio de energía CON impuestos vigente AHORA MISMO para tarifa 'tramos' — equivalente a
+    EdistribucionCurrentPvpcPriceSensor pero para tramos (ver issue #4): un único sensor con el
+    periodo actual (punta/llano/valle) y estadísticas del día como atributos, para no tener que
+    reimplementar en una plantilla Jinja aparte la lógica horaria que ya vive en costs.py — ese es
+    justo el problema de un sensor casero desconectado de las Opciones reales del CUPS (holiday_
+    region, pvpc_zone, iee_percent, iva_percent...), que se puede quedar desactualizado si cambias
+    la tarifa. Solo se crea con tarifa 'tramos' activa y algún precio de tramo configurado."""
+
+    entity_description = SensorEntityDescription(
+        key="current_tramo_price",
+        translation_key="current_tramo_price",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=5,
+        state_class=SensorStateClass.MEASUREMENT,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_current_tramo_price"
+
+    @property
+    def _sp(self) -> dict:
+        return self._bundle.get("supply_point") or {}
+
+    @property
+    def native_value(self) -> float | None:
+        sp = self._sp
+        now = dt_util.now()
+        period = current_period(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
+        return apply_iva(apply_iee(prices.get(period, 0), sp.get("iee_percent") or 0), sp.get("iva_percent") or 0)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        sp = self._sp
+        now = dt_util.now()
+        period = current_period(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        today_prices = list(tramo_prices_today(now, sp).values())
+        return {
+            "periodo_actual": period,
+            "precio_minimo_hoy": round(min(today_prices), 5),
+            "precio_medio_hoy": round(sum(today_prices) / len(today_prices), 5),
+            "precio_maximo_hoy": round(max(today_prices), 5),
+        }
+
+
+class EdistribucionNextTramoPeriodChangeSensor(_EdistribucionBaseSensor):
+    """Cuándo cambia el periodo tarifario (punta/llano/valle) respecto al vigente ahora mismo — para
+    disparar automatizaciones de carga/consumo EXACTAMENTE en ese instante (con un `trigger: time`
+    apuntando a este sensor, ver ejemplo en el README) en vez de a una hora fija a ciegas que asume
+    dónde empieza cada periodo (ver issue #4). Va como sensor propio (no atributo del sensor de
+    precio) porque un `trigger: time` de Home Assistant necesita el ESTADO de una entidad con
+    device_class timestamp, no puede apuntar a un atributo."""
+
+    entity_description = SensorEntityDescription(
+        key="next_tramo_period_change",
+        translation_key="next_tramo_period_change",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_next_tramo_period_change"
+
+    @property
+    def _sp(self) -> dict:
+        return self._bundle.get("supply_point") or {}
+
+    @property
+    def native_value(self):
+        sp = self._sp
+        now = dt_util.now()
+        return next_period_change(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        sp = self._sp
+        now = dt_util.now()
+        next_change = next_period_change(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        siguiente_periodo = current_period(next_change, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        return {"siguiente_periodo": siguiente_periodo}
 
 
 class _EdistribucionSurplusCompensationSensor(_EdistribucionBaseSensor):

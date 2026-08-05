@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Uneko PVPC prezioa"
       },
+      "current_tramo_price": {
+        "name": "Uneko prezioa (tarteak)"
+      },
+      "next_tramo_period_change": {
+        "name": "Hurrengo tarte-aldaketa"
+      },
       "self_consumption_today": {
         "name": "Gaurko autosufizientzia hurbildua"
       },

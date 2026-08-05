@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Aktueller PVPC-Preis"
       },
+      "current_tramo_price": {
+        "name": "Aktueller Preis (zeitgestaffelt)"
+      },
+      "next_tramo_period_change": {
+        "name": "Nächster Tarifwechsel"
+      },
       "self_consumption_today": {
         "name": "Ungefähre Energieautarkie heute"
       },

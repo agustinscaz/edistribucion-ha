@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Current PVPC price"
       },
+      "current_tramo_price": {
+        "name": "Current price (time-of-use)"
+      },
+      "next_tramo_period_change": {
+        "name": "Next period change"
+      },
       "self_consumption_today": {
         "name": "Approximate energy self-sufficiency today"
       },

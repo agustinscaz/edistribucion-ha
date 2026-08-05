@@ -109,6 +109,8 @@ Por cada punto de suministro (CUPS), agrupadas bajo su propio dispositivo:
 | `sensor.<cups>_termino_de_potencia_dia` / `_mes` | Solo si has puesto precio de potencia en las opciones de este CUPS — kW contratados reales (punta/valle) × precio €/kW/día CON el IEE y el IVA de este CUPS aplicados EN ESE ORDEN, un coste fijo que no depende del consumo |
 | `sensor.<cups>_compensacion_por_excedentes_hoy` / `_semana` / `_mes` | Solo si has activado la compensación de excedentes para este suministro — kWh exportados × precio configurado. El de "hoy" incluye atributos `ultimo_cambio`/`minutos_sin_cambiar` (ver nota de frescura más abajo) |
 | `sensor.<cups>_precio_pvpc_actual` | Solo con tarifa `pvpc` — precio de la hora en curso (€/kWh) CON el IEE y el IVA de este CUPS aplicados EN ESE ORDEN; atributos `precio_sin_impuestos`, `iee_percent`, `iva_percent`, y `precios_hoy`/`precios_manana` con las 24h del día ya con impuestos incluidos (ver más abajo) |
+| `sensor.<cups>_precio_actual_tramos` | Solo con tarifa `tramos` y algún precio de tramo configurado — equivalente al anterior pero para tramos: precio del periodo VIGENTE ahora mismo (€/kWh, con IEE+IVA aplicados). Atributos `periodo_actual` (`punta`/`llano`/`valle`, para un badge en el dashboard sin reimplementar el horario en una plantilla) y `precio_minimo_hoy`/`precio_medio_hoy`/`precio_maximo_hoy` (con impuestos) para una tarjeta resumen del día |
+| `sensor.<cups>_proximo_cambio_de_tramo` | Igual condición que el anterior — cuándo cambia el periodo tarifario respecto al vigente ahora (timestamp), para disparar automatizaciones EXACTAMENTE en ese instante en vez de a una hora fija a ciegas (ver ejemplo más abajo). Atributo `siguiente_periodo` con el periodo al que se cambia |
 | `sensor.<cups>_autosuficiencia_aproximada_hoy` / `_mes` | Solo si el suministro ha exportado algo — **% aproximado**, calculado ÚNICAMENTE con importado/exportado del contador de e-distribución (no con tu generación solar real, que la distribuidora no reporta): qué parte de la energía intercambiada con la red fue exportada en vez de importada. Si no importas nada de la red, sale 100% (autosuficiente del todo); si nunca exportas nada, sale 0%. Los valores intermedios son solo una estimación, no un % exacto sobre tu generación real. |
 | `calendar.<cups>_calendario_de_consumo` | Un evento por día con datos (importado/exportado en el título) — navegable día a día y mes a mes con la tarjeta **Calendario** de Home Assistant, pidiendo al add-on el mes que estés mirando cada vez (no solo el actual) |
 
@@ -207,6 +209,29 @@ content: >
   {% endfor %}
 ```
 
+### Automatizar por cambio de tramo, no a una hora fija (tarifa `tramos`)
+
+`sensor.<cups>_proximo_cambio_de_tramo` es un sensor de tipo `timestamp` — Home Assistant permite
+usar el **estado** de un sensor así directamente como hora de disparo (`at:`), así que la
+automatización se dispara EXACTAMENTE cuando cambia el periodo, sin tener que hardcodear "a las
+22h empieza el llano" (que deja de ser cierto si cambias de zona o de tarifa):
+
+```yaml
+triggers:
+  - trigger: time
+    at: sensor.<cups>_proximo_cambio_de_tramo
+condition:
+  - condition: template
+    value_template: "{{ state_attr('sensor.<cups>_proximo_cambio_de_tramo', 'siguiente_periodo') == 'valle' }}"
+actions:
+  - action: switch.turn_on
+    target:
+      entity_id: switch.cargador_coche
+```
+
+Para un badge/chip con el periodo actual sin plantillas horarias propias, usa el atributo
+`periodo_actual` de `sensor.<cups>_precio_actual_tramos` (`state_attr('sensor.<cups>_precio_actual_tramos', 'periodo_actual')`).
+
 ## Endpoints de la API del add-on
 
 Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la integración:
@@ -239,7 +264,7 @@ Por si quieres consultarla directamente (`http://<host>:8099`), sin pasar por la
 - Facturas directas de e-distribución no están implementadas — solo aplican a una minoría de clientes con factura directa de la distribuidora (la mayoría paga a su comercializadora).
 - Sin autenticación propia en la API del add-on — no expongas el puerto 8099 a Internet.
 - El relleno de histórico en el Dashboard de Energía usa la Statistics API del `recorder`, una parte más avanzada y menos estable de Home Assistant — está pensado como "mejor esfuerzo": si falla, se registra un aviso en el log y el resto de la integración sigue funcionando con normalidad (solo te quedas sin el relleno retroactivo).
-- Con tarifa `tramos`, se usa el horario estándar de punta/llano/valle de la 2.0TD peninsular (punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana). Si no eliges una **región de festivos** para el CUPS, los festivos entre semana cuentan como día laborable normal (no como valle, que es como los factura realmente tu comercializadora) — para evitarlo, elige tu comunidad autónoma en las opciones de ese suministro.
+- Con tarifa `tramos`, se usa el horario de punta/llano/valle de la 2.0TD según la **zona PVPC** configurada para el CUPS (aunque la tarifa activa sea `tramos`, no `pvpc` — es la misma zona física): PCB (Península/Baleares/Canarias, por defecto) usa punta 10-14h y 18-22h entre semana, llano 8-10h/14-18h/22-24h entre semana, valle el resto y todo el fin de semana; CYM (Ceuta y Melilla) usa el mismo horario desplazado +1h (punta 11-15h/19-23h, llano 9-11h/15-19h/23-01h). Si no eliges una **región de festivos** para el CUPS, los festivos entre semana cuentan como día laborable normal (no como valle, que es como los factura realmente tu comercializadora) — para evitarlo, elige tu comunidad autónoma en las opciones de ese suministro.
 - Con tarifa `pvpc`, se usa el precio real hora a hora del archivo público de PVPC de ESIOS/REE para la zona elegida — se piden los precios del mes en curso una vez al día (no en cada actualización, para no saturar la API pública), un día por petición. Las horas para las que ESIOS aún no haya publicado precio (p.ej. las últimas del día siguiente antes de las ~20:15h) quedan sin coste y se cuentan como "horas sin precio" hasta que se publiquen. Este caché se persiste a disco (mes en curso únicamente) para no tener que volver a pedirlo todo de cero tras un reinicio de Home Assistant.
 - El término de potencia usa periodos punta/valle, que en la 2.0TD tienen un horario **distinto** al de punta/llano/valle de energía (la potencia punta cubre de día entre semana, la valle noches+fin de semana) — no se cruzan las franjas de un término con el otro.
 - La potencia contratada real se lee de un endpoint de e-distribución no documentado oficialmente (ingeniería inversa, como el resto del add-on) — si en el futuro cambian esa página, el sensor `Potencia contratada` podría dejar de actualizarse (se registrará un aviso en el log; el resto de la integración sigue funcionando igual).

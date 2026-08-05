@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Prezzo PVPC attuale"
       },
+      "current_tramo_price": {
+        "name": "Prezzo attuale (a fasce)"
+      },
+      "next_tramo_period_change": {
+        "name": "Prossimo cambio di fascia"
+      },
       "self_consumption_today": {
         "name": "Autosufficienza approssimativa oggi"
       },

@@ -1,10 +1,21 @@
 """Coste estimado de energía, según el tipo de tarifa configurado por CUPS (fija/tramos/pvpc), y
 compensación por excedentes exportados.
 
-Horario de tramos usado (2.0TD peninsular, el más común en residencial):
-- Punta: 10-14h y 18-22h, de lunes a viernes.
-- Llano: 8-10h, 14-18h y 22-24h, de lunes a viernes.
-- Valle: 0-8h todos los días, y todo el fin de semana.
+Horario de tramos usado (2.0TD), según la zona configurada en `sp_opts["pvpc_zone"]` del CUPS (ver
+issue #5 — el nombre de la clave viene de cuando solo la usaba la tarifa "pvpc", pero es la misma
+zona física, así que también sirve aquí):
+- PCB (Península/Baleares/Canarias, la inmensa mayoría — zona por defecto):
+    - Punta: 10-14h y 18-22h, de lunes a viernes.
+    - Llano: 8-10h, 14-18h y 22-24h, de lunes a viernes.
+    - Valle: 0-8h todos los días, y todo el fin de semana.
+- CYM (Ceuta y Melilla, peaje de acceso propio): el MISMO horario que PCB pero desplazado +1h
+  (fuentes: companias-luz.com/blog/horas-valle-llano-punta, energigreen.com/tarifas-electricidad/
+  horario-tarifa-2-0td — no hay una tabla CNMC/REE de una sola fuente que lo confirme al 100%, así
+  que si tienes la factura a mano y ves un desglose distinto, avisa):
+    - Punta: 11-15h y 19-23h, de lunes a viernes.
+    - Llano: 9-11h, 15-19h y 23-01h, de lunes a viernes.
+    - Valle: 1-9h entre semana, y todo el fin de semana (fin de semana sigue siendo 24h valle en
+      ambas zonas, el desplazamiento no le afecta).
 
 OJO — limitaciones conocidas:
 - "tramos" cuenta un festivo entre semana como día laborable normal, SALVO que configures una
@@ -34,19 +45,24 @@ OJO — limitaciones conocidas:
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import holidays
 
 from .const import TARIFF_FIJA, TARIFF_PVPC, TARIFF_TRAMOS
-from .esios import DEFAULT_PVPC_ZONE
+from .esios import DEFAULT_PVPC_ZONE, ZONE_CEUTA_MELILLA
 
 PUNTA = "punta"
 LLANO = "llano"
 VALLE = "valle"
 
+# PCB (Península/Baleares/Canarias) — ver cabecera del módulo.
 _PUNTA_HOURS = {10, 11, 12, 13, 18, 19, 20, 21}
 _LLANO_HOURS = {8, 9, 14, 15, 16, 17, 22, 23}
+
+# CYM (Ceuta/Melilla) — mismo horario que PCB desplazado +1h, ver cabecera del módulo (issue #5).
+_PUNTA_HOURS_CYM = {11, 12, 13, 14, 19, 20, 21, 22}
+_LLANO_HOURS_CYM = {9, 10, 15, 16, 17, 18, 23, 0}
 
 # Un `holidays.Spain(subdiv=...)` por región, reutilizado entre llamadas — construirlo es barato
 # (calcula los años sobre la marcha), pero no hace falta rehacerlo en cada refresco de sensor.
@@ -61,8 +77,15 @@ def _get_holiday_calendar(region: str | None) -> holidays.HolidayBase | None:
     return _holiday_calendars[region]
 
 
-def hour_period(date_str: str, hour_label: str, holiday_calendar: holidays.HolidayBase | None = None) -> str:
-    """`date_str` en formato DD/MM/YYYY, `hour_label` tipo '13 - 14 h' (el que usa el add-on)."""
+def hour_period(
+    date_str: str,
+    hour_label: str,
+    holiday_calendar: holidays.HolidayBase | None = None,
+    zone: str | None = None,
+) -> str:
+    """`date_str` en formato DD/MM/YYYY, `hour_label` tipo '13 - 14 h' (el que usa el add-on).
+    `zone` ("PCB"/"CYM", ver esios.py) selecciona el horario de tramos a usar — cualquier valor
+    distinto de "CYM" (incluido None) usa el horario PCB por defecto (ver cabecera del módulo)."""
     try:
         day = datetime.strptime(date_str, "%d/%m/%Y")
     except ValueError:
@@ -73,11 +96,59 @@ def hour_period(date_str: str, hour_label: str, holiday_calendar: holidays.Holid
     if not match:
         return LLANO
     hour = int(match.group(1))
-    if hour in _PUNTA_HOURS:
+    punta_hours, llano_hours = (_PUNTA_HOURS_CYM, _LLANO_HOURS_CYM) if zone == ZONE_CEUTA_MELILLA else (_PUNTA_HOURS, _LLANO_HOURS)
+    if hour in punta_hours:
         return PUNTA
-    if hour in _LLANO_HOURS:
+    if hour in llano_hours:
         return LLANO
     return VALLE
+
+
+def current_period(now: datetime, holiday_region: str | None = None, zone: str | None = None) -> str:
+    """Periodo tarifario (punta/llano/valle) vigente en el instante `now`, según el horario de
+    tramos de `zone` (ver `hour_period`) — para sensores que necesiten "en qué tramo estoy ahora"
+    sin reimplementar la clasificación horaria en una plantilla Jinja aparte (ver issue #4)."""
+    holiday_calendar = _get_holiday_calendar(holiday_region)
+    return hour_period(now.strftime("%d/%m/%Y"), f"{now.hour} - {now.hour + 1} h", holiday_calendar, zone)
+
+
+# Margen amplio para no dar vueltas de más buscando el próximo cambio de tramo — con un horario de
+# 3 periodos el cambio siempre llega en pocas horas, así que 10 días es de sobra incluso encadenando
+# festivos/fines de semana, y evita un bucle infinito si `hour_period` cambiase de comportamiento.
+_MAX_HOURS_LOOKAHEAD_FOR_PERIOD_CHANGE = 24 * 10
+
+
+def next_period_change(now: datetime, holiday_region: str | None = None, zone: str | None = None) -> datetime:
+    """Próxima hora EN PUNTO en la que cambia el periodo tarifario respecto al vigente en `now` —
+    para automatizaciones que se disparan exactamente al cambiar de tramo (ver issue #4), en vez de
+    a una hora fija a ciegas que asume dónde empieza cada periodo. El resultado siempre es una hora
+    en punto (minuto/segundo a 0), independientemente de los minutos de `now`."""
+    holiday_calendar = _get_holiday_calendar(holiday_region)
+    current = hour_period(now.strftime("%d/%m/%Y"), f"{now.hour} - {now.hour + 1} h", holiday_calendar, zone)
+    candidate = now.replace(minute=0, second=0, microsecond=0)
+    for _ in range(_MAX_HOURS_LOOKAHEAD_FOR_PERIOD_CHANGE):
+        candidate += timedelta(hours=1)
+        period = hour_period(candidate.strftime("%d/%m/%Y"), f"{candidate.hour} - {candidate.hour + 1} h", holiday_calendar, zone)
+        if period != current:
+            return candidate
+    return candidate  # no debería llegar aquí nunca con un horario de 3 periodos que cambia a diario
+
+
+def tramo_prices_today(now: datetime, sp_opts: dict) -> dict[int, float]:
+    """Precio CON impuestos (€/kWh) de cada una de las 24h de HOY, según el periodo tarifario
+    vigente en cada hora y los precios/impuestos configurados en `sp_opts` para este CUPS — a
+    diferencia de `cost_breakdown`, no depende de haber consumido nada esa hora, así que sirve para
+    estadísticas del día completo (mínimo/medio/máximo) sin esperar a que pase. Clave = hora (0-23)."""
+    holiday_calendar = _get_holiday_calendar(sp_opts.get("holiday_region"))
+    zone = sp_opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+    prices = {PUNTA: sp_opts.get("price_punta") or 0, LLANO: sp_opts.get("price_llano") or 0, VALLE: sp_opts.get("price_valle") or 0}
+    iee_percent = sp_opts.get("iee_percent") or 0
+    iva_percent = sp_opts.get("iva_percent") or 0
+    date_str = now.strftime("%d/%m/%Y")
+    return {
+        h: apply_iva(apply_iee(prices[hour_period(date_str, f"{h} - {h + 1} h", holiday_calendar, zone)], iee_percent), iva_percent)
+        for h in range(24)
+    }
 
 
 def _leading_hour(hour_label: str) -> int | None:
@@ -106,15 +177,17 @@ def cost_breakdown(
     field: str = "importedKwh",
     iee_percent: float | None = 0,
     iva_percent: float | None = 0,
+    zone: str | None = None,
 ) -> dict[str, float] | None:
     """kWh y coste, desglosados por periodo, para un consumo con `hourlyByDate`. `field` es la
     clave de cada punto horario a bucketear — "importedKwh" (consumo, por defecto) o "exportedKwh"
     (excedentes: mismo bucketing horario/festivo, con el precio plano de compensación repetido en
     los tres periodos si aplica). None si no hay datos horarios. `holiday_region` (CCAA) es
     opcional — sin ella, los festivos cuentan como día laborable normal (ver limitación conocida
-    más arriba). `iee_percent`/`iva_percent` se aplican EN ESE ORDEN a cada coste de periodo (y por
-    tanto al total, ver `apply_iee`/`apply_iva`) — déjalos a 0 para excedentes/compensación, que no
-    llevan impuestos (ver cabecera)."""
+    más arriba). `zone` ("PCB"/"CYM") selecciona el horario de tramos, ver `hour_period` y la
+    cabecera del módulo (issue #5). `iee_percent`/`iva_percent` se aplican EN ESE ORDEN a cada coste
+    de periodo (y por tanto al total, ver `apply_iee`/`apply_iva`) — déjalos a 0 para excedentes/
+    compensación, que no llevan impuestos (ver cabecera)."""
     if not consumption or not consumption.get("hourlyByDate"):
         return None
 
@@ -122,7 +195,7 @@ def cost_breakdown(
     kwh_by_period = {PUNTA: 0.0, LLANO: 0.0, VALLE: 0.0}
     for date_str, hours in consumption["hourlyByDate"].items():
         for h in hours:
-            period = hour_period(date_str, h.get("hour", ""), holiday_calendar)
+            period = hour_period(date_str, h.get("hour", ""), holiday_calendar, zone)
             kwh_by_period[period] += h.get(field) or 0
 
     cost_by_period_sin_impuestos = {period: round(kwh * prices.get(period, 0), 4) for period, kwh in kwh_by_period.items()}
@@ -195,10 +268,12 @@ def estimate_energy_cost(
     pvpc_prices_by_zone: dict[str, dict[str, float]] | None = None,
 ) -> dict | None:
     """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto). Para "pvpc",
-    `pvpc_prices_by_zone` es {zona: {"DD/MM/YYYY H": precio}} (ver coordinator.py) y se usa la zona
-    configurada en `sp_opts["pvpc_zone"]` de ESTE CUPS. El IEE y el IVA (`sp_opts["iee_percent"]`/
-    `["iva_percent"]`) se aplican EN ESE ORDEN en los tres casos — ver `apply_iee`/`apply_iva` y la
-    limitación de la cabecera del módulo."""
+    `pvpc_prices_by_zone` es {zona: {"DD/MM/YYYY H": precio}} (ver coordinator.py); la zona
+    configurada en `sp_opts["pvpc_zone"]` de ESTE CUPS se usa tanto para elegir los precios PVPC
+    como (para "tramos") para elegir el horario de tramos correcto (PCB/CYM, ver `hour_period` y
+    la cabecera del módulo — issue #5). El IEE y el IVA (`sp_opts["iee_percent"]`/`["iva_percent"]`)
+    se aplican EN ESE ORDEN en los tres casos — ver `apply_iee`/`apply_iva` y la limitación de la
+    cabecera del módulo."""
     tariff_type = sp_opts.get("tariff_type") or TARIFF_TRAMOS
     iee_percent = sp_opts.get("iee_percent") or 0
     iva_percent = sp_opts.get("iva_percent") or 0
@@ -234,7 +309,12 @@ def estimate_energy_cost(
         VALLE: sp_opts.get("price_valle") or 0,
     }
     breakdown = cost_breakdown(
-        hourly_source, prices, sp_opts.get("holiday_region"), iee_percent=iee_percent, iva_percent=iva_percent
+        hourly_source,
+        prices,
+        sp_opts.get("holiday_region"),
+        iee_percent=iee_percent,
+        iva_percent=iva_percent,
+        zone=sp_opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE,
     )
     if breakdown:
         breakdown["tariff_type"] = TARIFF_TRAMOS

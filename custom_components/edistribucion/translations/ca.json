@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Preu PVPC actual"
       },
+      "current_tramo_price": {
+        "name": "Preu actual (trams)"
+      },
+      "next_tramo_period_change": {
+        "name": "Proper canvi de tram"
+      },
       "self_consumption_today": {
         "name": "Autosuficiència aproximada avui"
       },

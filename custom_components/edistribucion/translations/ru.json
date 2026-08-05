@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Текущая цена PVPC"
       },
+      "current_tramo_price": {
+        "name": "Текущая цена (по периодам)"
+      },
+      "next_tramo_period_change": {
+        "name": "Следующая смена периода"
+      },
       "self_consumption_today": {
         "name": "Приблизительная энергетическая самодостаточность сегодня"
       },

@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Prix PVPC actuel"
       },
+      "current_tramo_price": {
+        "name": "Prix actuel (par tranches)"
+      },
+      "next_tramo_period_change": {
+        "name": "Prochain changement de tranche"
+      },
       "self_consumption_today": {
         "name": "Autosuffisance énergétique approximative aujourd'hui"
       },

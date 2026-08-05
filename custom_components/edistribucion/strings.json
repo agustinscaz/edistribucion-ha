@@ -191,6 +191,12 @@
       "current_pvpc_price": {
         "name": "Precio PVPC actual"
       },
+      "current_tramo_price": {
+        "name": "Precio actual (tramos)"
+      },
+      "next_tramo_period_change": {
+        "name": "Próximo cambio de tramo"
+      },
       "self_consumption_today": {
         "name": "Autosuficiencia aproximada hoy"
       },

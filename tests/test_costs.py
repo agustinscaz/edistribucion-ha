@@ -3,6 +3,8 @@ autosuficiencia y comparador de tarifas. No depende de Home Assistant."""
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from custom_components.edistribucion.costs import (  # noqa: E402
@@ -13,14 +15,17 @@ from custom_components.edistribucion.costs import (  # noqa: E402
     apply_iva,
     average_price_per_kwh,
     cost_breakdown,
+    current_period,
     estimate_cost_as_tariff,
     estimate_energy_cost,
     hour_period,
     monthly_summary_csv,
+    next_period_change,
     power_cost,
     pvpc_cost_breakdown,
     self_consumption_ratio,
     surplus_compensation_value,
+    tramo_prices_today,
 )
 
 
@@ -49,9 +54,40 @@ class TestHourPeriod:
         # 27/07/2026 es lunes
         assert hour_period("27/07/2026", hour_label) == expected
 
+    def test_weekday_hours_default_zone_matches_pcb(self):
+        """zone=None (instalaciones sin pvpc_zone guardado) usa el horario PCB, igual que zone="PCB"."""
+        assert hour_period("27/07/2026", "11 - 12 h", zone=None) == PUNTA
+        assert hour_period("27/07/2026", "11 - 12 h", zone="PCB") == PUNTA
+
+    @pytest.mark.parametrize(
+        "hour_label,expected",
+        [
+            # Ver issue #5: mismo horario que PCB desplazado +1h (11-15h/19-23h punta,
+            # 9-11h/15-19h/23-01h llano, resto valle).
+            ("11 - 12 h", PUNTA),
+            ("14 - 15 h", PUNTA),
+            ("19 - 20 h", PUNTA),
+            ("22 - 23 h", PUNTA),
+            ("9 - 10 h", LLANO),
+            ("10 - 11 h", LLANO),  # PUNTA en PCB, LLANO en CYM — el caso que reportaba el bug
+            ("15 - 16 h", LLANO),
+            ("18 - 19 h", LLANO),  # PUNTA en PCB, LLANO en CYM
+            ("23 - 24 h", LLANO),
+            ("0 - 1 h", LLANO),  # LLANO en CYM (23-01h), VALLE en PCB
+            ("1 - 2 h", VALLE),
+            ("8 - 9 h", VALLE),  # LLANO en PCB, VALLE en CYM
+        ],
+    )
+    def test_weekday_hours_cym_zone_shifted_one_hour(self, hour_label, expected):
+        # 27/07/2026 es lunes
+        assert hour_period("27/07/2026", hour_label, zone="CYM") == expected
+
     def test_saturday_is_always_valle(self):
         # 25/07/2026 es sábado
         assert hour_period("25/07/2026", "11 - 12 h") == VALLE
+
+    def test_saturday_is_always_valle_in_cym_too(self):
+        assert hour_period("25/07/2026", "11 - 12 h", zone="CYM") == VALLE
 
     def test_sunday_is_always_valle(self):
         # 26/07/2026 es domingo
@@ -164,6 +200,17 @@ class TestCostBreakdown:
         assert result["kwh_valle"] == 3.0
         assert result["coste_punta"] == pytest.approx(0.12)
         assert result["coste_valle"] == pytest.approx(0.18)
+
+    def test_zone_cym_reclassifies_hour_that_would_be_punta_in_pcb(self):
+        """Ver issue #5: 10-11h es PUNTA en PCB pero LLANO en CYM — sin `zone`, este kWh se
+        clasificaría (mal) como punta para un CUPS de Ceuta/Melilla."""
+        consumption = _hourly("27/07/2026", [("10 - 11 h", 2.0)])  # lunes
+        prices = {PUNTA: 0.30, LLANO: 0.20, VALLE: 0.10}
+        result_pcb = cost_breakdown(consumption, prices, zone="PCB")
+        result_cym = cost_breakdown(consumption, prices, zone="CYM")
+        assert result_pcb["kwh_punta"] == 2.0
+        assert result_cym["kwh_punta"] == 0.0
+        assert result_cym["kwh_llano"] == 2.0
 
     def test_iva_percent_applied_to_each_period_and_total(self):
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0), ("0 - 1 h", 3.0)])
@@ -373,6 +420,15 @@ class TestEstimateEnergyCost:
         hourly = _hourly("06/01/2026", [("11 - 12 h", 5.0)])
         result = estimate_energy_cost(sp, 5.0, hourly)
         assert result["kwh_valle"] == 5.0
+
+    def test_tramos_uses_pvpc_zone_from_sp_opts_for_hour_classification(self):
+        """Ver issue #5: sp_opts["pvpc_zone"]="CYM" también debe cambiar el horario de tramos, no
+        solo el precio pvpc — 10-11h es LLANO en CYM (PUNTA en PCB, la zona por defecto)."""
+        sp = {"tariff_type": "tramos", "price_punta": 1.0, "price_llano": 1.0, "pvpc_zone": "CYM"}
+        hourly = _hourly("27/07/2026", [("10 - 11 h", 5.0)])  # lunes
+        result = estimate_energy_cost(sp, 5.0, hourly)
+        assert result["kwh_punta"] == 0.0
+        assert result["kwh_llano"] == 5.0
 
     def test_default_tariff_is_tramos(self):
         sp = {"price_punta": 1.0, "price_llano": 0, "price_valle": 0}  # sin tariff_type
@@ -587,3 +643,77 @@ class TestMonthlySummaryCsv:
         assert f"termino_potencia,{potencia}" in csv
         total = round(energia + potencia - 0.2, 4)
         assert f"total_estimado,{total}" in csv
+
+
+class TestCurrentPeriod:
+    """Ver issue #4 — usadas por el sensor de precio actual con impuestos para tarifa 'tramos'."""
+
+    def test_pcb_punta_hour(self):
+        # 27/07/2026 es lunes, 10h -> punta en PCB
+        assert current_period(datetime(2026, 7, 27, 10, 30)) == PUNTA
+
+    def test_pcb_llano_hour(self):
+        assert current_period(datetime(2026, 7, 27, 9, 0)) == LLANO
+
+    def test_cym_zone_reclassifies_hour_10_as_llano(self):
+        """Mismo instante que test_pcb_punta_hour, pero con zone="CYM" -> llano, no punta (issue #5)."""
+        assert current_period(datetime(2026, 7, 27, 10, 30), zone="CYM") == LLANO
+
+    def test_weekend_is_always_valle(self):
+        # 25/07/2026 es sábado
+        assert current_period(datetime(2026, 7, 25, 12, 0)) == VALLE
+
+    def test_holiday_with_region_is_valle(self):
+        # 6 de enero de 2026 (Reyes) es martes
+        assert current_period(datetime(2026, 1, 6, 11, 0), holiday_region="IB") == VALLE
+
+    def test_holiday_without_region_counts_as_normal(self):
+        assert current_period(datetime(2026, 1, 6, 11, 0)) == PUNTA
+
+
+class TestNextPeriodChange:
+    def test_change_within_same_day(self):
+        # Lunes 09:30 (llano) -> el próximo cambio es a las 10:00 (empieza punta)
+        result = next_period_change(datetime(2026, 7, 27, 9, 30))
+        assert result == datetime(2026, 7, 27, 10, 0)
+
+    def test_result_is_always_on_the_hour(self):
+        result = next_period_change(datetime(2026, 7, 27, 9, 45))
+        assert result.minute == 0
+        assert result.second == 0
+
+    def test_crosses_weekend_into_monday_llano(self):
+        """Domingo (valle todo el día) -> el próximo cambio es el lunes a las 8h, cuando PCB pasa
+        de valle a llano — cruza más de un día, no solo una hora."""
+        result = next_period_change(datetime(2026, 7, 26, 15, 0))
+        assert result == datetime(2026, 7, 27, 8, 0)
+
+    def test_cym_zone_changes_at_different_hour_than_pcb(self):
+        # Lunes 10:30: en CYM es llano (empezó a las 9h) y sigue siéndolo hasta las 11h -> punta.
+        result = next_period_change(datetime(2026, 7, 27, 10, 30), zone="CYM")
+        assert result == datetime(2026, 7, 27, 11, 0)
+
+
+class TestTramoPricesToday:
+    def test_maps_each_hour_to_its_period_price(self):
+        sp = {"price_punta": 0.30, "price_llano": 0.20, "price_valle": 0.10}
+        prices = tramo_prices_today(datetime(2026, 7, 27, 12, 0), sp)  # lunes
+        assert prices[10] == pytest.approx(0.30)  # punta
+        assert prices[9] == pytest.approx(0.20)  # llano
+        assert prices[0] == pytest.approx(0.10)  # valle
+        assert len(prices) == 24
+
+    def test_weekend_is_all_valle_price(self):
+        sp = {"price_punta": 0.30, "price_llano": 0.20, "price_valle": 0.10}
+        prices = tramo_prices_today(datetime(2026, 7, 25, 12, 0), sp)  # sábado
+        assert all(p == pytest.approx(0.10) for p in prices.values())
+
+    def test_applies_configured_taxes(self):
+        sp = {"price_punta": 0.30, "price_llano": 0.20, "price_valle": 0.10, "iee_percent": 5.11269632, "iva_percent": 21}
+        prices = tramo_prices_today(datetime(2026, 7, 27, 12, 0), sp)  # lunes
+        assert prices[10] == pytest.approx(apply_iva(apply_iee(0.30, 5.11269632), 21))
+
+    def test_uses_cym_zone_for_hour_classification(self):
+        sp = {"price_punta": 0.30, "price_llano": 0.20, "pvpc_zone": "CYM"}
+        prices = tramo_prices_today(datetime(2026, 7, 27, 12, 0), sp)  # lunes
+        assert prices[10] == pytest.approx(0.20)  # llano en CYM, no punta

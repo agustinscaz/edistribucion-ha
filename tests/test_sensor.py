@@ -244,6 +244,92 @@ async def test_tramo_cost_sensor_applies_iee_before_iva(hass):
     assert by_id["contA_punta_cost_today"].native_value == pytest.approx(apply_iva(apply_iee(0.5, 5.11269632), 21))
 
 
+async def test_tramo_sensor_uses_cym_zone_for_hour_classification(hass):
+    """Ver issue #5: 10-11h es LLANO en CYM (era PUNTA sin la zona, con el horario PCB por
+    defecto) — mismo CUPS, mismo consumo, resultado distinto solo por la zona configurada."""
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "pvpc_zone": "CYM"})
+    hourly = {"27/07/2026": [{"hour": "10 - 11 h", "importedKwh": 2.0}]}  # lunes
+    bundle["consumption"] = {"dailyTotals": [], "hourlyByDate": hourly}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_punta_kwh_today"].native_value == 0.0
+    assert by_id["contA_llano_kwh_today"].native_value == 2.0
+    assert by_id["contA_llano_cost_today"].native_value == pytest.approx(0.3)
+
+
+async def test_current_tramo_price_sensors_only_for_tramos_with_price_configured(hass):
+    """Ver issue #4 — mismo criterio de creación que el resto de sensores de tramos."""
+    bundles_with_price = {"contA": _bundle({"tariff_type": "tramos", "price_punta": 0.25})}
+    entities_with = await _setup_with_fake_coordinator(hass, bundles_with_price)
+    ids_with = _unique_ids(entities_with)
+    assert "contA_current_tramo_price" in ids_with
+    assert "contA_next_tramo_period_change" in ids_with
+
+    hass.data[DOMAIN].clear()
+    bundles_without_price = {"contA": _bundle({"tariff_type": "tramos"})}  # sin ningún precio puesto
+    entities_without = await _setup_with_fake_coordinator(hass, bundles_without_price)
+    assert "contA_current_tramo_price" not in _unique_ids(entities_without)
+
+    hass.data[DOMAIN].clear()
+    bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
+    entities_pvpc = await _setup_with_fake_coordinator(hass, bundles_pvpc)
+    assert "contA_current_tramo_price" not in _unique_ids(entities_pvpc)
+
+
+async def test_current_tramo_price_sensor_value_and_period_attribute(hass, monkeypatch):
+    """Lunes 10:30 -> punta en PCB (zona por defecto de _bundle)."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 10, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_current_tramo_price"]
+
+    assert sensor.native_value == pytest.approx(0.25)
+    attrs = sensor.extra_state_attributes
+    assert attrs["periodo_actual"] == "punta"
+    assert attrs["precio_minimo_hoy"] == pytest.approx(0.05)
+    assert attrs["precio_maximo_hoy"] == pytest.approx(0.25)
+
+
+async def test_current_tramo_price_sensor_applies_iee_and_iva(hass, monkeypatch):
+    from datetime import datetime, timezone
+
+    from custom_components.edistribucion.costs import apply_iee, apply_iva
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 10, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "iee_percent": 5.11269632, "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_current_tramo_price"].native_value == pytest.approx(apply_iva(apply_iee(0.25, 5.11269632), 21))
+
+
+async def test_next_tramo_period_change_sensor_value(hass, monkeypatch):
+    """Lunes 09:30 (llano en PCB) -> el próximo cambio es a las 10:00 (empieza punta)."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 9, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_next_tramo_period_change"]
+
+    assert sensor.native_value == datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc)
+    assert sensor.extra_state_attributes["siguiente_periodo"] == "punta"
+
+
 async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
     bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
     bundles_fija = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
