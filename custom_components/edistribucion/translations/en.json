@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Supply point {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nChoose whether to track this supply point, set an alias, and pick the tariff type (fixed/time-of-use/pvpc), the power term price, the energy prices for the chosen tariff, surplus compensation, and (if using pvpc) the zone. Contracted power (kW) is read automatically from e-distribución — no need to type it in.\n\nTomorrow's pvpc prices are published around 20:15 the day before — no key or signup needed, it uses REE's public price file.",
+        "description": "{address} ({estado})\n\nChoose whether to track this supply point, set an alias, and pick the tariff type (fixed/time-of-use/pvpc), the VAT percentage to apply, the power term price, the energy prices for the chosen tariff, surplus compensation, and (if using pvpc) the zone. Contracted power (kW) is read automatically from e-distribución — no need to type it in.\n\nTomorrow's pvpc prices are published around 20:15 the day before — no key or signup needed, it uses REE's public price file.",
         "data": {
           "track": "Track this supply point",
           "alias": "Alias (optional)",
           "tariff_type": "Tariff type: fixed / time-of-use / pvpc",
+          "iva_percent": "VAT to apply (%)",
           "price_power_punta": "Peak power price (€/kW/day)",
           "price_power_valle": "Off-peak power price (€/kW/day)",
           "fixed_price": "Fixed price (€/kWh, if tariff is 'fixed')",
@@ -89,6 +90,12 @@
       },
       "estimated_cost_month": {
         "name": "Estimated cost (month)"
+      },
+      "estimated_cost_today_with_power": {
+        "name": "Cost today (with power)"
+      },
+      "estimated_cost_month_with_power": {
+        "name": "Cost this month (with power)"
       },
       "power_cost_today": {
         "name": "Power term (day)"

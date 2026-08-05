@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Zählpunkt {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nWähle, ob dieser Zählpunkt verfolgt werden soll, einen Alias, die Tarifart (fest/zeitgestaffelt/pvpc), den Preis für den Leistungsterm, die Energiepreise je nach gewähltem Tarif, die Einspeisevergütung, und (bei pvpc) die Zone. Die vertraglich vereinbarte Leistung (kW) wird automatisch von e-distribución gelesen — du musst sie nicht eingeben.\n\nDie PVPC-Preise für morgen werden gegen 20:15 Uhr am Vortag veröffentlicht — es ist kein Schlüssel und keine Registrierung nötig, es wird die öffentliche Datei von REE verwendet.",
+        "description": "{address} ({estado})\n\nWähle, ob dieser Zählpunkt verfolgt werden soll, einen Alias, die Tarifart (fest/zeitgestaffelt/pvpc), den anzuwendenden Mehrwertsteuersatz (%), den Preis für den Leistungsterm, die Energiepreise je nach gewähltem Tarif, die Einspeisevergütung, und (bei pvpc) die Zone. Die vertraglich vereinbarte Leistung (kW) wird automatisch von e-distribución gelesen — du musst sie nicht eingeben.\n\nDie PVPC-Preise für morgen werden gegen 20:15 Uhr am Vortag veröffentlicht — es ist kein Schlüssel und keine Registrierung nötig, es wird die öffentliche Datei von REE verwendet.",
         "data": {
           "track": "Diesen Zählpunkt verfolgen",
           "alias": "Alias (optional)",
           "tariff_type": "Tarifart: fest / zeitgestaffelt / pvpc",
+          "iva_percent": "Anzuwendende Mehrwertsteuer (%)",
           "price_power_punta": "Leistungspreis Spitzenlast (€/kW/Tag)",
           "price_power_valle": "Leistungspreis Schwachlast (€/kW/Tag)",
           "fixed_price": "Festpreis (€/kWh, wenn Tarif 'fest')",
@@ -89,6 +90,12 @@
       },
       "estimated_cost_month": {
         "name": "Geschätzte Kosten (Monat)"
+      },
+      "estimated_cost_today_with_power": {
+        "name": "Kosten heute (mit Leistung)"
+      },
+      "estimated_cost_month_with_power": {
+        "name": "Kosten diesen Monat (mit Leistung)"
       },
       "power_cost_today": {
         "name": "Leistungsterm (Tag)"

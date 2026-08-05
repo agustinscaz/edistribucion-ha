@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Point de livraison {position}/{total} : {cups}",
-        "description": "{address} ({estado})\n\nChoisissez si vous voulez suivre ce point de livraison, un alias, le type de tarif (fixe/par tranches/pvpc), le prix du terme de puissance, les prix de l'énergie selon le tarif choisi, la compensation des excédents, et (si vous utilisez pvpc) la zone. La puissance souscrite (kW) est lue automatiquement depuis e-distribución — inutile de la saisir.\n\nLes prix de demain en tarif pvpc sont publiés vers 20h15 la veille — aucune clé ni inscription n'est nécessaire, le fichier public de REE est utilisé.",
+        "description": "{address} ({estado})\n\nChoisissez si vous voulez suivre ce point de livraison, un alias, le type de tarif (fixe/par tranches/pvpc), la TVA à appliquer (%), le prix du terme de puissance, les prix de l'énergie selon le tarif choisi, la compensation des excédents, et (si vous utilisez pvpc) la zone. La puissance souscrite (kW) est lue automatiquement depuis e-distribución — inutile de la saisir.\n\nLes prix de demain en tarif pvpc sont publiés vers 20h15 la veille — aucune clé ni inscription n'est nécessaire, le fichier public de REE est utilisé.",
         "data": {
           "track": "Suivre ce point de livraison",
           "alias": "Alias (facultatif)",
           "tariff_type": "Type de tarif : fixe / par tranches / pvpc",
+          "iva_percent": "TVA à appliquer (%)",
           "price_power_punta": "Prix puissance heures pleines (€/kW/jour)",
           "price_power_valle": "Prix puissance heures creuses (€/kW/jour)",
           "fixed_price": "Prix fixe (€/kWh, si le tarif est 'fixe')",
@@ -89,6 +90,12 @@
       },
       "estimated_cost_month": {
         "name": "Coût estimé (mois)"
+      },
+      "estimated_cost_today_with_power": {
+        "name": "Coût aujourd'hui (avec puissance)"
+      },
+      "estimated_cost_month_with_power": {
+        "name": "Coût ce mois-ci (avec puissance)"
       },
       "power_cost_today": {
         "name": "Terme de puissance (jour)"

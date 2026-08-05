@@ -9,6 +9,7 @@ from custom_components.edistribucion.costs import (  # noqa: E402
     LLANO,
     PUNTA,
     VALLE,
+    apply_iva,
     average_price_per_kwh,
     cost_breakdown,
     estimate_cost_as_tariff,
@@ -163,6 +164,20 @@ class TestCostBreakdown:
         assert result["coste_punta"] == pytest.approx(0.12)
         assert result["coste_valle"] == pytest.approx(0.18)
 
+    def test_iva_percent_applied_to_each_period_and_total(self):
+        consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0), ("0 - 1 h", 3.0)])
+        prices = {PUNTA: 0.30, VALLE: 0.10}
+        result = cost_breakdown(consumption, prices, iva_percent=21)
+        assert result["total_sin_iva"] == pytest.approx(0.9)
+        assert result["coste_punta"] == pytest.approx(0.6 * 1.21)
+        assert result["total"] == pytest.approx(0.9 * 1.21)
+
+    def test_iva_defaults_to_zero_when_not_passed(self):
+        consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
+        result = cost_breakdown(consumption, {PUNTA: 0.30})
+        assert result["total"] == result["total_sin_iva"]
+        assert result["iva_percent"] == 0
+
 
 class TestPvpcCostBreakdown:
     def test_none_consumption_returns_none(self):
@@ -206,12 +221,60 @@ class TestPvpcCostBreakdown:
         result = pvpc_cost_breakdown(consumption, prices)
         assert result["kwh_con_precio"] == 3.0  # la hora sin etiqueta parseable no cuenta ni suma
 
+    def test_iva_percent_applied_to_total(self):
+        consumption = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
+        prices = {"27/07/2026 0": 0.10}
+        result = pvpc_cost_breakdown(consumption, prices, iva_percent=21)
+        assert result["total_sin_iva"] == pytest.approx(0.2)
+        assert result["total"] == pytest.approx(0.242)
+
+
+class TestApplyIva:
+    def test_basic(self):
+        assert apply_iva(100.0, 21) == 121.0
+
+    def test_zero_percent_is_noop(self):
+        assert apply_iva(100.0, 0) == 100.0
+
+    def test_none_percent_treated_as_zero(self):
+        assert apply_iva(100.0, None) == 100.0
+
+    def test_rounds_to_4_decimals(self):
+        assert apply_iva(1 / 3, 21) == round((1 / 3) * 1.21, 4)
+
 
 class TestEstimateEnergyCost:
     def test_fija_basic(self):
         sp = {"tariff_type": "fija", "fixed_price": 0.15}
         result = estimate_energy_cost(sp, 10.0, None)
-        assert result == {"tariff_type": "fija", "precio_eur_kwh": 0.15, "total": 1.5}
+        assert result == {
+            "tariff_type": "fija",
+            "precio_eur_kwh": 0.15,
+            "iva_percent": 0,
+            "total_sin_iva": 1.5,
+            "total": 1.5,
+        }
+
+    def test_fija_applies_configured_iva(self):
+        sp = {"tariff_type": "fija", "fixed_price": 0.15, "iva_percent": 21}
+        result = estimate_energy_cost(sp, 10.0, None)
+        assert result["total_sin_iva"] == 1.5
+        assert result["total"] == pytest.approx(1.815)
+
+    def test_tramos_applies_configured_iva(self):
+        sp = {"tariff_type": "tramos", "price_punta": 0.3, "price_llano": 0.2, "price_valle": 0.1, "iva_percent": 10}
+        hourly = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
+        result = estimate_energy_cost(sp, 2.0, hourly)
+        assert result["total_sin_iva"] == pytest.approx(0.6)
+        assert result["total"] == pytest.approx(0.66)
+
+    def test_pvpc_applies_configured_iva(self):
+        sp = {"tariff_type": "pvpc", "iva_percent": 21}
+        hourly = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
+        prices_by_zone = {"PCB": {"27/07/2026 0": 0.10}}
+        result = estimate_energy_cost(sp, 2.0, hourly, prices_by_zone)
+        assert result["total_sin_iva"] == pytest.approx(0.2)
+        assert result["total"] == pytest.approx(0.242)
 
     def test_fija_without_price_returns_none(self):
         sp = {"tariff_type": "fija"}
@@ -311,6 +374,10 @@ class TestPowerCost:
         sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08}
         assert power_cost(sp) == pytest.approx(0.4)
 
+    def test_iva_percent_applied(self):
+        sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08, "iva_percent": 21}
+        assert power_cost(sp) == pytest.approx(0.4 * 1.21)
+
 
 class TestSelfConsumptionRatio:
     def test_no_grid_import_is_100_percent(self):
@@ -390,3 +457,23 @@ class TestMonthlySummaryCsv:
         csv = monthly_summary_csv(sp, None)
         assert "coste_energia,0" in csv
         assert "total_estimado,0" in csv
+
+    def test_iva_percent_applied_to_energy_and_power_not_surplus(self):
+        sp = {
+            "tariff_type": "fija",
+            "fixed_price": 0.2,
+            "iva_percent": 21,
+            "contracted_power_punta_kw": 5.0,
+            "price_power_punta": 0.1,
+            "surplus_compensation": True,
+            "surplus_price": 0.05,
+        }
+        month = {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0}
+        csv = monthly_summary_csv(sp, month)
+        assert "iva_percent,21" in csv
+        assert "coste_energia_sin_iva,2.0" in csv
+        assert "coste_energia,2.42" in csv  # 10*0.2 * 1.21
+        assert "termino_potencia,0.605" in csv  # 5*0.1 * 1.21
+        assert "compensacion_excedentes,0.2" in csv  # sin IVA, ver TestSurplusCompensationValue
+        # 2.42 (energía) + 0.605 (potencia) - 0.2 (excedentes) = 2.825
+        assert "total_estimado,2.825" in csv

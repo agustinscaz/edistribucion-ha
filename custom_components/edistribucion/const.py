@@ -77,6 +77,18 @@ HOLIDAY_REGIONS = {
     "VC": "C. Valenciana",
 }
 
+# IVA (%) a aplicar sobre el coste de energía Y el término de potencia de ESTE CUPS (por CUPS, no
+# global, porque algunos contratos tienen IVA reducido — p.ej. bono social térmico). NO se aplica a
+# la compensación por excedentes (es una bonificación que se resta, no un consumo que se compense
+# con IVA) ni al desglose de excedentes exportados por tramo — ver costs.py. Instalaciones YA
+# EXISTENTES que no tengan esta clave guardada siguen calculando el coste SIN IVA (0% por defecto en
+# costs.py) hasta que el usuario abra Opciones y lo confirme — así no cambia de golpe un valor que ya
+# tenían configurado (ver v1.13 lección de config_options_no_rename_without_migration). El 21%
+# sugerido aquí es solo el valor que se PRErellena en el formulario de Opciones para que no arranque
+# de 0, no lo que ya tiene guardado alguien que no ha abierto Opciones todavía.
+CONF_IVA_PERCENT = "iva_percent"
+DEFAULT_IVA_PERCENT = 21
+
 # Umbral de fallos consecutivos del coordinator antes de levantar un Repair issue (ver repairs.py)
 CONSECUTIVE_FAILURES_FOR_REPAIR = 3
 

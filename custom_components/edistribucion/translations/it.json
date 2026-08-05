@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Punto di fornitura {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nScegli se seguire questo punto di fornitura, un alias, il tipo di tariffa (fissa/a fasce/pvpc), il prezzo del termine di potenza, i prezzi dell'energia in base alla tariffa scelta, la compensazione delle eccedenze e (se usi pvpc) la zona. La potenza contrattuale (kW) viene letta automaticamente da e-distribución — non serve inserirla.\n\nI prezzi di domani con tariffa pvpc vengono pubblicati verso le 20:15 del giorno precedente — non serve alcuna chiave né registrazione, si usa il file pubblico di REE.",
+        "description": "{address} ({estado})\n\nScegli se seguire questo punto di fornitura, un alias, il tipo di tariffa (fissa/a fasce/pvpc), l'IVA da applicare (%), il prezzo del termine di potenza, i prezzi dell'energia in base alla tariffa scelta, la compensazione delle eccedenze e (se usi pvpc) la zona. La potenza contrattuale (kW) viene letta automaticamente da e-distribución — non serve inserirla.\n\nI prezzi di domani con tariffa pvpc vengono pubblicati verso le 20:15 del giorno precedente — non serve alcuna chiave né registrazione, si usa il file pubblico di REE.",
         "data": {
           "track": "Segui questo punto di fornitura",
           "alias": "Alias (opzionale)",
           "tariff_type": "Tipo di tariffa: fissa / a fasce / pvpc",
+          "iva_percent": "IVA da applicare (%)",
           "price_power_punta": "Prezzo potenza di punta (€/kW/giorno)",
           "price_power_valle": "Prezzo potenza fuori punta (€/kW/giorno)",
           "fixed_price": "Prezzo fisso (€/kWh, se la tariffa è 'fissa')",
@@ -89,6 +90,12 @@
       },
       "estimated_cost_month": {
         "name": "Costo stimato (mese)"
+      },
+      "estimated_cost_today_with_power": {
+        "name": "Costo oggi (con potenza)"
+      },
+      "estimated_cost_month_with_power": {
+        "name": "Costo questo mese (con potenza)"
       },
       "power_cost_today": {
         "name": "Termine di potenza (giorno)"

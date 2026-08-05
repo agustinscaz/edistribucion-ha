@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Subministrament {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nTria si vols seguir aquest subministrament, un àlies, el tipus de tarifa (fixa/trams/pvpc), el preu del terme de potència, els preus d'energia segons la tarifa triada, la compensació d'excedents, i (si fas servir pvpc) la zona. La potència contractada (kW) es llegeix sola des d'e-distribución — no cal que l'escriguis.\n\nEls preus de demà amb tarifa pvpc es publiquen cap a les 20:15h del dia anterior — no cal cap clau ni registre, s'utilitza el fitxer públic de REE.",
+        "description": "{address} ({estado})\n\nTria si vols seguir aquest subministrament, un àlies, el tipus de tarifa (fixa/trams/pvpc), l'IVA a aplicar (%), el preu del terme de potència, els preus d'energia segons la tarifa triada, la compensació d'excedents, i (si fas servir pvpc) la zona. La potència contractada (kW) es llegeix sola des d'e-distribución — no cal que l'escriguis.\n\nEls preus de demà amb tarifa pvpc es publiquen cap a les 20:15h del dia anterior — no cal cap clau ni registre, s'utilitza el fitxer públic de REE.",
         "data": {
           "track": "Seguir aquest subministrament",
           "alias": "Àlies (opcional)",
           "tariff_type": "Tipus de tarifa: fixa / trams / pvpc",
+          "iva_percent": "IVA a aplicar (%)",
           "price_power_punta": "Preu potència punta (€/kW/dia)",
           "price_power_valle": "Preu potència vall (€/kW/dia)",
           "fixed_price": "Preu fix (€/kWh, si la tarifa és 'fixa')",
@@ -89,6 +90,12 @@
       },
       "estimated_cost_month": {
         "name": "Cost estimat (mes)"
+      },
+      "estimated_cost_today_with_power": {
+        "name": "Cost avui (amb potència)"
+      },
+      "estimated_cost_month_with_power": {
+        "name": "Cost aquest mes (amb potència)"
       },
       "power_cost_today": {
         "name": "Terme de potència (dia)"

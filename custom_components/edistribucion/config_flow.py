@@ -17,12 +17,14 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
     CONF_HOLIDAY_REGION,
+    CONF_IVA_PERCENT,
     CONF_PRICE_POWER_PUNTA,
     CONF_PRICE_POWER_VALLE,
     CONF_PVPC_ZONE,
     CONF_SUPPLY_POINTS,
     DEFAULT_HOLIDAY_REGION,
     DEFAULT_HOST,
+    DEFAULT_IVA_PERCENT,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
@@ -124,6 +126,7 @@ _SUPPLY_POINT_FIELD_DEFAULTS = {
     "track": True,
     "alias": "",
     "tariff_type": TARIFF_TRAMOS,
+    CONF_IVA_PERCENT: DEFAULT_IVA_PERCENT,
     CONF_PRICE_POWER_PUNTA: 0,
     CONF_PRICE_POWER_VALLE: 0,
     "fixed_price": 0,
@@ -139,11 +142,11 @@ _SUPPLY_POINT_FIELD_DEFAULTS = {
 
 class EdistribucionOptionsFlow(config_entries.OptionsFlow):
     """Paso 1: solo el intervalo de actualización (global). Un paso más por cada suministro, uno
-    detrás de otro: si seguirlo, alias, tipo de tarifa (fija/tramos/pvpc) con sus precios, precio del
-    término de potencia, zona PVPC y compensación de excedentes — TODO por CUPS (distintos contratos
-    pueden tener tarifas distintas), cada uno en su propia pantalla en vez de un formulario gigante
-    con todos mezclados. La potencia contratada (kW) NO se pide — se lee en vivo de e-distribución
-    (ver coordinator.py)."""
+    detrás de otro: si seguirlo, alias, tipo de tarifa (fija/tramos/pvpc) con sus precios, IVA,
+    precio del término de potencia, zona PVPC y compensación de excedentes — TODO por CUPS (distintos
+    contratos pueden tener tarifas o IVA distintos), cada uno en su propia pantalla en vez de un
+    formulario gigante con todos mezclados. La potencia contratada (kW) NO se pide — se lee en vivo
+    de e-distribución (ver coordinator.py)."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -202,6 +205,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 "track": user_input.get("track", True),
                 "alias": user_input.get("alias", "").strip(),
                 "tariff_type": user_input.get("tariff_type", TARIFF_TRAMOS),
+                CONF_IVA_PERCENT: user_input.get(CONF_IVA_PERCENT, DEFAULT_IVA_PERCENT),
                 CONF_PRICE_POWER_PUNTA: user_input.get(CONF_PRICE_POWER_PUNTA, 0),
                 CONF_PRICE_POWER_VALLE: user_input.get(CONF_PRICE_POWER_VALLE, 0),
                 "fixed_price": user_input.get("fixed_price", 0),
@@ -229,6 +233,9 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 vol.Required("track", default=prev.get("track", True)): bool,
                 vol.Optional("alias", default=prev.get("alias", "")): str,
                 vol.Optional("tariff_type", default=prev.get("tariff_type", TARIFF_TRAMOS)): vol.In(TARIFF_TYPES),
+                vol.Optional(CONF_IVA_PERCENT, default=prev.get(CONF_IVA_PERCENT, DEFAULT_IVA_PERCENT)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=100)
+                ),
                 vol.Optional(CONF_PRICE_POWER_PUNTA, default=prev.get(CONF_PRICE_POWER_PUNTA, 0)): vol.All(
                     vol.Coerce(float), vol.Range(min=0, max=5)
                 ),

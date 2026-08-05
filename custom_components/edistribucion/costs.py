@@ -14,6 +14,14 @@ OJO — limitaciones conocidas:
   no hace falta ninguna clave, solo la zona (Península/Baleares/Canarias o Ceuta/Melilla)
   configurada en el propio CUPS. Sin precio para alguna hora concreta (p.ej. si aún no se ha
   publicado), esa hora queda sin coste.
+- El IVA configurado por CUPS (`iva_percent`, ver const.py) se aplica al coste de energía (los tres
+  tipos de tarifa) Y al término de potencia — es lo único que se añade sobre el precio base, sigue
+  SIN incluir el impuesto eléctrico ni el alquiler de equipos de medida, así que sigue siendo una
+  estimación, no una factura real. Instalaciones sin `iva_percent` guardado (no han abierto Opciones
+  desde que se añadió) calculan con 0% — ver `apply_iva`.
+- La compensación por excedentes (`surplus_compensation_value`) NO lleva IVA aplicado a propósito:
+  es una bonificación que se resta de la factura, no un consumo que se grave igual que la energía
+  importada.
 """
 
 from __future__ import annotations
@@ -70,15 +78,26 @@ def _leading_hour(hour_label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def apply_iva(amount: float, iva_percent: float | None) -> float:
+    """`amount` con el IVA (%) aplicado — 0/None deja el importe tal cual (instalaciones sin
+    `iva_percent` guardado, ver limitación en la cabecera del módulo)."""
+    return round(amount * (1 + (iva_percent or 0) / 100), 4)
+
+
 def cost_breakdown(
-    consumption: dict | None, prices: dict[str, float], holiday_region: str | None = None, field: str = "importedKwh"
+    consumption: dict | None,
+    prices: dict[str, float],
+    holiday_region: str | None = None,
+    field: str = "importedKwh",
+    iva_percent: float | None = 0,
 ) -> dict[str, float] | None:
     """kWh y coste, desglosados por periodo, para un consumo con `hourlyByDate`. `field` es la
     clave de cada punto horario a bucketear — "importedKwh" (consumo, por defecto) o "exportedKwh"
     (excedentes: mismo bucketing horario/festivo, con el precio plano de compensación repetido en
     los tres periodos si aplica). None si no hay datos horarios. `holiday_region` (CCAA) es
     opcional — sin ella, los festivos cuentan como día laborable normal (ver limitación conocida
-    más arriba)."""
+    más arriba). `iva_percent` se aplica a cada coste de periodo (y por tanto al total, ver
+    `apply_iva`) — déjalo a 0 para excedentes/compensación, que no llevan IVA (ver cabecera)."""
     if not consumption or not consumption.get("hourlyByDate"):
         return None
 
@@ -89,7 +108,8 @@ def cost_breakdown(
             period = hour_period(date_str, h.get("hour", ""), holiday_calendar)
             kwh_by_period[period] += h.get(field) or 0
 
-    cost_by_period = {period: round(kwh * prices.get(period, 0), 4) for period, kwh in kwh_by_period.items()}
+    cost_by_period_sin_iva = {period: round(kwh * prices.get(period, 0), 4) for period, kwh in kwh_by_period.items()}
+    cost_by_period = {period: apply_iva(cost, iva_percent) for period, cost in cost_by_period_sin_iva.items()}
     return {
         "kwh_punta": round(kwh_by_period[PUNTA], 3),
         "kwh_llano": round(kwh_by_period[LLANO], 3),
@@ -97,14 +117,17 @@ def cost_breakdown(
         "coste_punta": cost_by_period[PUNTA],
         "coste_llano": cost_by_period[LLANO],
         "coste_valle": cost_by_period[VALLE],
+        "iva_percent": iva_percent or 0,
+        "total_sin_iva": round(sum(cost_by_period_sin_iva.values()), 4),
         "total": round(sum(cost_by_period.values()), 4),
     }
 
 
-def pvpc_cost_breakdown(consumption: dict | None, pvpc_prices: dict[str, float] | None) -> dict | None:
+def pvpc_cost_breakdown(consumption: dict | None, pvpc_prices: dict[str, float] | None, iva_percent: float | None = 0) -> dict | None:
     """Coste real hora a hora usando precios PVPC de ESIOS. `pvpc_prices` es un dict
     {"DD/MM/YYYY H": precio_eur_kwh} (ver esios.py). Las horas sin precio disponible (todavía no
-    publicado, o clave sin configurar) se ignoran y quedan reflejadas en `horas_sin_precio`."""
+    publicado, o clave sin configurar) se ignoran y quedan reflejadas en `horas_sin_precio`.
+    `iva_percent` se aplica al total (ver `apply_iva`)."""
     if not consumption or not consumption.get("hourlyByDate") or not pvpc_prices:
         return None
 
@@ -127,10 +150,13 @@ def pvpc_cost_breakdown(consumption: dict | None, pvpc_prices: dict[str, float] 
 
     if total_kwh == 0 and missing_hours == 0:
         return None
+    total_sin_iva = round(total, 4)
     return {
         "kwh_con_precio": round(total_kwh, 3),
         "horas_sin_precio": missing_hours,
-        "total": round(total, 4),
+        "iva_percent": iva_percent or 0,
+        "total_sin_iva": total_sin_iva,
+        "total": apply_iva(total_sin_iva, iva_percent),
     }
 
 
@@ -142,19 +168,28 @@ def estimate_energy_cost(
 ) -> dict | None:
     """Despacha según `sp_opts["tariff_type"]` (fija/tramos/pvpc, tramos por defecto). Para "pvpc",
     `pvpc_prices_by_zone` es {zona: {"DD/MM/YYYY H": precio}} (ver coordinator.py) y se usa la zona
-    configurada en `sp_opts["pvpc_zone"]` de ESTE CUPS."""
+    configurada en `sp_opts["pvpc_zone"]` de ESTE CUPS. El IVA (`sp_opts["iva_percent"]`) se aplica
+    en los tres casos — ver `apply_iva` y la limitación de la cabecera del módulo."""
     tariff_type = sp_opts.get("tariff_type") or TARIFF_TRAMOS
+    iva_percent = sp_opts.get("iva_percent") or 0
 
     if tariff_type == TARIFF_FIJA:
         price = sp_opts.get("fixed_price") or 0
         if not price or imported_kwh is None:
             return None
-        return {"tariff_type": TARIFF_FIJA, "precio_eur_kwh": price, "total": round(imported_kwh * price, 4)}
+        total_sin_iva = round(imported_kwh * price, 4)
+        return {
+            "tariff_type": TARIFF_FIJA,
+            "precio_eur_kwh": price,
+            "iva_percent": iva_percent,
+            "total_sin_iva": total_sin_iva,
+            "total": apply_iva(total_sin_iva, iva_percent),
+        }
 
     if tariff_type == TARIFF_PVPC:
         zone = sp_opts.get("pvpc_zone") or DEFAULT_PVPC_ZONE
         zone_prices = (pvpc_prices_by_zone or {}).get(zone)
-        breakdown = pvpc_cost_breakdown(hourly_source, zone_prices)
+        breakdown = pvpc_cost_breakdown(hourly_source, zone_prices, iva_percent)
         if breakdown:
             breakdown["tariff_type"] = TARIFF_PVPC
         return breakdown
@@ -165,7 +200,7 @@ def estimate_energy_cost(
         LLANO: sp_opts.get("price_llano") or 0,
         VALLE: sp_opts.get("price_valle") or 0,
     }
-    breakdown = cost_breakdown(hourly_source, prices, sp_opts.get("holiday_region"))
+    breakdown = cost_breakdown(hourly_source, prices, sp_opts.get("holiday_region"), iva_percent=iva_percent)
     if breakdown:
         breakdown["tariff_type"] = TARIFF_TRAMOS
     return breakdown
@@ -194,13 +229,15 @@ def average_price_per_kwh(cost_total: float | None, imported_kwh: float | None) 
 
 
 def power_cost(sp_opts: dict) -> float:
-    """Término de potencia de ESTE CUPS: kW contratados (punta/valle) × precio €/kW/día — se
-    factura siempre, sea cual sea la tarifa de energía elegida (fija/tramos/pvpc)."""
+    """Término de potencia de ESTE CUPS, CON IVA: kW contratados (punta/valle) × precio €/kW/día,
+    con el IVA de `sp_opts["iva_percent"]` aplicado encima (ver `apply_iva`) — se factura siempre,
+    sea cual sea la tarifa de energía elegida (fija/tramos/pvpc)."""
     punta_kw = sp_opts.get("contracted_power_punta_kw") or 0
     valle_kw = sp_opts.get("contracted_power_valle_kw") or 0
     price_punta = sp_opts.get("price_power_punta") or 0
     price_valle = sp_opts.get("price_power_valle") or 0
-    return round(punta_kw * price_punta + valle_kw * price_valle, 4)
+    total_sin_iva = punta_kw * price_punta + valle_kw * price_valle
+    return apply_iva(total_sin_iva, sp_opts.get("iva_percent") or 0)
 
 
 def self_consumption_ratio(imported_kwh: float | None, exported_kwh: float | None) -> float | None:
@@ -221,7 +258,8 @@ def self_consumption_ratio(imported_kwh: float | None, exported_kwh: float | Non
 
 def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> float | None:
     """Cuánto se compensaría por los kWh exportados, si el suministro tiene activada la
-    compensación de excedentes con un precio configurado."""
+    compensación de excedentes con un precio configurado. Sin IVA a propósito — ver cabecera del
+    módulo."""
     if not sp_opts.get("surplus_compensation"):
         return None
     price = sp_opts.get("surplus_price") or 0
@@ -235,7 +273,9 @@ def monthly_summary_csv(sp_opts: dict, month_data: dict | None, pvpc_prices_by_z
     la tarifa lo permite), término de potencia, compensación de excedentes si aplica, y un total
     estimado — para descargar/analizar fuera de Home Assistant. Es una ESTIMACIÓN hecha con los
     precios que tengas configurados AHORA (no una factura real, ver limitaciones en la cabecera del
-    módulo)."""
+    módulo). `coste_energia`/`termino_potencia`/`total_estimado` llevan el IVA configurado aplicado
+    (0% si no se ha configurado); `coste_energia_sin_iva` se incluye aparte para quien quiera el
+    desglose."""
     imported_kwh = (month_data or {}).get("totalImportedKwh")
     exported_kwh = (month_data or {}).get("totalExportedKwh")
     breakdown = estimate_energy_cost(sp_opts, imported_kwh, month_data, pvpc_prices_by_zone) or {}
@@ -244,11 +284,13 @@ def monthly_summary_csv(sp_opts: dict, month_data: dict | None, pvpc_prices_by_z
 
     rows = ["concepto,valor"]
     rows.append(f"tarifa,{sp_opts.get('tariff_type') or TARIFF_TRAMOS}")
+    rows.append(f"iva_percent,{sp_opts.get('iva_percent') or 0}")
     rows.append(f"kwh_importados,{imported_kwh if imported_kwh is not None else ''}")
     rows.append(f"kwh_exportados,{exported_kwh if exported_kwh is not None else ''}")
     for key in ("kwh_punta", "kwh_llano", "kwh_valle", "coste_punta", "coste_llano", "coste_valle", "kwh_con_precio", "horas_sin_precio"):
         if key in breakdown:
             rows.append(f"{key},{breakdown[key]}")
+    rows.append(f"coste_energia_sin_iva,{breakdown.get('total_sin_iva', 0)}")
     rows.append(f"coste_energia,{breakdown.get('total', 0)}")
     rows.append(f"termino_potencia,{power}")
     if surplus is not None:

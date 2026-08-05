@@ -216,6 +216,19 @@ async def test_tramo_sensor_values_match_cost_breakdown(hass):
     assert by_id["contA_valle_cost_today"].native_value == 0.05
 
 
+async def test_tramo_cost_sensor_applies_configured_iva(hass):
+    """Mismo escenario que test_tramo_sensor_values_match_cost_breakdown, pero con iva_percent=21 —
+    solo coste_punta/llano/valle deben verse afectados, no los kWh."""
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05, "iva_percent": 21})
+    hourly = {"27/07/2026": [{"hour": "10 - 11 h", "importedKwh": 2.0}]}
+    bundle["consumption"] = {"dailyTotals": [], "hourlyByDate": hourly}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_punta_kwh_today"].native_value == 2.0
+    assert by_id["contA_punta_cost_today"].native_value == pytest.approx(0.5 * 1.21)
+
+
 async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
     bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
     bundles_fija = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
@@ -226,6 +239,27 @@ async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
     hass.data[DOMAIN].clear()
     entities_fija = await _setup_with_fake_coordinator(hass, bundles_fija)
     assert "contA_current_pvpc_price" not in _unique_ids(entities_fija)
+
+
+async def test_current_pvpc_price_sensor_applies_configured_iva(hass, monkeypatch):
+    from datetime import datetime, timezone
+
+    from custom_components.edistribucion.esios import DEFAULT_PVPC_ZONE
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 10, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "pvpc", "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    coordinator = next(iter(hass.data[DOMAIN].values()))
+    coordinator.pvpc_prices = {DEFAULT_PVPC_ZONE: {"27/07/2026 10": 0.10}}
+
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_current_pvpc_price"]
+    assert sensor.native_value == pytest.approx(0.121)
+    assert sensor.extra_state_attributes["precio_sin_iva"] == 0.10
+    assert sensor.extra_state_attributes["precios_hoy"]["10h"] == pytest.approx(0.121)
 
 
 async def test_simulator_sensors_skip_active_tariff_and_require_data(hass):
@@ -269,6 +303,68 @@ async def test_power_cost_sensors_only_if_power_term_configured(hass):
     hass.data[DOMAIN].clear()
     entities_without = await _setup_with_fake_coordinator(hass, bundles_without_price)
     assert "contA_power_cost_today" not in _unique_ids(entities_without)
+
+
+async def test_power_cost_sensor_applies_configured_iva(hass):
+    bundle = _bundle({"price_power_punta": 0.08, "price_power_valle": 0.02, "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_power_cost_today"]
+    # 3.5*0.08 + 3.5*0.02 = 0.35 sin IVA (ver contracted_power_*_kw en _bundle) -> 0.4235 con 21%.
+    assert sensor.native_value == pytest.approx(0.4235)
+    assert sensor.extra_state_attributes["iva_percent"] == 21
+
+
+async def test_cost_with_power_sensors_require_both_energy_price_and_power_term(hass):
+    """Solo tiene sentido "coste + potencia" si hay AMBAS cosas configuradas — con solo una de las
+    dos, el sensor de coste normal o el de potencia ya cubren ese caso por separado."""
+    bundles_both = {"contA": _bundle({"price_punta": 0.25, "price_power_punta": 0.08})}
+    entities_both = await _setup_with_fake_coordinator(hass, bundles_both)
+    ids_both = _unique_ids(entities_both)
+    assert "contA_estimated_cost_today_with_power" in ids_both
+    assert "contA_estimated_cost_month_with_power" in ids_both
+
+    hass.data[DOMAIN].clear()
+    bundles_only_power = {"contA": _bundle({"price_power_punta": 0.08})}  # sin precio de energía
+    entities_only_power = await _setup_with_fake_coordinator(hass, bundles_only_power)
+    assert "contA_estimated_cost_today_with_power" not in _unique_ids(entities_only_power)
+
+    hass.data[DOMAIN].clear()
+    bundles_only_energy = {"contA": _bundle({"price_punta": 0.25})}  # sin término de potencia
+    entities_only_energy = await _setup_with_fake_coordinator(hass, bundles_only_energy)
+    assert "contA_estimated_cost_today_with_power" not in _unique_ids(entities_only_energy)
+
+
+async def test_cost_with_power_month_value_sums_energy_cost_and_power_term(hass):
+    """Mismo escenario que test_tramo_sensor_values_match_cost_breakdown: mes con 6 kWh repartidos
+    en punta/llano/valle -> coste de energía 0.5+0.45+0.05=1.0 EUR. Potencia: 3.5+3.5 kW * 0.08+0.02
+    EUR/kW/día * 0 días facturados (dailyTotals vacío en el bundle de test) -> 0 EUR de potencia, así
+    que el total con potencia debe coincidir con el coste de energía solo."""
+    bundle = _bundle(
+        {
+            "price_punta": 0.25,
+            "price_llano": 0.15,
+            "price_valle": 0.05,
+            "price_power_punta": 0.08,
+            "price_power_valle": 0.02,
+        }
+    )
+    hourly = {
+        "27/07/2026": [
+            {"hour": "10 - 11 h", "importedKwh": 2.0},
+            {"hour": "8 - 9 h", "importedKwh": 3.0},
+            {"hour": "0 - 1 h", "importedKwh": 1.0},
+        ]
+    }
+    bundle["month"] = {"totalImportedKwh": 6.0, "totalExportedKwh": 0.0, "hourlyByDate": hourly, "dailyTotals": [{"date": "27/07/2026"}]}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    month_sensor = by_id["contA_estimated_cost_month_with_power"]
+    # 1 día facturado * (3.5*0.08 + 3.5*0.02) = 0.35 EUR de potencia, + 1.0 EUR de energía.
+    assert month_sensor.native_value == 1.35
+    assert month_sensor.extra_state_attributes["coste_energia"] == 1.0
+    assert month_sensor.extra_state_attributes["termino_potencia"] == 0.35
 
 
 async def test_surplus_compensation_sensors_only_if_enabled_with_price(hass):
