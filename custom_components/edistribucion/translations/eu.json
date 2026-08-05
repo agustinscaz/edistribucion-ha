@@ -104,6 +104,9 @@
       "power_cost_month": {
         "name": "Potentzia terminoa (hilabetea)"
       },
+      "surplus_price": {
+        "name": "Soberakinen salmenta prezioa"
+      },
       "surplus_compensation_today": {
         "name": "Gaurko soberakinen konpentsazioa"
       },

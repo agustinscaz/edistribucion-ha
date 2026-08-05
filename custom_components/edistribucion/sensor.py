@@ -112,6 +112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 entities.append(EdistribucionEstimatedCostTodayWithPowerSensor(coordinator, cont_id, sp))
                 entities.append(EdistribucionEstimatedCostMonthWithPowerSensor(coordinator, cont_id, sp))
         if sp.get("surplus_compensation") and sp.get("surplus_price"):
+            entities.append(EdistribucionSurplusPriceSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
@@ -800,6 +801,37 @@ class EdistribucionNextTramoPeriodChangeSensor(_EdistribucionBaseSensor):
         next_change = next_period_change(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
         siguiente_periodo = current_period(next_change, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
         return {"siguiente_periodo": siguiente_periodo}
+
+
+class EdistribucionSurplusPriceSensor(_EdistribucionBaseSensor):
+    """Precio de venta de excedentes configurado para este CUPS (€/kWh), tal cual — SIN impuestos
+    (la compensación no lleva IEE/IVA aplicado a propósito, ver costs.py). Hoy es un valor plano
+    (mismo precio todo el día), pero se expone como sensor propio — no solo como opción en
+    Configuración — para que plantillas/integraciones externas puedan multiplicarlo por un kWh de
+    OTRA fuente (p.ej. un CT clamp en tiempo real, sin el retraso de la lectura oficial) sin tener
+    que leer las Opciones a mano (ver issue #7). Si en el futuro `surplus_price` pasa a variar por
+    franja/hora (excedente indexado), este sensor debería devolver el precio vigente de ESE
+    instante, igual que EdistribucionCurrentTramoPriceSensor del lado de compra — mientras sea
+    plano, basta con exponer el valor configurado sin más. Solo se crea si la compensación de
+    excedentes está activada con un precio puesto (mismo criterio que el resto de sensores de
+    compensación)."""
+
+    entity_description = SensorEntityDescription(
+        key="surplus_price",
+        translation_key="surplus_price",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR/kWh",
+        suggested_display_precision=5,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_surplus_price"
+
+    @property
+    def native_value(self) -> float:
+        sp = self._bundle.get("supply_point") or {}
+        return sp.get("surplus_price") or 0
 
 
 class _EdistribucionSurplusCompensationSensor(_EdistribucionBaseSensor):

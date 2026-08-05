@@ -104,6 +104,9 @@
       "power_cost_month": {
         "name": "Плата за мощность (месяц)"
       },
+      "surplus_price": {
+        "name": "Цена продажи излишков"
+      },
       "surplus_compensation_today": {
         "name": "Компенсация за излишки сегодня"
       },

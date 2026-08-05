@@ -506,6 +506,7 @@ async def test_surplus_compensation_sensors_only_if_enabled_with_price(hass):
 
     entities_enabled = await _setup_with_fake_coordinator(hass, bundles_enabled)
     ids_enabled = _unique_ids(entities_enabled)
+    assert "contA_surplus_price" in ids_enabled
     assert "contA_surplus_compensation_today" in ids_enabled
     assert "contA_surplus_compensation_week" in ids_enabled
     assert "contA_surplus_compensation_month" in ids_enabled
@@ -513,8 +514,19 @@ async def test_surplus_compensation_sensors_only_if_enabled_with_price(hass):
     hass.data[DOMAIN].clear()
     entities_disabled = await _setup_with_fake_coordinator(hass, bundles_disabled)
     ids_disabled = _unique_ids(entities_disabled)
+    assert "contA_surplus_price" not in ids_disabled
     assert "contA_surplus_compensation_today" not in ids_disabled
     assert "contA_surplus_compensation_week" not in ids_disabled
+
+
+async def test_surplus_price_sensor_value_is_configured_price_without_taxes(hass):
+    """Ver issue #7: tal cual está configurado, sin IEE/IVA aplicado (la compensación no lleva
+    impuestos a propósito, ver costs.py) — a diferencia de los precios del lado de compra."""
+    bundle = _bundle({"surplus_compensation": True, "surplus_price": 0.0654, "iee_percent": 5.11269632, "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_surplus_price"].native_value == 0.0654
 
 
 async def test_surplus_compensation_week_value_is_exported_kwh_times_price(hass):

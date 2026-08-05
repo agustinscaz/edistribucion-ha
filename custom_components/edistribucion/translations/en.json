@@ -104,6 +104,9 @@
       "power_cost_month": {
         "name": "Power term (month)"
       },
+      "surplus_price": {
+        "name": "Surplus sale price"
+      },
       "surplus_compensation_today": {
         "name": "Surplus compensation today"
       },

@@ -104,6 +104,9 @@
       "power_cost_month": {
         "name": "Leistungsterm (Monat)"
       },
+      "surplus_price": {
+        "name": "Verkaufspreis Überschuss"
+      },
       "surplus_compensation_today": {
         "name": "Einspeisevergütung heute"
       },

@@ -104,6 +104,9 @@
       "power_cost_month": {
         "name": "Termine di potenza (mese)"
       },
+      "surplus_price": {
+        "name": "Prezzo vendita eccedenze"
+      },
       "surplus_compensation_today": {
         "name": "Compensazione eccedenze oggi"
       },
