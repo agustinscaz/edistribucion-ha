@@ -649,7 +649,10 @@ class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement="EUR/kWh",
         suggested_display_precision=5,
-        state_class=SensorStateClass.MEASUREMENT,
+        # Sin state_class: device_class=MONETARY solo admite None o TOTAL (ver v1.21.1/issue #6), y
+        # TOTAL tampoco sería correcto aquí — no es un acumulado, es un valor instantáneo que sube y
+        # baja, igual que el sensor de precio del propio `pvpc_hourly_pricing` core de HA (que
+        # tampoco le pone state_class).
     )
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
@@ -729,7 +732,7 @@ class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
         device_class=SensorDeviceClass.MONETARY,
         native_unit_of_measurement="EUR/kWh",
         suggested_display_precision=5,
-        state_class=SensorStateClass.MEASUREMENT,
+        # Sin state_class — ver el mismo comentario en EdistribucionCurrentPvpcPriceSensor (issue #6).
     )
 
     def __init__(self, coordinator, cont_id, supply_point) -> None:
