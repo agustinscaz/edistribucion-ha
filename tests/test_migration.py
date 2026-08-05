@@ -5,8 +5,8 @@ prueba bastan — ver conftest.py para el porqué del stub de `homeassistant`.""
 
 from __future__ import annotations
 
-from custom_components.edistribucion.const import CONF_SUPPLY_POINTS
-from custom_components.edistribucion.migration import async_migrate_legacy_options
+from custom_components.edistribucion.const import CONF_SUPPLY_POINTS, DEFAULT_IEE_PERCENT, DEFAULT_IVA_PERCENT
+from custom_components.edistribucion.migration import async_apply_default_tax_percentages, async_migrate_legacy_options
 
 
 class FakeEntry:
@@ -155,3 +155,81 @@ def test_invalid_legacy_zone_is_dropped_not_propagated():
     async_migrate_legacy_options(hass, entry)
 
     assert "pvpc_zone" not in entry.options[CONF_SUPPLY_POINTS]["c1"]
+
+
+def test_fills_default_iee_and_iva_when_missing():
+    """CUPS que nunca abrió Opciones desde que se añadió IEE/IVA (v1.27.0/v1.28.0) — se rellenan
+    con los valores sugeridos para que los sensores de coste reflejen impuestos desde ya."""
+    entry = FakeEntry({CONF_SUPPLY_POINTS: {"c1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    sp = entry.options[CONF_SUPPLY_POINTS]["c1"]
+    assert sp["iee_percent"] == DEFAULT_IEE_PERCENT
+    assert sp["iva_percent"] == DEFAULT_IVA_PERCENT
+    assert sp["fixed_price"] == 0.2  # lo que ya tenía el CUPS no se toca
+
+
+def test_does_not_overwrite_explicit_zero_tax_values():
+    """Un 0 puesto A PROPÓSITO (p.ej. para simular sin impuestos) no se pisa — setdefault, no
+    asignación directa."""
+    entry = FakeEntry({CONF_SUPPLY_POINTS: {"c1": {"iee_percent": 0, "iva_percent": 0}}})
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    sp = entry.options[CONF_SUPPLY_POINTS]["c1"]
+    assert sp["iee_percent"] == 0
+    assert sp["iva_percent"] == 0
+    assert hass.config_entries.updated_with is None  # ya migrado, no hace falta tocar nada
+
+
+def test_fills_only_missing_key_when_one_already_set():
+    entry = FakeEntry({CONF_SUPPLY_POINTS: {"c1": {"iva_percent": 10}}})  # solo IVA guardado
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    sp = entry.options[CONF_SUPPLY_POINTS]["c1"]
+    assert sp["iee_percent"] == DEFAULT_IEE_PERCENT
+    assert sp["iva_percent"] == 10  # no se pisa el que ya tenía
+
+
+def test_multiple_supply_points_all_filled():
+    entry = FakeEntry(
+        {
+            CONF_SUPPLY_POINTS: {
+                "c1": {"tariff_type": "fija"},
+                "c2": {"tariff_type": "pvpc", "iee_percent": 5.0, "iva_percent": 4},
+            }
+        }
+    )
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    assert entry.options[CONF_SUPPLY_POINTS]["c1"]["iee_percent"] == DEFAULT_IEE_PERCENT
+    assert entry.options[CONF_SUPPLY_POINTS]["c1"]["iva_percent"] == DEFAULT_IVA_PERCENT
+    assert entry.options[CONF_SUPPLY_POINTS]["c2"]["iee_percent"] == 5.0
+    assert entry.options[CONF_SUPPLY_POINTS]["c2"]["iva_percent"] == 4
+
+
+def test_no_supply_points_is_noop():
+    entry = FakeEntry({})
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    assert hass.config_entries.updated_with is None
+
+
+def test_already_filled_install_is_noop():
+    entry = FakeEntry({CONF_SUPPLY_POINTS: {"c1": {"iee_percent": 5.11269632, "iva_percent": 21}}})
+    original = dict(entry.options)
+    hass = FakeHass()
+
+    async_apply_default_tax_percentages(hass, entry)
+
+    assert entry.options == original
+    assert hass.config_entries.updated_with is None

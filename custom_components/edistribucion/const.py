@@ -85,12 +85,11 @@ HOLIDAY_REGIONS = {
 #   2. IVA — aplicado sobre el resultado de aplicar el IEE, no sobre el precio base.
 # Ninguno se aplica a la compensación por excedentes (es una bonificación que se resta, no un
 # consumo que se grave) ni al desglose de excedentes exportados por tramo — ver costs.py.
-# Instalaciones YA EXISTENTES que no tengan estas claves guardadas siguen calculando el coste SIN
-# esa parte (0% por defecto en costs.py) hasta que el usuario abra Opciones y lo confirme — así no
-# cambia de golpe un valor que ya tenían configurado (ver v1.13 lección de
-# config_options_no_rename_without_migration). Los valores sugeridos aquí son solo lo que se
-# PRErellena en el formulario de Opciones para que no arranque de 0, no lo que ya tiene guardado
-# alguien que no ha abierto Opciones todavía.
+# Instalaciones YA EXISTENTES que no tengan estas claves guardadas las reciben con este valor
+# sugerido en el primer arranque tras actualizar (ver migration.async_apply_default_tax_percentages
+# — a diferencia de un rename, aquí no hay nada que "perder" al rellenar una clave que nunca
+# existió, así que no hace falta esperar a que el usuario abra Opciones). Si alguien ya había puesto
+# 0 a propósito para una de las dos, ese 0 se respeta (setdefault, no se sobrescribe).
 CONF_IEE_PERCENT = "iee_percent"
 DEFAULT_IEE_PERCENT = 5.11269632  # tipo estatal fijo vigente del IEE
 CONF_IVA_PERCENT = "iva_percent"

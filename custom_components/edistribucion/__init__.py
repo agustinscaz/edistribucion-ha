@@ -18,7 +18,7 @@ from .const import DOMAIN
 from .coordinator import RANGE_MONTH, EdistribucionCoordinator
 from .costs import monthly_summary_csv
 from .esios import DEFAULT_PVPC_ZONE, cheapest_window, pvpc_prices_to_csv
-from .migration import async_migrate_legacy_options
+from .migration import async_apply_default_tax_percentages, async_migrate_legacy_options
 from .statistics import async_backfill_energy_statistics, months_back
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ def _resolve_device(hass: HomeAssistant, device_id: str) -> tuple[EdistribucionC
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_migrate_legacy_options(hass, entry)
+    async_apply_default_tax_percentages(hass, entry)
     session = async_get_clientsession(hass)
     client = EdistribucionApiClient(session, entry.data[CONF_HOST], entry.data[CONF_PORT])
     coordinator = EdistribucionCoordinator(hass, client, entry)

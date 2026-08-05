@@ -23,8 +23,9 @@ OJO — limitaciones conocidas:
     2. `iva_percent` — aplicado sobre el resultado de aplicar el IEE, no sobre el precio base.
   `total = base * (1 + iee_percent/100) * (1 + iva_percent/100)`. Sigue faltando el alquiler de
   equipos de medida, así que sigue siendo una estimación, no una factura real. Instalaciones sin
-  `iee_percent`/`iva_percent` guardados (no han abierto Opciones desde que se añadieron) calculan
-  esa parte al 0% — ver `apply_iee`/`apply_iva`.
+  `iee_percent`/`iva_percent` guardados los reciben con el valor sugerido en el primer arranque tras
+  actualizar (ver migration.async_apply_default_tax_percentages) — solo calculan al 0% si el propio
+  usuario lo puso así a propósito.
 - La compensación por excedentes (`surplus_compensation_value`) NO lleva impuestos aplicados a
   propósito: es una bonificación que se resta de la factura, no un consumo que se grave igual que
   la energía importada.

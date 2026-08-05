@@ -5,10 +5,15 @@ de toda la integración) a "por CUPS" — término de potencia (`price_power_p1/
 punta/valle`), zona PVPC (`pvpc_zone` pasó de global a por CUPS), y la vieja clave/región de ESIOS
 (`esios_api_key`/`esios_geo_id`, sustituidas por la zona PVPC pública). Sin esta migración, cada uno
 de esos cambios de esquema deja huérfano lo que el usuario ya había configurado (vuelve a 0/valor
-por defecto) y hay que rellenarlo de nuevo a mano.
+por defecto) y hay que rellenarlo de nuevo a mano — ver `async_migrate_legacy_options`.
 
-Se ejecuta una vez en cada arranque (`async_setup_entry`) — si no hay ninguna clave legada, no hace
-nada (comprobación barata, no afecta a instalaciones ya migradas).
+También rellena claves NUEVAS con su valor sugerido cuando aún no existen en absoluto — ver
+`async_apply_default_tax_percentages` (IEE/IVA, añadidos en v1.27.0/v1.28.0): a diferencia de un
+rename, aquí no hay nada que "perder" (la clave nunca existió), así que se puede rellenar sin
+esperar a que el usuario vuelva a abrir Opciones.
+
+Ambas se ejecutan una vez en cada arranque (`async_setup_entry`) — si no hay nada que migrar/
+rellenar, no hacen nada (comprobación barata, no afecta a instalaciones ya al día).
 """
 
 from __future__ import annotations
@@ -16,7 +21,15 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_PRICE_POWER_PUNTA, CONF_PRICE_POWER_VALLE, CONF_SUPPLY_POINTS
+from .const import (
+    CONF_IEE_PERCENT,
+    CONF_IVA_PERCENT,
+    CONF_PRICE_POWER_PUNTA,
+    CONF_PRICE_POWER_VALLE,
+    CONF_SUPPLY_POINTS,
+    DEFAULT_IEE_PERCENT,
+    DEFAULT_IVA_PERCENT,
+)
 from .esios import PVPC_ZONES, ZONE_CEUTA_MELILLA, ZONE_PENINSULA_BALEARES_CANARIAS
 
 # Ceuta/Melilla en la vieja codificación de geo_id de ESIOS (indicadores 1001) — el resto de
@@ -66,5 +79,31 @@ def async_migrate_legacy_options(hass: HomeAssistant, entry: ConfigEntry) -> Non
 
     for key in _LEGACY_GLOBAL_KEYS_TO_DROP:
         options.pop(key, None)
+
+    hass.config_entries.async_update_entry(entry, options=options)
+
+
+def async_apply_default_tax_percentages(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Rellena `iee_percent`/`iva_percent` (ver const.py) con los valores sugeridos en los CUPS que
+    AÚN NO los tengan guardados — para que los sensores de coste reflejen impuestos desde el primer
+    arranque tras actualizar a v1.28.0, sin tener que abrir Opciones y volver a guardar cada
+    suministro a mano solo para confirmar un valor que ya viene preseleccionado en el formulario.
+
+    Usa `setdefault`: si un CUPS ya tiene CUALQUIER valor guardado para una de las dos claves
+    (incluido un 0 puesto a propósito, p.ej. para simular sin impuestos), no se toca. Se ejecuta una
+    vez en cada arranque, como `async_migrate_legacy_options` — comprobación barata si ya está
+    todo migrado."""
+    options = dict(entry.options)
+    supply_points = options.get(CONF_SUPPLY_POINTS, {})
+    if not supply_points:
+        return
+    if all(CONF_IEE_PERCENT in sp_opts and CONF_IVA_PERCENT in sp_opts for sp_opts in supply_points.values()):
+        return  # ya migrado (o instalación nueva, que ya los guarda desde el config_flow)
+
+    new_supply_points = {cont_id: dict(sp_opts) for cont_id, sp_opts in supply_points.items()}
+    for sp_opts in new_supply_points.values():
+        sp_opts.setdefault(CONF_IEE_PERCENT, DEFAULT_IEE_PERCENT)
+        sp_opts.setdefault(CONF_IVA_PERCENT, DEFAULT_IVA_PERCENT)
+    options[CONF_SUPPLY_POINTS] = new_supply_points
 
     hass.config_entries.async_update_entry(entry, options=options)
