@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Hornidura {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nAukeratu hornidura hau jarraitu nahi duzun, ezizen bat, tarifa mota (finkoa/tarteak/pvpc), aplikatu beharreko BEZa (%), potentzia terminoaren prezioa, aukeratutako tarifaren araberako energia prezioak, soberakinen konpentsazioa, eta (pvpc erabiltzen baduzu) eremua. Kontratatutako potentzia (kW) automatikoki irakurtzen da e-distribución-etik — ez duzu idatzi behar.\n\nBihar-etarako pvpc prezioak aurreko egunean 20:15ak inguruan argitaratzen dira — ez da gakorik edo erregistrorik behar, REEren fitxategi publikoa erabiltzen da.",
+        "description": "{address} ({estado})\n\nAukeratu hornidura hau jarraitu nahi duzun, ezizen bat, tarifa mota (finkoa/tarteak/pvpc), aplikatu beharreko IEE eta BEZa (%), potentzia terminoaren prezioa, aukeratutako tarifaren araberako energia prezioak, soberakinen konpentsazioa, eta (pvpc erabiltzen baduzu) eremua. Kontratatutako potentzia (kW) automatikoki irakurtzen da e-distribución-etik — ez duzu idatzi behar.\n\nBihar-etarako pvpc prezioak aurreko egunean 20:15ak inguruan argitaratzen dira — ez da gakorik edo erregistrorik behar, REEren fitxategi publikoa erabiltzen da.",
         "data": {
           "track": "Hornidura hau jarraitu",
           "alias": "Ezizena (aukerakoa)",
           "tariff_type": "Tarifa mota: finkoa / tarteak / pvpc",
+          "iee_percent": "Aplikatu beharreko IEE (%)",
           "iva_percent": "Aplikatu beharreko BEZa (%)",
           "price_power_punta": "Gailur-orduko potentzia prezioa (€/kW/egun)",
           "price_power_valle": "Sakonaldiko potentzia prezioa (€/kW/egun)",

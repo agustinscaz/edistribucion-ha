@@ -349,11 +349,11 @@ class EdistribucionContractedPowerSensor(_EdistribucionBaseSensor):
 
 class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
     """Coste estimado de energía según el tipo de tarifa configurado para este CUPS (fija/tramos/
-    pvpc, ver opciones), CON el IVA de este CUPS aplicado (ver costs.apply_iva — 0% si no se ha
-    configurado). Sigue siendo una ESTIMACIÓN: no incluye el término de potencia ni la compensación
-    de excedentes (esos van en sensores aparte, ver EdistribucionPowerCostTodaySensor/MonthSensor y
-    EdistribucionSurplusCompensation*Sensor) ni el impuesto eléctrico o el alquiler de equipos de
-    medida — para tener una idea, no para cuadrar con la factura real."""
+    pvpc, ver opciones), CON el IEE y el IVA de este CUPS aplicados EN ESE ORDEN (ver
+    costs.apply_iee/apply_iva — 0% cada uno si no se han configurado). Sigue siendo una ESTIMACIÓN:
+    no incluye el término de potencia ni la compensación de excedentes (esos van en sensores aparte,
+    ver EdistribucionPowerCostTodaySensor/MonthSensor y EdistribucionSurplusCompensation*Sensor) ni
+    el alquiler de equipos de medida — para tener una idea, no para cuadrar con la factura real."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = "EUR"
@@ -433,8 +433,8 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
     como atributo anidado), pero como entidad propia por tramo, para poder graficar o automatizar
     sobre un tramo concreto sin tener que leer un atributo. Solo se crea con tarifa 'tramos' activa
     y algún precio de tramo configurado (ver async_setup_entry) — punta/llano/valle no existen en
-    fija/pvpc. El coste de cada tramo lleva el IVA de este CUPS aplicado (kind="cost"), igual que el
-    total del sensor de coste estimado — kind="kwh" no se ve afectado, claro."""
+    fija/pvpc. El coste de cada tramo lleva el IEE y el IVA de este CUPS aplicados (kind="cost"),
+    igual que el total del sensor de coste estimado — kind="kwh" no se ve afectado, claro."""
 
     _attr_suggested_display_precision = 2
 
@@ -466,7 +466,13 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
     def native_value(self) -> float | None:
         sp = self._bundle.get("supply_point") or {}
         prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
-        breakdown = cost_breakdown(self._hourly_source, prices, sp.get("holiday_region"), iva_percent=sp.get("iva_percent") or 0)
+        breakdown = cost_breakdown(
+            self._hourly_source,
+            prices,
+            sp.get("holiday_region"),
+            iee_percent=sp.get("iee_percent") or 0,
+            iva_percent=sp.get("iva_percent") or 0,
+        )
         if not breakdown:
             return None
         breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
@@ -621,10 +627,11 @@ class EdistribucionSimulatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
 
 
 class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
-    """Precio PVPC de la hora en curso, CON el IVA de este CUPS aplicado — UN solo sensor (no 24 por
-    hora): el resto de precios del día (y de mañana, si ya están publicados) van como atributo, no
-    como entidades separadas. El precio sin IVA (el que publica ESIOS/REE tal cual) va como atributo
-    `precio_sin_iva`, por si se necesita para comparar contra otras fuentes."""
+    """Precio PVPC de la hora en curso, CON el IEE y el IVA de este CUPS aplicados EN ESE ORDEN —
+    UN solo sensor (no 24 por hora): el resto de precios del día (y de mañana, si ya están
+    publicados) van como atributo, no como entidades separadas. El precio sin impuestos (el que
+    publica ESIOS/REE tal cual) va como atributo `precio_sin_impuestos`, por si se necesita para
+    comparar contra otras fuentes."""
 
     entity_description = SensorEntityDescription(
         key="current_pvpc_price",
@@ -645,6 +652,11 @@ class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
         return sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE
 
     @property
+    def _iee_percent(self) -> float:
+        sp = self._bundle.get("supply_point") or {}
+        return sp.get("iee_percent") or 0
+
+    @property
     def _iva_percent(self) -> float:
         sp = self._bundle.get("supply_point") or {}
         return sp.get("iva_percent") or 0
@@ -653,33 +665,36 @@ class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
     def _zone_prices(self) -> dict[str, float]:
         return self.coordinator.pvpc_prices.get(self._zone, {})
 
+    def _with_taxes(self, price: float) -> float:
+        return round(price * (1 + self._iee_percent / 100) * (1 + self._iva_percent / 100), 5)
+
     @property
     def native_value(self) -> float | None:
         now = dt_util.now()
         price = self._zone_prices.get(f"{now.strftime('%d/%m/%Y')} {now.hour}")
         if price is None:
             return None
-        return round(price * (1 + self._iva_percent / 100), 5)
+        return self._with_taxes(price)
 
     @property
     def extra_state_attributes(self) -> dict:
         prices = self._zone_prices
         now = dt_util.now()
         tomorrow = now + timedelta(days=1)
-        iva_percent = self._iva_percent
 
         def _day_prices(day) -> dict[str, float]:
             date_str = day.strftime("%d/%m/%Y")
             return {
-                f"{h:02d}h": round(prices[f"{date_str} {h}"] * (1 + iva_percent / 100), 5)
+                f"{h:02d}h": self._with_taxes(prices[f"{date_str} {h}"])
                 for h in range(24)
                 if f"{date_str} {h}" in prices
             }
 
         return {
             "zona": self._zone,
-            "iva_percent": iva_percent,
-            "precio_sin_iva": prices.get(f"{now.strftime('%d/%m/%Y')} {now.hour}"),
+            "iee_percent": self._iee_percent,
+            "iva_percent": self._iva_percent,
+            "precio_sin_impuestos": prices.get(f"{now.strftime('%d/%m/%Y')} {now.hour}"),
             "precios_hoy": _day_prices(now),
             "precios_manana": _day_prices(tomorrow),
         }
@@ -817,9 +832,9 @@ class EdistribucionSelfConsumptionMonthSensor(_EdistribucionSelfConsumptionSenso
 
 
 class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
-    """Término de potencia fijo del día de ESTE CUPS, CON IVA: kW contratados × precio €/kW/día,
-    sumando punta y valle, con el IVA de este CUPS aplicado encima (ver costs.power_cost) — se
-    factura siempre, no depende del consumo ni de la franja horaria."""
+    """Término de potencia fijo del día de ESTE CUPS, CON IEE + IVA: kW contratados × precio
+    €/kW/día, sumando punta y valle, con el IEE y el IVA de este CUPS aplicados encima EN ESE ORDEN
+    (ver costs.power_cost) — se factura siempre, no depende del consumo ni de la franja horaria."""
 
     entity_description = SensorEntityDescription(
         key="power_cost_today",
@@ -848,6 +863,7 @@ class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
             "potencia_contratada_valle_kw": sp.get("contracted_power_valle_kw") or 0,
             "precio_punta_eur_kw_dia": sp.get("price_power_punta") or 0,
             "precio_valle_eur_kw_dia": sp.get("price_power_valle") or 0,
+            "iee_percent": sp.get("iee_percent") or 0,
             "iva_percent": sp.get("iva_percent") or 0,
         }
 
@@ -885,16 +901,21 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
     def extra_state_attributes(self) -> dict:
         sp = self._bundle.get("supply_point") or {}
         daily_cost = power_cost(sp)
-        return {"dias_facturados": self._days_elapsed, "coste_diario": daily_cost, "iva_percent": sp.get("iva_percent") or 0}
+        return {
+            "dias_facturados": self._days_elapsed,
+            "coste_diario": daily_cost,
+            "iee_percent": sp.get("iee_percent") or 0,
+            "iva_percent": sp.get("iva_percent") or 0,
+        }
 
 
 class EdistribucionEstimatedCostTodayWithPowerSensor(_EdistribucionBaseSensor):
-    """Coste total estimado de HOY: coste de energía (igual que EdistribucionEstimatedCostTodaySensor)
-    + término de potencia del día (igual que EdistribucionPowerCostTodaySensor) — una única cifra de
-    "cuánto llevo hoy" sin tener que sumar dos sensores a mano. Solo se crea si hay término de
-    potencia configurado (potencia contratada + precio) además del coste de energía — mismas
-    limitaciones que el coste de energía (sin IVA, impuesto eléctrico ni alquiler de equipos de
-    medida, ver costs.py)."""
+    """Coste total estimado de HOY: coste de energía (igual que EdistribucionEstimatedCostTodaySensor,
+    con IEE + IVA si están configurados) + término de potencia del día (igual que
+    EdistribucionPowerCostTodaySensor, también con IEE + IVA) — una única cifra de "cuánto llevo
+    hoy" sin tener que sumar dos sensores a mano. Solo se crea si hay término de potencia configurado
+    (potencia contratada + precio) además del coste de energía — sigue faltando el alquiler de
+    equipos de medida (ver costs.py)."""
 
     # device_class=MONETARY solo admite None o TOTAL como state_class (ver v1.21.1).
     _attr_device_class = SensorDeviceClass.MONETARY

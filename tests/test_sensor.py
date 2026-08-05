@@ -229,6 +229,21 @@ async def test_tramo_cost_sensor_applies_configured_iva(hass):
     assert by_id["contA_punta_cost_today"].native_value == pytest.approx(0.5 * 1.21)
 
 
+async def test_tramo_cost_sensor_applies_iee_before_iva(hass):
+    """Ver issue #3: el IEE (5,11269632% por defecto) se aplica antes del IVA, no como recargo aparte."""
+    from custom_components.edistribucion.costs import apply_iee, apply_iva
+
+    bundle = _bundle(
+        {"tariff_type": "tramos", "price_punta": 0.25, "iee_percent": 5.11269632, "iva_percent": 21}
+    )
+    hourly = {"27/07/2026": [{"hour": "10 - 11 h", "importedKwh": 2.0}]}
+    bundle["consumption"] = {"dailyTotals": [], "hourlyByDate": hourly}
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    assert by_id["contA_punta_cost_today"].native_value == pytest.approx(apply_iva(apply_iee(0.5, 5.11269632), 21))
+
+
 async def test_current_pvpc_price_sensor_only_for_pvpc_tariff(hass):
     bundles_pvpc = {"contA": _bundle({"tariff_type": "pvpc"})}
     bundles_fija = {"contA": _bundle({"tariff_type": "fija", "fixed_price": 0.2})}
@@ -258,8 +273,29 @@ async def test_current_pvpc_price_sensor_applies_configured_iva(hass, monkeypatc
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     sensor = by_id["contA_current_pvpc_price"]
     assert sensor.native_value == pytest.approx(0.121)
-    assert sensor.extra_state_attributes["precio_sin_iva"] == 0.10
+    assert sensor.extra_state_attributes["precio_sin_impuestos"] == 0.10
     assert sensor.extra_state_attributes["precios_hoy"]["10h"] == pytest.approx(0.121)
+
+
+async def test_current_pvpc_price_sensor_applies_iee_before_iva(hass, monkeypatch):
+    from datetime import datetime, timezone
+
+    from custom_components.edistribucion.esios import DEFAULT_PVPC_ZONE
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 10, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "pvpc", "iee_percent": 5.11269632, "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    coordinator = next(iter(hass.data[DOMAIN].values()))
+    coordinator.pvpc_prices = {DEFAULT_PVPC_ZONE: {"27/07/2026 10": 0.10}}
+
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_current_pvpc_price"]
+    assert sensor.native_value == pytest.approx(round(0.10 * 1.0511269632 * 1.21, 5))
+    assert sensor.extra_state_attributes["precio_sin_impuestos"] == 0.10
+    assert sensor.extra_state_attributes["iee_percent"] == 5.11269632
 
 
 async def test_simulator_sensors_skip_active_tariff_and_require_data(hass):
@@ -313,6 +349,17 @@ async def test_power_cost_sensor_applies_configured_iva(hass):
     # 3.5*0.08 + 3.5*0.02 = 0.35 sin IVA (ver contracted_power_*_kw en _bundle) -> 0.4235 con 21%.
     assert sensor.native_value == pytest.approx(0.4235)
     assert sensor.extra_state_attributes["iva_percent"] == 21
+
+
+async def test_power_cost_sensor_applies_iee_before_iva(hass):
+    from custom_components.edistribucion.costs import apply_iee, apply_iva
+
+    bundle = _bundle({"price_power_punta": 0.08, "price_power_valle": 0.02, "iee_percent": 5.11269632, "iva_percent": 21})
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_power_cost_today"]
+    assert sensor.native_value == pytest.approx(apply_iva(apply_iee(0.35, 5.11269632), 21))
+    assert sensor.extra_state_attributes["iee_percent"] == 5.11269632
 
 
 async def test_cost_with_power_sensors_require_both_energy_price_and_power_term(hass):

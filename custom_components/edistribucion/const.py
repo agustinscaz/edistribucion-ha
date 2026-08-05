@@ -77,17 +77,24 @@ HOLIDAY_REGIONS = {
     "VC": "C. Valenciana",
 }
 
-# IVA (%) a aplicar sobre el coste de energía Y el término de potencia de ESTE CUPS (por CUPS, no
-# global, porque algunos contratos tienen IVA reducido — p.ej. bono social térmico). NO se aplica a
-# la compensación por excedentes (es una bonificación que se resta, no un consumo que se compense
-# con IVA) ni al desglose de excedentes exportados por tramo — ver costs.py. Instalaciones YA
-# EXISTENTES que no tengan esta clave guardada siguen calculando el coste SIN IVA (0% por defecto en
-# costs.py) hasta que el usuario abra Opciones y lo confirme — así no cambia de golpe un valor que ya
-# tenían configurado (ver v1.13 lección de config_options_no_rename_without_migration). El 21%
-# sugerido aquí es solo el valor que se PRErellena en el formulario de Opciones para que no arranque
-# de 0, no lo que ya tiene guardado alguien que no ha abierto Opciones todavía.
+# Dos impuestos (%) a aplicar sobre el coste de energía Y el término de potencia de ESTE CUPS (por
+# CUPS, no global, porque algunos contratos tienen IVA reducido — p.ej. bono social térmico), EN
+# ESTE ORDEN — igual que en una factura real, no son un recargo plano que se pueda fusionar en un
+# único porcentaje sin perder precisión si el Estado cambia uno u otro por separado (ver issue #3):
+#   1. IEE (Impuesto Especial sobre la Electricidad) — tipo estatal fijo, base imponible del IVA.
+#   2. IVA — aplicado sobre el resultado de aplicar el IEE, no sobre el precio base.
+# Ninguno se aplica a la compensación por excedentes (es una bonificación que se resta, no un
+# consumo que se grave) ni al desglose de excedentes exportados por tramo — ver costs.py.
+# Instalaciones YA EXISTENTES que no tengan estas claves guardadas siguen calculando el coste SIN
+# esa parte (0% por defecto en costs.py) hasta que el usuario abra Opciones y lo confirme — así no
+# cambia de golpe un valor que ya tenían configurado (ver v1.13 lección de
+# config_options_no_rename_without_migration). Los valores sugeridos aquí son solo lo que se
+# PRErellena en el formulario de Opciones para que no arranque de 0, no lo que ya tiene guardado
+# alguien que no ha abierto Opciones todavía.
+CONF_IEE_PERCENT = "iee_percent"
+DEFAULT_IEE_PERCENT = 5.11269632  # tipo estatal fijo vigente del IEE
 CONF_IVA_PERCENT = "iva_percent"
-DEFAULT_IVA_PERCENT = 21
+DEFAULT_IVA_PERCENT = 21  # tipo general de IVA vigente para electricidad
 
 # Umbral de fallos consecutivos del coordinator antes de levantar un Repair issue (ver repairs.py)
 CONSECUTIVE_FAILURES_FOR_REPAIR = 3

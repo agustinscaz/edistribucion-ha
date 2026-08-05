@@ -9,6 +9,7 @@ from custom_components.edistribucion.costs import (  # noqa: E402
     LLANO,
     PUNTA,
     VALLE,
+    apply_iee,
     apply_iva,
     average_price_per_kwh,
     cost_breakdown,
@@ -168,14 +169,30 @@ class TestCostBreakdown:
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0), ("0 - 1 h", 3.0)])
         prices = {PUNTA: 0.30, VALLE: 0.10}
         result = cost_breakdown(consumption, prices, iva_percent=21)
-        assert result["total_sin_iva"] == pytest.approx(0.9)
+        assert result["total_sin_impuestos"] == pytest.approx(0.9)
         assert result["coste_punta"] == pytest.approx(0.6 * 1.21)
         assert result["total"] == pytest.approx(0.9 * 1.21)
 
-    def test_iva_defaults_to_zero_when_not_passed(self):
+    def test_iee_applied_before_iva_to_each_period_and_total(self):
+        """Cada periodo redondea a 4 decimales por separado (IEE y luego IVA) antes de sumar — el
+        total puede diferir en el último decimal de "sumar sin impuestos y aplicar impuestos al
+        final" (ver apply_iee/apply_iva), así que el valor esperado se construye con las mismas
+        funciones en vez de a mano."""
+        consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0), ("0 - 1 h", 3.0)])
+        prices = {PUNTA: 0.30, VALLE: 0.10}
+        result = cost_breakdown(consumption, prices, iee_percent=5.11269632, iva_percent=21)
+        coste_punta_esperado = apply_iva(apply_iee(0.6, 5.11269632), 21)
+        coste_valle_esperado = apply_iva(apply_iee(0.3, 5.11269632), 21)
+        assert result["total_sin_impuestos"] == pytest.approx(0.9)
+        assert result["total_con_iee"] == pytest.approx(apply_iee(0.6, 5.11269632) + apply_iee(0.3, 5.11269632))
+        assert result["coste_punta"] == pytest.approx(coste_punta_esperado)
+        assert result["total"] == pytest.approx(coste_punta_esperado + coste_valle_esperado)
+
+    def test_taxes_default_to_zero_when_not_passed(self):
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
         result = cost_breakdown(consumption, {PUNTA: 0.30})
-        assert result["total"] == result["total_sin_iva"]
+        assert result["total"] == result["total_sin_impuestos"] == result["total_con_iee"]
+        assert result["iee_percent"] == 0
         assert result["iva_percent"] == 0
 
 
@@ -225,8 +242,16 @@ class TestPvpcCostBreakdown:
         consumption = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
         prices = {"27/07/2026 0": 0.10}
         result = pvpc_cost_breakdown(consumption, prices, iva_percent=21)
-        assert result["total_sin_iva"] == pytest.approx(0.2)
+        assert result["total_sin_impuestos"] == pytest.approx(0.2)
         assert result["total"] == pytest.approx(0.242)
+
+    def test_iee_applied_before_iva_to_total(self):
+        consumption = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
+        prices = {"27/07/2026 0": 0.10}
+        result = pvpc_cost_breakdown(consumption, prices, iee_percent=5.11269632, iva_percent=21)
+        assert result["total_sin_impuestos"] == pytest.approx(0.2)
+        assert result["total_con_iee"] == pytest.approx(apply_iee(0.2, 5.11269632))
+        assert result["total"] == pytest.approx(apply_iva(apply_iee(0.2, 5.11269632), 21))
 
 
 class TestApplyIva:
@@ -243,6 +268,26 @@ class TestApplyIva:
         assert apply_iva(1 / 3, 21) == round((1 / 3) * 1.21, 4)
 
 
+class TestApplyIee:
+    def test_basic(self):
+        assert apply_iee(100.0, 5.11269632) == pytest.approx(105.11269632, rel=1e-6)
+
+    def test_zero_percent_is_noop(self):
+        assert apply_iee(100.0, 0) == 100.0
+
+    def test_none_percent_treated_as_zero(self):
+        assert apply_iee(100.0, None) == 100.0
+
+    def test_stacked_with_iva_matches_real_invoice_growth(self):
+        """Ver issue #3: en factura real, IEE se aplica ANTES del IVA (es base imponible del IVA,
+        no un recargo aditivo aparte) — con IEE=5.11269632% e IVA=21%, el crecimiento observado en
+        producción fue ~27,0-27,2%, no un 21% ni un 26,11% (IEE+IVA sumados sin componer)."""
+        base = 100.0
+        con_iee = apply_iee(base, 5.11269632)
+        total = apply_iva(con_iee, 21)
+        assert total == pytest.approx(127.186, abs=0.001)
+
+
 class TestEstimateEnergyCost:
     def test_fija_basic(self):
         sp = {"tariff_type": "fija", "fixed_price": 0.15}
@@ -250,31 +295,63 @@ class TestEstimateEnergyCost:
         assert result == {
             "tariff_type": "fija",
             "precio_eur_kwh": 0.15,
+            "iee_percent": 0,
             "iva_percent": 0,
-            "total_sin_iva": 1.5,
+            "total_sin_impuestos": 1.5,
+            "total_con_iee": 1.5,
             "total": 1.5,
         }
 
     def test_fija_applies_configured_iva(self):
         sp = {"tariff_type": "fija", "fixed_price": 0.15, "iva_percent": 21}
         result = estimate_energy_cost(sp, 10.0, None)
-        assert result["total_sin_iva"] == 1.5
+        assert result["total_sin_impuestos"] == 1.5
         assert result["total"] == pytest.approx(1.815)
+
+    def test_fija_applies_iee_before_iva(self):
+        """Ver issue #3: el IEE es base imponible del IVA, no se suma aparte."""
+        sp = {"tariff_type": "fija", "fixed_price": 0.15, "iee_percent": 5.11269632, "iva_percent": 21}
+        result = estimate_energy_cost(sp, 10.0, None)
+        assert result["total_sin_impuestos"] == 1.5
+        assert result["total_con_iee"] == pytest.approx(apply_iee(1.5, 5.11269632))
+        assert result["total"] == pytest.approx(apply_iva(apply_iee(1.5, 5.11269632), 21))
 
     def test_tramos_applies_configured_iva(self):
         sp = {"tariff_type": "tramos", "price_punta": 0.3, "price_llano": 0.2, "price_valle": 0.1, "iva_percent": 10}
         hourly = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
         result = estimate_energy_cost(sp, 2.0, hourly)
-        assert result["total_sin_iva"] == pytest.approx(0.6)
+        assert result["total_sin_impuestos"] == pytest.approx(0.6)
         assert result["total"] == pytest.approx(0.66)
+
+    def test_tramos_applies_iee_and_iva(self):
+        sp = {
+            "tariff_type": "tramos",
+            "price_punta": 0.3,
+            "price_llano": 0.2,
+            "price_valle": 0.1,
+            "iee_percent": 5.11269632,
+            "iva_percent": 21,
+        }
+        hourly = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
+        result = estimate_energy_cost(sp, 2.0, hourly)
+        assert result["total_sin_impuestos"] == pytest.approx(0.6)
+        assert result["total"] == pytest.approx(apply_iva(apply_iee(0.6, 5.11269632), 21))
 
     def test_pvpc_applies_configured_iva(self):
         sp = {"tariff_type": "pvpc", "iva_percent": 21}
         hourly = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
         prices_by_zone = {"PCB": {"27/07/2026 0": 0.10}}
         result = estimate_energy_cost(sp, 2.0, hourly, prices_by_zone)
-        assert result["total_sin_iva"] == pytest.approx(0.2)
+        assert result["total_sin_impuestos"] == pytest.approx(0.2)
         assert result["total"] == pytest.approx(0.242)
+
+    def test_pvpc_applies_iee_and_iva(self):
+        sp = {"tariff_type": "pvpc", "iee_percent": 5.11269632, "iva_percent": 21}
+        hourly = _hourly("27/07/2026", [("0 - 1 h", 2.0)])
+        prices_by_zone = {"PCB": {"27/07/2026 0": 0.10}}
+        result = estimate_energy_cost(sp, 2.0, hourly, prices_by_zone)
+        assert result["total_sin_impuestos"] == pytest.approx(0.2)
+        assert result["total"] == pytest.approx(apply_iva(apply_iee(0.2, 5.11269632), 21))
 
     def test_fija_without_price_returns_none(self):
         sp = {"tariff_type": "fija"}
@@ -378,6 +455,15 @@ class TestPowerCost:
         sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08, "iva_percent": 21}
         assert power_cost(sp) == pytest.approx(0.4 * 1.21)
 
+    def test_iee_applied_before_iva(self):
+        sp = {
+            "contracted_power_punta_kw": 5.0,
+            "price_power_punta": 0.08,
+            "iee_percent": 5.11269632,
+            "iva_percent": 21,
+        }
+        assert power_cost(sp) == pytest.approx(apply_iva(apply_iee(0.4, 5.11269632), 21))
+
 
 class TestSelfConsumptionRatio:
     def test_no_grid_import_is_100_percent(self):
@@ -470,10 +556,34 @@ class TestMonthlySummaryCsv:
         }
         month = {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0}
         csv = monthly_summary_csv(sp, month)
+        assert "iee_percent,0" in csv
         assert "iva_percent,21" in csv
-        assert "coste_energia_sin_iva,2.0" in csv
+        assert "coste_energia_sin_impuestos,2.0" in csv
         assert "coste_energia,2.42" in csv  # 10*0.2 * 1.21
         assert "termino_potencia,0.605" in csv  # 5*0.1 * 1.21
-        assert "compensacion_excedentes,0.2" in csv  # sin IVA, ver TestSurplusCompensationValue
+        assert "compensacion_excedentes,0.2" in csv  # sin impuestos, ver TestSurplusCompensationValue
         # 2.42 (energía) + 0.605 (potencia) - 0.2 (excedentes) = 2.825
         assert "total_estimado,2.825" in csv
+
+    def test_iee_and_iva_applied_to_energy_and_power_not_surplus(self):
+        """Ver issue #3: fórmula real de factura, IEE aplicado antes del IVA."""
+        sp = {
+            "tariff_type": "fija",
+            "fixed_price": 0.2,
+            "iee_percent": 5.11269632,
+            "iva_percent": 21,
+            "contracted_power_punta_kw": 5.0,
+            "price_power_punta": 0.1,
+            "surplus_compensation": True,
+            "surplus_price": 0.05,
+        }
+        month = {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0}
+        csv = monthly_summary_csv(sp, month)
+        energia_con_iee = apply_iee(2.0, 5.11269632)
+        energia = apply_iva(energia_con_iee, 21)
+        potencia = apply_iva(apply_iee(0.5, 5.11269632), 21)
+        assert f"coste_energia_con_iee,{energia_con_iee}" in csv
+        assert f"coste_energia,{energia}" in csv
+        assert f"termino_potencia,{potencia}" in csv
+        total = round(energia + potencia - 0.2, 4)
+        assert f"total_estimado,{total}" in csv

@@ -33,11 +33,12 @@
       },
       "supply_point": {
         "title": "Subministro {position}/{total}: {cups}",
-        "description": "{address} ({estado})\n\nElixe se seguir este subministro, un alias, o tipo de tarifa (fixa/tramos/pvpc), o IVE a aplicar (%), o prezo do termo de potencia, os prezos de enerxía segundo a tarifa elixida, a compensación de excedentes, e (se usas pvpc) a zona. A potencia contratada (kW) lese soa de e-distribución — non fai falta que a escribas.\n\nOs prezos de mañá con tarifa pvpc publícanse sobre as 20:15h do día anterior — non fai falta clave nin rexistro, úsase o ficheiro público de REE.",
+        "description": "{address} ({estado})\n\nElixe se seguir este subministro, un alias, o tipo de tarifa (fixa/tramos/pvpc), o IEE e o IVE a aplicar (%), o prezo do termo de potencia, os prezos de enerxía segundo a tarifa elixida, a compensación de excedentes, e (se usas pvpc) a zona. A potencia contratada (kW) lese soa de e-distribución — non fai falta que a escribas.\n\nOs prezos de mañá con tarifa pvpc publícanse sobre as 20:15h do día anterior — non fai falta clave nin rexistro, úsase o ficheiro público de REE.",
         "data": {
           "track": "Seguir este subministro",
           "alias": "Alias (opcional)",
           "tariff_type": "Tipo de tarifa: fixa / tramos / pvpc",
+          "iee_percent": "IEE a aplicar (%)",
           "iva_percent": "IVE a aplicar (%)",
           "price_power_punta": "Prezo potencia punta (€/kW/día)",
           "price_power_valle": "Prezo potencia val (€/kW/día)",
