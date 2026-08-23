@@ -403,16 +403,25 @@ async def test_simulator_tramos_skipped_without_any_tramos_price(hass):
     assert "contA_simulated_cost_pvpc_month" in ids  # pvpc siempre se puede simular
 
 
-async def test_self_consumption_sensors_only_if_exported_something(hass):
+async def test_self_consumption_sensors_always_created(hass):
+    """Regresión issue #11: antes solo se creaban si el CUPS YA había exportado algo en el momento
+    del arranque de la integración — un CUPS sin solar todavía (que la instala más adelante) se
+    quedaba sin estos sensores para siempre hasta reiniciar HA a mano, porque nada volvía a
+    evaluar esa condición. Ahora se crean siempre, igual que imported_energy_today; sin
+    exportación nunca, self_consumption_ratio ya da 0.0% de forma correcta (no None/crash)."""
     bundles_with_export = {"contA": _bundle(has_export=True)}
     bundles_without_export = {"contA": _bundle(has_export=False)}
 
     entities_with = await _setup_with_fake_coordinator(hass, bundles_with_export)
-    assert "contA_self_consumption_month" in _unique_ids(entities_with)
+    by_id_with = {e._attr_unique_id: e for e in entities_with if hasattr(e, "_attr_unique_id")}
+    assert "contA_self_consumption_month" in by_id_with
+    assert by_id_with["contA_self_consumption_month"].native_value == pytest.approx(23.1, abs=0.1)
 
     hass.data[DOMAIN].clear()
     entities_without = await _setup_with_fake_coordinator(hass, bundles_without_export)
-    assert "contA_self_consumption_month" not in _unique_ids(entities_without)
+    by_id_without = {e._attr_unique_id: e for e in entities_without if hasattr(e, "_attr_unique_id")}
+    assert "contA_self_consumption_month" in by_id_without
+    assert by_id_without["contA_self_consumption_month"].native_value == 0.0
 
 
 async def test_power_cost_sensors_only_if_power_term_configured(hass):
@@ -680,3 +689,26 @@ async def test_today_energy_sensors_use_total_not_total_increasing(hass):
         # sensores imported/exported ese state_class vive en `entity_description`, no en un
         # `_attr_state_class` de instancia, y la propiedad es la que HA de verdad consulta.
         assert by_id[uid].state_class == SensorStateClass.TOTAL, uid
+
+
+async def test_month_vs_last_year_handles_null_current_import(hass):
+    """Regresión issue #9: si `month.totalImportedKwh` viene `None` (campo presente pero sin
+    valor), el sensor debe devolver `None`, no lanzar TypeError al restar contra `previous`."""
+    bundles = {"contA": _bundle()}
+    bundles["contA"]["month"]["totalImportedKwh"] = None
+    bundles["contA"]["month_last_year"] = {"totalImportedKwh": 8.0}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_month_vs_last_year"].native_value is None
+
+
+async def test_power_cost_month_handles_null_daily_totals(hass):
+    """Regresión issue #9: `month.dailyTotals` como `None` explícito (no ausente) no debe romper
+    `len(...)` — `_days_elapsed` debe caer a 0 en vez de lanzar TypeError."""
+    bundles = {"contA": _bundle({"price_power_punta": 0.1, "price_power_valle": 0.05})}
+    bundles["contA"]["month"]["dailyTotals"] = None
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_power_cost_month"]
+    assert sensor._days_elapsed == 0
+    assert sensor.native_value == 0

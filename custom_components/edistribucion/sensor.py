@@ -127,9 +127,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     entities.append(_EdistribucionTramoSensor(coordinator, cont_id, sp, period_key, tramo, "cost"))
             entities.append(EdistribucionCurrentTramoPriceSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionNextTramoPeriodChangeSensor(coordinator, cont_id, sp))
-        if (bundle.get("month") or {}).get("totalExportedKwh"):
-            entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
-            entities.append(EdistribucionSelfConsumptionMonthSensor(coordinator, cont_id, sp))
+        # Sin gate por dato en vivo (issue #11): a diferencia del resto de condiciones de esta
+        # función (todas sobre configuración/Opciones, que SÍ disparan un reload al cambiar vía
+        # `_async_update_listener`), esta dependía de si YA se había exportado algo en el momento
+        # del arranque — un CUPS sin excedente ese día podía quedarse sin estos dos sensores para
+        # siempre hasta reiniciar HA a mano, aunque más adelante empezara a exportar (instalar
+        # solar, activar una batería...). `self_consumption_ratio` ya maneja bien "nunca exportado"
+        # devolviendo 0.0% (no None/crash), así que no hace falta el gate: se crean siempre, igual
+        # que imported_energy_today/exported_energy_today.
+        entities.append(EdistribucionSelfConsumptionTodaySensor(coordinator, cont_id, sp))
+        entities.append(EdistribucionSelfConsumptionMonthSensor(coordinator, cont_id, sp))
 
     async_add_entities(entities)
 
@@ -314,7 +321,8 @@ class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
         if not period:
             return {}
         field = f"{self._flow}Kwh"
-        return {"daily_totals": [{"date": d["date"], "kwh": d.get(field)} for d in period.get("dailyTotals", [])]}
+        # `or []`: mismo motivo que en EdistribucionPowerCostMonthSensor._days_elapsed (issue #9).
+        return {"daily_totals": [{"date": d["date"], "kwh": d.get(field)} for d in period.get("dailyTotals") or []]}
 
     @property
     def available(self) -> bool:
@@ -1033,7 +1041,10 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
         month = self._bundle.get("month")
         if not month:
             return 0
-        return len(month.get("dailyTotals", []))
+        # `or []`, no `.get(..., [])`: si "dailyTotals" viene como clave presente pero con valor
+        # `null` (no ausente), `.get(clave, default)` NO usaría el default y `len(None)` reventaría
+        # (issue #9).
+        return len(month.get("dailyTotals") or [])
 
     @property
     def native_value(self) -> float:
@@ -1126,7 +1137,8 @@ class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionBaseSensor):
     @property
     def _power_cost(self) -> float:
         month = self._bundle.get("month")
-        days_elapsed = len(month.get("dailyTotals", [])) if month else 0
+        # `or []`: mismo motivo que en EdistribucionPowerCostMonthSensor._days_elapsed (issue #9).
+        days_elapsed = len(month.get("dailyTotals") or []) if month else 0
         return round(power_cost(self._bundle.get("supply_point") or {}) * days_elapsed, 4)
 
     @property
@@ -1164,7 +1176,9 @@ class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):
             return None
         previous = last_year.get("totalImportedKwh")
         current = this_year.get("totalImportedKwh")
-        if not previous:
+        # `current` también puede venir `None` (campo presente pero sin valor) — sin protegerlo,
+        # `current - previous` lanza TypeError en vez de devolver "sin dato todavía" (issue #9).
+        if not previous or current is None:
             return None
         return round((current - previous) / previous * 100, 2)
 

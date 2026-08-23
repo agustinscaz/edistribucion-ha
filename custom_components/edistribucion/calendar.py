@@ -88,7 +88,9 @@ class EdistribucionConsumptionCalendar(CoordinatorEntity[EdistribucionCoordinato
                 data = await self.coordinator.client.async_get_consumption(self._cont_id, "3", cursor.strftime("%Y-%m-%d"))
             except EdistribucionApiError:
                 data = None
-            for day in (data or {}).get("dailyTotals", []):
+            # `or []`, no `.get(..., [])`: "dailyTotals" podría venir con clave presente pero valor
+            # `null` en vez de ausente — `.get(clave, default)` no cubre ese caso (issue #9).
+            for day in (data or {}).get("dailyTotals") or []:
                 event = _day_to_event(day)
                 if event and range_start <= event.start <= range_end:
                     events.append(event)
