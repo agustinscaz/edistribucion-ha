@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -182,33 +183,60 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     "contract": None,
                 }
 
-                try:
-                    # Potencia contratada real (punta/valle) + metadatos del contrato — sacada de la
-                    # propia distribuidora, no de un valor que teclee el usuario (ver v1.11.0).
-                    bundle["contract"] = await self.client.async_get_contracted_power(cont_id)
-                    sp[CONF_CONTRACTED_POWER_PUNTA] = bundle["contract"].get("contractedPowerPuntaKw") or 0
-                    sp[CONF_CONTRACTED_POWER_VALLE] = bundle["contract"].get("contractedPowerValleKw") or 0
-                except EdistribucionApiError as err:
-                    _LOGGER.warning("No se pudo leer la potencia contratada real de %s: %s", sp.get("cups"), err)
+                # Las 5 llamadas de este CUPS van en PARALELO (issue #17), no una detrás de otra:
+                # cada una pasa por su propio ciclo de 3 reintentos con backoff en
+                # `EdistribucionApiClient._request` (hasta ~90s en el peor caso) — en secuencial,
+                # un add-on completamente caído hacía fallar las 5 EN CADENA (~5x ese tiempo) antes
+                # de darse por vencido con este CUPS, para descubrir al final exactamente el mismo
+                # fallo de conexión que ya se sabía desde la primera llamada. `return_exceptions`
+                # preserva la independencia de cada una (un fallo aquí no debe tirar las demás).
+                a_year_ago = (dt_util.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+                contract, consumption, week, month, month_last_year = await asyncio.gather(
+                    self.client.async_get_contracted_power(cont_id),
+                    self.client.async_get_consumption(cont_id),
+                    self.client.async_get_consumption(cont_id, RANGE_WEEK),
+                    self.client.async_get_consumption(cont_id, RANGE_MONTH),
+                    self.client.async_get_consumption(cont_id, RANGE_MONTH, a_year_ago),
+                    return_exceptions=True,
+                )
 
-                try:
-                    bundle["consumption"] = await self.client.async_get_consumption(cont_id)
-                except EdistribucionApiError as err:
-                    _LOGGER.warning("No se pudo leer consumo de hoy de %s: %s", sp.get("cups"), err)
-                try:
-                    bundle["week"] = await self.client.async_get_consumption(cont_id, RANGE_WEEK)
-                except EdistribucionApiError as err:
-                    _LOGGER.warning("No se pudo leer consumo semanal de %s: %s", sp.get("cups"), err)
-                try:
-                    bundle["month"] = await self.client.async_get_consumption(cont_id, RANGE_MONTH)
-                except EdistribucionApiError as err:
-                    _LOGGER.warning("No se pudo leer consumo mensual de %s: %s", sp.get("cups"), err)
-                try:
-                    a_year_ago = (dt_util.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-                    bundle["month_last_year"] = await self.client.async_get_consumption(cont_id, RANGE_MONTH, a_year_ago)
-                except EdistribucionApiError as err:
+                if isinstance(contract, EdistribucionApiError):
+                    _LOGGER.warning("No se pudo leer la potencia contratada real de %s: %s", sp.get("cups"), contract)
+                elif isinstance(contract, BaseException):
+                    raise contract
+                else:
+                    bundle["contract"] = contract
+                    sp[CONF_CONTRACTED_POWER_PUNTA] = contract.get("contractedPowerPuntaKw") or 0
+                    sp[CONF_CONTRACTED_POWER_VALLE] = contract.get("contractedPowerValleKw") or 0
+
+                if isinstance(consumption, EdistribucionApiError):
+                    _LOGGER.warning("No se pudo leer consumo de hoy de %s: %s", sp.get("cups"), consumption)
+                elif isinstance(consumption, BaseException):
+                    raise consumption
+                else:
+                    bundle["consumption"] = consumption
+
+                if isinstance(week, EdistribucionApiError):
+                    _LOGGER.warning("No se pudo leer consumo semanal de %s: %s", sp.get("cups"), week)
+                elif isinstance(week, BaseException):
+                    raise week
+                else:
+                    bundle["week"] = week
+
+                if isinstance(month, EdistribucionApiError):
+                    _LOGGER.warning("No se pudo leer consumo mensual de %s: %s", sp.get("cups"), month)
+                elif isinstance(month, BaseException):
+                    raise month
+                else:
+                    bundle["month"] = month
+
+                if isinstance(month_last_year, EdistribucionApiError):
                     # Normal si el contrato es más nuevo que un año — no hay nada que comparar todavía.
-                    _LOGGER.debug("Sin histórico de hace un año para %s: %s", sp.get("cups"), err)
+                    _LOGGER.debug("Sin histórico de hace un año para %s: %s", sp.get("cups"), month_last_year)
+                elif isinstance(month_last_year, BaseException):
+                    raise month_last_year
+                else:
+                    bundle["month_last_year"] = month_last_year
 
                 self._track_value_freshness(cont_id, bundle)
                 data[cont_id] = bundle

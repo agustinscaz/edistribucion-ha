@@ -114,6 +114,38 @@ async def test_contracted_power_failure_does_not_crash_bundle(hass):
     assert data["cont1"]["contract"] is None
 
 
+async def test_supply_point_calls_run_in_parallel(hass):
+    """Regresión issue #17: las 5 llamadas por CUPS (potencia contratada + consumo hoy/semana/mes/
+    mismo mes año pasado) deben ir en PARALELO, no una detrás de otra — en secuencial, un add-on
+    caído hacía fallar las 5 EN CADENA (cada una con su propio ciclo de reintentos) antes de darse
+    por vencido con este CUPS. Se comprueba con el mismo retraso artificial en las 5 llamadas: en
+    paralelo el tiempo total ronda ese único retraso; en secuencial habría sido ~5 veces mayor."""
+    import asyncio
+    import time
+
+    entry = _make_entry(hass)
+    client = _make_client()
+    delay = 0.2
+
+    async def slow_consumption(cont_id, range_type=None, date=None):
+        await asyncio.sleep(delay)
+        return {"totalImportedKwh": 5.0, "hourlyByDate": {}}
+
+    async def slow_contracted_power(cont_id):
+        await asyncio.sleep(delay)
+        return {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
+
+    client.async_get_consumption.side_effect = slow_consumption
+    client.async_get_contracted_power.side_effect = slow_contracted_power
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+
+    start = time.monotonic()
+    await coordinator._async_update_data()
+    elapsed = time.monotonic() - start
+
+    assert elapsed < delay * 2  # en secuencial habría sido >= 5 * delay
+
+
 async def test_invalid_credentials_raises_update_failed_and_creates_repair(hass):
     entry = _make_entry(hass)
     client = _make_client()
