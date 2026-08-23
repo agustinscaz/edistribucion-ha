@@ -38,7 +38,18 @@ class EdistribucionApiClient:
                 async with asyncio.timeout(TIMEOUT):
                     resp = await self._session.request(method, f"{self._base_url}{path}")
                     if resp.status >= 400:
-                        return await self._raise_for_status(resp, path)
+                        err = await self._build_status_error(resp, path)
+                        if resp.status < 500:
+                            # 4xx (credenciales, petición mal formada...): reintentar no cambia
+                            # nada, se propaga ya en el primer intento.
+                            raise err
+                        # 5xx: error transitorio del lado del add-on (reiniciando, sobrecargado...)
+                        # — se trata igual que un fallo de red, entra en el mismo mecanismo de
+                        # reintento en vez de propagarse de inmediato.
+                        last_err = err
+                        if attempt < len(RETRY_DELAYS_S) - 1:
+                            _LOGGER.debug("Error 5xx transitorio hablando con el add-on (%s), reintentando: %s", path, err)
+                        continue
                     return await resp.json()
             except (ClientError, TimeoutError) as err:
                 last_err = err
@@ -47,7 +58,7 @@ class EdistribucionApiClient:
         raise EdistribucionApiError(f"No se pudo conectar con el add-on ({path}) tras {len(RETRY_DELAYS_S)} intentos: {last_err}") from last_err
 
     @staticmethod
-    async def _raise_for_status(resp, path: str):
+    async def _build_status_error(resp, path: str) -> EdistribucionApiError:
         body_text = await resp.text()
         code = None
         try:
@@ -57,8 +68,8 @@ class EdistribucionApiClient:
         except (ValueError, AttributeError):
             pass
         if resp.status == 401 and code == "invalid_credentials":
-            raise InvalidCredentialsError("El add-on rechazó el login: credenciales incorrectas")
-        raise EdistribucionApiError(f"{path} -> HTTP {resp.status}: {body_text[:300]}")
+            return InvalidCredentialsError("El add-on rechazó el login: credenciales incorrectas")
+        return EdistribucionApiError(f"{path} -> HTTP {resp.status}: {body_text[:300]}")
 
     async def _get(self, path: str) -> dict | list:
         return await self._request("GET", path)

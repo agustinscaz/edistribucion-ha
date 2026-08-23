@@ -141,18 +141,19 @@ async def test_401_without_invalid_credentials_code_is_generic_error():
         assert not isinstance(exc_info.value, InvalidCredentialsError)
 
 
-async def test_generic_http_error_raises():
+async def test_generic_http_error_raises(monkeypatch):
     async def handler(request):
         return web.Response(status=502, text="bad gateway")
 
     app = web.Application()
     app.router.add_get("/info", handler)
     async with _make_client(app) as (client, _):
+        monkeypatch.setattr("custom_components.edistribucion.api.asyncio.sleep", lambda _: _fast_sleep())
         with pytest.raises(EdistribucionApiError, match="502"):
             await client.async_get_info()
 
 
-async def test_malformed_error_body_still_raises_generic_error():
+async def test_malformed_error_body_still_raises_generic_error(monkeypatch):
     """Si el cuerpo del error no es JSON válido, no debe petar — debe caer al error genérico."""
 
     async def handler(request):
@@ -161,8 +162,44 @@ async def test_malformed_error_body_still_raises_generic_error():
     app = web.Application()
     app.router.add_get("/info", handler)
     async with _make_client(app) as (client, _):
+        monkeypatch.setattr("custom_components.edistribucion.api.asyncio.sleep", lambda _: _fast_sleep())
         with pytest.raises(EdistribucionApiError, match="500"):
             await client.async_get_info()
+
+
+async def test_5xx_error_retries_before_raising(monkeypatch):
+    """Regresión issue #12: un 5xx (add-on reiniciando/sobrecargado momentáneamente) es un error
+    transitorio y debe reintentarse igual que un fallo de red, no propagarse en el primer intento."""
+    attempts = {"count": 0}
+
+    async def handler(request):
+        attempts["count"] += 1
+        return web.Response(status=503, text="service unavailable")
+
+    app = web.Application()
+    app.router.add_get("/info", handler)
+    async with _make_client(app) as (client, _):
+        monkeypatch.setattr("custom_components.edistribucion.api.asyncio.sleep", lambda _: _fast_sleep())
+        with pytest.raises(EdistribucionApiError, match="503"):
+            await client.async_get_info()
+        assert attempts["count"] == 3  # los 3 intentos de RETRY_DELAYS_S, igual que un fallo de red
+
+
+async def test_4xx_error_does_not_retry():
+    """A diferencia de un 5xx, un 4xx (credenciales, petición mal formada) no se arregla
+    reintentando — debe propagarse ya en el primer intento, sin gastar los 3 reintentos."""
+    attempts = {"count": 0}
+
+    async def handler(request):
+        attempts["count"] += 1
+        return web.json_response({"error": "not found"}, status=404)
+
+    app = web.Application()
+    app.router.add_get("/info", handler)
+    async with _make_client(app) as (client, _):
+        with pytest.raises(EdistribucionApiError, match="404"):
+            await client.async_get_info()
+        assert attempts["count"] == 1
 
 
 async def test_network_error_retries_and_then_raises(monkeypatch):
