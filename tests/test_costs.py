@@ -241,6 +241,21 @@ class TestCostBreakdown:
         # explícito para que la regresión no pase desapercibida si alguien la reintroduce.
         assert coste_punta_esperado + coste_valle_esperado != pytest.approx(result["total"])
 
+    def test_per_period_cost_not_rounded_before_taxes(self):
+        """Regresión issue #16: la primera versión del fix de #13 arregló el TOTAL pero dejó
+        `coste_punta`/`llano`/`valle` con el mismo doble redondeo que #13 le había quitado al
+        total (cada tramo se redondeaba a 4 decimales ANTES de aplicarle IEE/IVA). Con un kwh que
+        no es un múltiplo "limpio" del precio, el coste bien calculado (impuestos sobre el importe
+        SIN redondear) difiere del que saldría redondeando antes — se comprueba que sale el
+        primero, no el segundo."""
+        consumption = _hourly("27/07/2026", [("11 - 12 h", 1.23456789)])
+        result = cost_breakdown(consumption, {PUNTA: 0.333333}, iee_percent=5.11269632, iva_percent=21)
+        raw = 1.23456789 * 0.333333
+        sin_redondeo_previo = apply_iva(apply_iee(raw, 5.11269632), 21)
+        con_doble_redondeo = apply_iva(apply_iee(round(raw, 4), 5.11269632), 21)
+        assert sin_redondeo_previo != con_doble_redondeo  # confirma que este caso distingue ambas versiones
+        assert result["coste_punta"] == pytest.approx(sin_redondeo_previo)
+
     def test_taxes_default_to_zero_when_not_passed(self):
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0)])
         result = cost_breakdown(consumption, {PUNTA: 0.30})

@@ -198,15 +198,22 @@ def cost_breakdown(
             period = hour_period(date_str, h.get("hour", ""), holiday_calendar, zone)
             kwh_by_period[period] += h.get(field) or 0
 
-    # El desglose por tramo (coste_punta/llano/valle) se redondea para MOSTRAR, tramo a tramo —
-    # pero el total NO sale de sumar esos tres valores ya redondeados dos veces cada uno (issue
-    # #13: una factura real aplica IEE+IVA una sola vez sobre el importe total de energía, no
-    # tramo por tramo con redondeo intermedio en cada paso). Se suman los importes SIN redondear
-    # de los 3 tramos y se aplica IEE/IVA una sola vez sobre esa suma — igual que ya hace
-    # `pvpc_cost_breakdown` y `estimate_energy_cost` (tarifa "fija") — y solo entonces se redondea.
+    # El TOTAL no sale de sumar tramos ya redondeados (issue #13: una factura real aplica IEE+IVA
+    # una sola vez sobre el importe total de energía) — se aplica una sola vez sobre la suma SIN
+    # redondear de los 3 tramos, igual que `pvpc_cost_breakdown`/`estimate_energy_cost` (fija).
+    #
+    # El desglose por tramo (coste_punta/llano/valle), para MOSTRAR, aplica IEE+IVA una sola vez a
+    # cada importe individual SIN redondeo intermedio antes (issue #16: la primera versión de este
+    # fix seguía redondeando cada tramo a 4 decimales ANTES de aplicar IEE, dejando el desglose con
+    # el mismo doble redondeo que el propio issue #13 acababa de quitarle al total). Aun así,
+    # `total` no tiene por qué coincidir EXACTO con `coste_punta + coste_llano + coste_valle` — es
+    # una limitación de redondeo inherente a repartir impuestos por partes (el mismo motivo por el
+    # que una factura real a veces tiene un céntimo de descuadre en el desglose de líneas frente al
+    # total): aplicar IEE/IVA sobre la suma completa no da matemáticamente lo mismo que aplicarlo
+    # por separado a cada parte y sumar, aunque ambos redondeen solo una vez. La diferencia máxima
+    # esperable es de un par de diezmilésimas de euro, no el desajuste sistemático de antes.
     raw_cost_by_period = {period: kwh * prices.get(period, 0) for period, kwh in kwh_by_period.items()}
-    cost_by_period_sin_impuestos = {period: round(cost, 4) for period, cost in raw_cost_by_period.items()}
-    cost_by_period_con_iee = {period: apply_iee(cost, iee_percent) for period, cost in cost_by_period_sin_impuestos.items()}
+    cost_by_period_con_iee = {period: apply_iee(cost, iee_percent) for period, cost in raw_cost_by_period.items()}
     cost_by_period = {period: apply_iva(cost, iva_percent) for period, cost in cost_by_period_con_iee.items()}
 
     total_sin_impuestos = round(sum(raw_cost_by_period.values()), 4)
