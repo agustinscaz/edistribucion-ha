@@ -221,19 +221,25 @@ class TestCostBreakdown:
         assert result["total"] == pytest.approx(0.9 * 1.21)
 
     def test_iee_applied_before_iva_to_each_period_and_total(self):
-        """Cada periodo redondea a 4 decimales por separado (IEE y luego IVA) antes de sumar — el
-        total puede diferir en el último decimal de "sumar sin impuestos y aplicar impuestos al
-        final" (ver apply_iee/apply_iva), así que el valor esperado se construye con las mismas
-        funciones en vez de a mano."""
+        """El desglose por tramo (coste_punta/coste_valle) redondea cada uno por separado, para
+        mostrar — pero el TOTAL (issue #13) aplica IEE y luego IVA UNA SOLA VEZ sobre la suma sin
+        redondear de los tramos, igual que haría una factura real, en vez de sumar tramos que ya
+        llevan impuestos aplicados y redondeados cada uno por su lado (lo que podía acumular una
+        diferencia de céntimos)."""
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0), ("0 - 1 h", 3.0)])
         prices = {PUNTA: 0.30, VALLE: 0.10}
         result = cost_breakdown(consumption, prices, iee_percent=5.11269632, iva_percent=21)
         coste_punta_esperado = apply_iva(apply_iee(0.6, 5.11269632), 21)
         coste_valle_esperado = apply_iva(apply_iee(0.3, 5.11269632), 21)
+        total_con_iee_esperado = apply_iee(0.9, 5.11269632)
         assert result["total_sin_impuestos"] == pytest.approx(0.9)
-        assert result["total_con_iee"] == pytest.approx(apply_iee(0.6, 5.11269632) + apply_iee(0.3, 5.11269632))
+        assert result["total_con_iee"] == pytest.approx(total_con_iee_esperado)
         assert result["coste_punta"] == pytest.approx(coste_punta_esperado)
-        assert result["total"] == pytest.approx(coste_punta_esperado + coste_valle_esperado)
+        assert result["total"] == pytest.approx(apply_iva(total_con_iee_esperado, 21))
+        # Con estos números concretos, sumar los tramos ya redondeados (comportamiento antiguo,
+        # issue #13) da 1.1446 — un céntimo por debajo del total correcto (1.1447). Lo dejamos
+        # explícito para que la regresión no pase desapercibida si alguien la reintroduce.
+        assert coste_punta_esperado + coste_valle_esperado != pytest.approx(result["total"])
 
     def test_taxes_default_to_zero_when_not_passed(self):
         consumption = _hourly("27/07/2026", [("11 - 12 h", 2.0)])

@@ -198,9 +198,19 @@ def cost_breakdown(
             period = hour_period(date_str, h.get("hour", ""), holiday_calendar, zone)
             kwh_by_period[period] += h.get(field) or 0
 
-    cost_by_period_sin_impuestos = {period: round(kwh * prices.get(period, 0), 4) for period, kwh in kwh_by_period.items()}
+    # El desglose por tramo (coste_punta/llano/valle) se redondea para MOSTRAR, tramo a tramo —
+    # pero el total NO sale de sumar esos tres valores ya redondeados dos veces cada uno (issue
+    # #13: una factura real aplica IEE+IVA una sola vez sobre el importe total de energía, no
+    # tramo por tramo con redondeo intermedio en cada paso). Se suman los importes SIN redondear
+    # de los 3 tramos y se aplica IEE/IVA una sola vez sobre esa suma — igual que ya hace
+    # `pvpc_cost_breakdown` y `estimate_energy_cost` (tarifa "fija") — y solo entonces se redondea.
+    raw_cost_by_period = {period: kwh * prices.get(period, 0) for period, kwh in kwh_by_period.items()}
+    cost_by_period_sin_impuestos = {period: round(cost, 4) for period, cost in raw_cost_by_period.items()}
     cost_by_period_con_iee = {period: apply_iee(cost, iee_percent) for period, cost in cost_by_period_sin_impuestos.items()}
     cost_by_period = {period: apply_iva(cost, iva_percent) for period, cost in cost_by_period_con_iee.items()}
+
+    total_sin_impuestos = round(sum(raw_cost_by_period.values()), 4)
+    total_con_iee = apply_iee(total_sin_impuestos, iee_percent)
     return {
         "kwh_punta": round(kwh_by_period[PUNTA], 3),
         "kwh_llano": round(kwh_by_period[LLANO], 3),
@@ -210,9 +220,9 @@ def cost_breakdown(
         "coste_valle": cost_by_period[VALLE],
         "iee_percent": iee_percent or 0,
         "iva_percent": iva_percent or 0,
-        "total_sin_impuestos": round(sum(cost_by_period_sin_impuestos.values()), 4),
-        "total_con_iee": round(sum(cost_by_period_con_iee.values()), 4),
-        "total": round(sum(cost_by_period.values()), 4),
+        "total_sin_impuestos": total_sin_impuestos,
+        "total_con_iee": total_con_iee,
+        "total": apply_iva(total_con_iee, iva_percent),
     }
 
 
