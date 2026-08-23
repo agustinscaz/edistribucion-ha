@@ -201,10 +201,10 @@
         "name": "Prochain changement de tranche"
       },
       "self_consumption_today": {
-        "name": "Autosuffisance énergétique approximative aujourd'hui"
+        "name": "Ratio approximatif exportation/échange réseau (aujourd'hui)"
       },
       "self_consumption_month": {
-        "name": "Autosuffisance énergétique approximative (mois)"
+        "name": "Ratio approximatif exportation/échange réseau (mois)"
       },
       "average_price_month": {
         "name": "Prix moyen du kWh (mois)"

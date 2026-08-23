@@ -201,10 +201,10 @@
         "name": "Nächster Tarifwechsel"
       },
       "self_consumption_today": {
-        "name": "Ungefähre Energieautarkie heute"
+        "name": "Ungefähres Verhältnis Einspeisung/Netzaustausch (heute)"
       },
       "self_consumption_month": {
-        "name": "Ungefähre Energieautarkie (Monat)"
+        "name": "Ungefähres Verhältnis Einspeisung/Netzaustausch (Monat)"
       },
       "average_price_month": {
         "name": "Durchschnittspreis pro kWh (Monat)"

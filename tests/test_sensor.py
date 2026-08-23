@@ -424,6 +424,18 @@ async def test_self_consumption_sensors_always_created(hass):
     assert by_id_without["contA_self_consumption_month"].native_value == 0.0
 
 
+async def test_self_consumption_sensors_disabled_by_default(hass):
+    """Issue #14: no es autosuficiencia real (solo ratio exportación/intercambio con red) — para
+    quien ya mide autosuficiencia real con datos de generación, este número es ruido que además
+    puede confundirse con esa medida real. Deshabilitado por defecto en instalaciones NUEVAS
+    (`entity_registry_enabled_default`), sin afectar a quien ya lo tuviera habilitado."""
+    bundles = {"contA": _bundle(has_export=True)}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_self_consumption_today"].entity_registry_enabled_default is False
+    assert by_id["contA_self_consumption_month"].entity_registry_enabled_default is False
+
+
 async def test_power_cost_sensors_only_if_power_term_configured(hass):
     bundles_with_price = {"contA": _bundle({"price_power_punta": 0.08})}
     bundles_without_price = {"contA": _bundle()}

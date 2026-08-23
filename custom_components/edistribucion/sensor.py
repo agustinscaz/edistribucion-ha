@@ -923,15 +923,22 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
 
 
 class _EdistribucionSelfConsumptionSensor(_EdistribucionBaseSensor):
-    """Grado de AUTOSUFICIENCIA aproximado (%) — calculado solo con importado/exportado de
-    e-distribución, no con generación solar real (que el contador no reporta). Ver
-    `costs.self_consumption_ratio` para la definición exacta y sus limitaciones (casos límite
-    correctos: 0% importado = 100%, nada exportado = 0%). Solo se crea si el CUPS ha exportado
-    algo."""
+    """RATIO exportación/intercambio total con la red (%), NO autosuficiencia real — issue #14:
+    "autosuficiencia" prometía más de lo que este cálculo puede dar (solo ve importado/exportado
+    del contador, nunca la generación real ni el autoconsumo directo que no pasa por él). Ver
+    `costs.self_consumption_ratio` para la fórmula exacta y sus limitaciones (casos límite
+    correctos: 0% importado = 100%, nada exportado = 0%). Deshabilitado por defecto en instalaciones
+    NUEVAS (`entity_registry_enabled_default`): para quien ya tiene autosuficiencia real medida con
+    datos de generación (p.ej. un inversor solar), este número es ruido que además puede
+    confundirse con esa medida real si no se lee la letra pequeña — quien lo quiera puede
+    habilitarlo a mano. Las instalaciones EXISTENTES que ya lo tuvieran habilitado no se ven
+    afectadas (el registro de entidades ya guardado manda, este default solo aplica a altas
+    nuevas)."""
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_suggested_display_precision = 1
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator, cont_id, supply_point, translation_key: str) -> None:
         super().__init__(coordinator, cont_id, supply_point)

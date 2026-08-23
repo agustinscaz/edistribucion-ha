@@ -201,10 +201,10 @@
         "name": "Prossimo cambio di fascia"
       },
       "self_consumption_today": {
-        "name": "Autosufficienza approssimativa oggi"
+        "name": "Rapporto approssimativo esportazione/scambio rete (oggi)"
       },
       "self_consumption_month": {
-        "name": "Autosufficienza approssimativa (mese)"
+        "name": "Rapporto approssimativo esportazione/scambio rete (mese)"
       },
       "average_price_month": {
         "name": "Prezzo medio del kWh (mese)"

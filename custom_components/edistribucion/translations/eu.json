@@ -201,10 +201,10 @@
         "name": "Hurrengo tarte-aldaketa"
       },
       "self_consumption_today": {
-        "name": "Gaurko autosufizientzia hurbildua"
+        "name": "Gaurko esportazio/sare truke ratio hurbildua"
       },
       "self_consumption_month": {
-        "name": "Hilabeteko autosufizientzia hurbildua"
+        "name": "Hilabeteko esportazio/sare truke ratio hurbildua"
       },
       "average_price_month": {
         "name": "kWh-aren batez besteko prezioa (hilabetea)"

@@ -201,10 +201,10 @@
         "name": "Próximo cambio de tramo"
       },
       "self_consumption_today": {
-        "name": "Autosuficiencia aproximada hoxe"
+        "name": "Ratio aproximado exportación/intercambio coa rede (hoxe)"
       },
       "self_consumption_month": {
-        "name": "Autosuficiencia aproximada (mes)"
+        "name": "Ratio aproximado exportación/intercambio coa rede (mes)"
       },
       "average_price_month": {
         "name": "Prezo medio do kWh (mes)"

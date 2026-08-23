@@ -201,10 +201,10 @@
         "name": "Proper canvi de tram"
       },
       "self_consumption_today": {
-        "name": "Autosuficiència aproximada avui"
+        "name": "Ràtio aproximada exportació/intercanvi amb la xarxa (avui)"
       },
       "self_consumption_month": {
-        "name": "Autosuficiència aproximada (mes)"
+        "name": "Ràtio aproximada exportació/intercanvi amb la xarxa (mes)"
       },
       "average_price_month": {
         "name": "Preu mitjà del kWh (mes)"
