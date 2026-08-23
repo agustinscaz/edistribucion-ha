@@ -201,6 +201,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             now = dt_util.now()
             months_filled = 0
+            # `carry_over` (issue #10): varios meses SEGUIDOS del mismo CUPS se escriben sin pausa
+            # entre ellos, y `async_add_external_statistics` encola la escritura sin esperar a que
+            # el recorder la confirme — releer la BD para el arrastre del mes siguiente podría no
+            # ver todavía la del anterior. Manteniendo el `running_total` en memoria entre
+            # iteraciones (ver `async_backfill_energy_statistics`) se evita esa carrera del todo,
+            # sin depender de ningún tiempo de confirmación del recorder.
+            carry_over: dict[str, float] = {}
             for target_coordinator, cont_id, cups in targets:
                 for month_start in months_back(now, meses):
                     try:
@@ -210,7 +217,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     except EdistribucionApiError as err:
                         _LOGGER.debug("Sin consumo de %s para %s: %s", cups, month_start.strftime("%Y-%m"), err)
                         continue
-                    await async_backfill_energy_statistics(hass, cups, month_data)
+                    await async_backfill_energy_statistics(hass, cups, month_data, carry_over=carry_over)
                     months_filled += 1
 
             return {"suministros": len(targets), "meses_rellenados": months_filled}

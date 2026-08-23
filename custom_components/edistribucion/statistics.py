@@ -69,6 +69,21 @@ def _daily_points(month_data: dict, field: str) -> list[tuple[datetime, float]] 
     return [(_parse_day(day["date"]), day.get(field) or 0.0) for day in days]
 
 
+def _merge_duplicate_starts(points: list[tuple[datetime, float]]) -> list[tuple[datetime, float]]:
+    """Combina en un único punto (sumando su valor) los que comparten el mismo `start` exacto tras
+    convertir a UTC — puede pasar en el día de 25 horas del cambio de horario de octubre (issue
+    #15): "02 - 03 h" ocurre DOS veces esa noche en horario local real, y `_parse_hour` (sin `fold`
+    para desambiguar) mapea ambas al MISMO instante UTC. Sin este merge, dos `StatisticData` con
+    idéntico `start` competirían por la misma fila al escribirse (el recorder hace upsert por
+    (statistic_id, start)) — la segunda pisaría a la primera en vez de sumarse, perdiendo esa
+    energía del total. Se ordena aquí (no antes) porque el propio merge ya deja como salida una
+    lista sin duplicados y ordenada, lista para acumular `running_total`."""
+    merged: dict[datetime, float] = {}
+    for start, value in points:
+        merged[start] = merged.get(start, 0.0) + value
+    return sorted(merged.items())
+
+
 def months_back(base: datetime, n: int) -> list[datetime]:
     """Los `n` meses hasta `base` (incluido su propio mes), como el día 1 de cada uno, en orden
     CRONOLÓGICO (el más antiguo primero) — usado por el servicio de relleno de histórico completo
@@ -167,7 +182,29 @@ async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, 
     return await _query_last_before(hass, statistic_id, dt_util.utc_from_timestamp(0), before)
 
 
-async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month_data: dict | None) -> None:
+async def async_backfill_energy_statistics(
+    hass: HomeAssistant,
+    cups: str,
+    month_data: dict | None,
+    *,
+    carry_over: dict[str, float] | None = None,
+) -> None:
+    """`carry_over`, si se pasa, es un dict mutable {statistic_id: running_total} que el llamador
+    reutiliza entre llamadas SUCESIVAS y CRONOLÓGICAS para el mismo CUPS (ver el servicio
+    `rellenar_historico` en __init__.py, que procesa varios meses seguidos del mismo suministro).
+
+    Por qué: `async_add_external_statistics` ENCOLA la escritura en el hilo del recorder, no
+    espera a que se confirme en la base de datos antes de devolver el control. Sin `carry_over`,
+    cada llamada relee de la base el `sum` del mes anterior (`_async_last_saved_stat_before`) para
+    saber por dónde arrastrar — si esa lectura ocurre antes de que el recorder haya terminado de
+    escribir la llamada anterior (nada lo garantiza; no hay pausa entre iteraciones del bucle de
+    `rellenar_historico`), el arrastre saldría mal, con el mismo síntoma que el bug de #8 (caída
+    espuria del `sum`) pero por una causa distinta (issue #10). Con `carry_over`, el
+    `running_total` final de cada mes se guarda en memoria y se reutiliza directamente en la
+    siguiente llamada para ese mismo `statistic_id` — sin depender en absoluto de que el recorder
+    ya haya persistido nada. El ciclo diario normal del coordinator (una sola llamada, sin bucle)
+    sigue sin pasar `carry_over` y sigue leyendo de la base como siempre — ahí no hay ninguna
+    llamada "siguiente" con la que pudiera competir."""
     if not month_data or not (month_data.get("hourlyByDate") or month_data.get("dailyTotals")):
         return
     if "recorder" not in hass.config.components:
@@ -198,25 +235,28 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
             points = _hourly_points(month_data, field) or _daily_points(month_data, field)
             if not points:
                 continue
-            points.sort(key=lambda p: p[0])
+            points = _merge_duplicate_starts(points)
 
             statistic_id = f"{DOMAIN}:{cups.lower()}_{flow}_energy"
-            try:
-                last_saved = await _async_last_saved_stat_before(hass, statistic_id, points[0][0])
-            except Exception as err:  # noqa: BLE001 — sin poder leerlo, se asume "sin dato previo" (0.0)
-                _LOGGER.warning("No se pudo leer el último sum guardado de %s (%s): %s", cups, flow, err)
-                last_saved = None
-            running_total = _carry_over_sum(last_saved, points[0][0])
+            if carry_over is not None and statistic_id in carry_over:
+                running_total = carry_over[statistic_id]
+            else:
+                try:
+                    last_saved = await _async_last_saved_stat_before(hass, statistic_id, points[0][0])
+                except Exception as err:  # noqa: BLE001 — sin poder leerlo, se asume "sin dato previo" (0.0)
+                    _LOGGER.warning("No se pudo leer el último sum guardado de %s (%s): %s", cups, flow, err)
+                    last_saved = None
+                running_total = _carry_over_sum(last_saved, points[0][0])
 
-            if last_saved is not None and statistic_id not in _carry_over_logged:
-                _LOGGER.info(
-                    "Arrastrando sum=%.3f de %s (%s) desde antes de %s",
-                    last_saved[1],
-                    cups,
-                    flow,
-                    points[0][0].isoformat(),
-                )
-                _carry_over_logged.add(statistic_id)
+                if last_saved is not None and statistic_id not in _carry_over_logged:
+                    _LOGGER.info(
+                        "Arrastrando sum=%.3f de %s (%s) desde antes de %s",
+                        last_saved[1],
+                        cups,
+                        flow,
+                        points[0][0].isoformat(),
+                    )
+                    _carry_over_logged.add(statistic_id)
 
             stats: list[StatisticData] = []
             for start, value in points:
@@ -232,5 +272,7 @@ async def async_backfill_energy_statistics(hass: HomeAssistant, cups: str, month
                 unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
             )
             async_add_external_statistics(hass, metadata, stats)
+            if carry_over is not None:
+                carry_over[statistic_id] = running_total
         except Exception as err:  # noqa: BLE001 — un fallo aquí no debe romper el arranque de la integración
             _LOGGER.warning("No se pudo rellenar el histórico de %s (%s): %s", cups, flow, err)

@@ -12,6 +12,7 @@ from custom_components.edistribucion.statistics import (
     _daily_points,
     _hourly_points,
     _leading_hour,
+    _merge_duplicate_starts,
     _parse_day,
     _parse_hour,
     async_backfill_energy_statistics,
@@ -120,6 +121,30 @@ class TestDailyPoints:
         month_data = {"dailyTotals": [{"date": "30/07/2026"}]}
         points = _daily_points(month_data, "importedKwh")
         assert points == [(points[0][0], 0.0)]
+
+
+class TestMergeDuplicateStarts:
+    """Regresión issue #15: el día de 25 horas del cambio de horario de octubre, "02 - 03 h" ocurre
+    dos veces en horario local real — `_parse_hour` (sin `fold`) mapea ambas al MISMO instante UTC.
+    Sin combinarlas, dos `StatisticData` con idéntico `start` competirían por la misma fila al
+    escribirse (upsert por (statistic_id, start)) y una pisaría a la otra en vez de sumarse."""
+
+    def test_no_duplicates_returns_same_points_sorted(self):
+        a = datetime(2026, 7, 27, 10, tzinfo=timezone.utc)
+        b = datetime(2026, 7, 27, 9, tzinfo=timezone.utc)
+        assert _merge_duplicate_starts([(a, 1.0), (b, 2.0)]) == [(b, 2.0), (a, 1.0)]
+
+    def test_duplicate_start_sums_values_instead_of_dropping_one(self):
+        """Simula el día de 25h: dos entradas horarias distintas de origen que, tras `_parse_hour`,
+        colisionan en el mismo instante UTC (02:00-03:00 CEST y 02:00-03:00 CET, ambas etiquetadas
+        "02 - 03 h" y por tanto mapeadas al mismo naive->UTC sin `fold`)."""
+        same_instant = datetime(2026, 10, 25, 0, tzinfo=timezone.utc)  # instante ficticio para el test
+        other = datetime(2026, 10, 25, 1, tzinfo=timezone.utc)
+        result = _merge_duplicate_starts([(same_instant, 1.5), (other, 3.0), (same_instant, 2.5)])
+        assert result == [(same_instant, 4.0), (other, 3.0)]
+
+    def test_empty_list(self):
+        assert _merge_duplicate_starts([]) == []
 
 
 class TestCarryOverSum:

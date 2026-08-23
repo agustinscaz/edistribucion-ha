@@ -191,3 +191,22 @@ async def test_carry_over_logged_once_not_on_every_rerun(recorder_mock, hass, ca
         )
         await async_wait_recording_done(hass)
         assert not any("Arrastrando sum" in r.message for r in caplog.records)
+
+
+async def test_carry_over_avoids_race_between_consecutive_months(recorder_mock, hass):
+    """Regresión issue #10: `rellenar_historico` encadena varios meses del mismo CUPS SIN pausa
+    entre ellos, y `async_add_external_statistics` encola la escritura sin esperar a que el
+    recorder la confirme — releer la base para el arrastre del mes siguiente podría no ver
+    todavía la del anterior. Se comprueba pasando `carry_over` y, a propósito, SIN
+    `async_wait_recording_done` entre las dos llamadas (es justo la carrera que se quiere evitar:
+    si el resultado dependiera de que el recorder ya hubiera confirmado julio, este test podría
+    fallar de forma intermitente según el timing real del recorder)."""
+    carry_over: dict[str, float] = {}
+    july_data = {"dailyTotals": [{"date": "31/07/2026", "importedKwh": 8.7}]}
+    await async_backfill_energy_statistics(hass, _CUPS, july_data, carry_over=carry_over)
+
+    august_data = {"dailyTotals": [{"date": "01/08/2026", "importedKwh": 2.0}]}
+    await async_backfill_energy_statistics(hass, _CUPS, august_data, carry_over=carry_over)
+    await async_wait_recording_done(hass)
+
+    assert await _last_sum(hass) == pytest.approx(8.7 + 2.0)

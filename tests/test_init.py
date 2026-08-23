@@ -250,7 +250,7 @@ class TestRellenarHistoricoService:
 
         backfilled_cups = []
 
-        async def fake_backfill(hass_arg, cups, month_data):
+        async def fake_backfill(hass_arg, cups, month_data, **kwargs):
             backfilled_cups.append(cups)
 
         monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
@@ -275,7 +275,7 @@ class TestRellenarHistoricoService:
 
         coordinator.client.async_get_consumption = fake_get_consumption
 
-        async def fake_backfill(hass_arg, cups, month_data):
+        async def fake_backfill(hass_arg, cups, month_data, **kwargs):
             pass
 
         monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
@@ -316,7 +316,7 @@ class TestRellenarHistoricoService:
                 raise EdistribucionApiError("sin datos ese mes")
             return {"totalImportedKwh": 1.0, "totalExportedKwh": 0.0}
 
-        async def fake_backfill(hass_arg, cups, month_data):
+        async def fake_backfill(hass_arg, cups, month_data, **kwargs):
             pass
 
         coordinator.client.async_get_consumption = flaky_get_consumption
