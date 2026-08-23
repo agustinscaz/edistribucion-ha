@@ -231,7 +231,11 @@ class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
         key="imported_energy_today",
         translation_key="imported_energy_today",
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        # TOTAL, no TOTAL_INCREASING: la curva horaria de e-distribución llega con retraso y se
+        # REVISA — el acumulado del día puede bajar legítimamente cuando llega un dato más preciso
+        # para una hora ya pasada. Con TOTAL_INCREASING, HA interpreta esa bajada como un reseteo
+        # de contador real y mete un offset espurio en el "sum" de Long-Term Statistics (issue #8).
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
     )
@@ -255,7 +259,10 @@ class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
         key="exported_energy_today",
         translation_key="exported_energy_today",
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        # TOTAL, no TOTAL_INCREASING — mismo motivo que en EdistribucionImportedEnergySensor
+        # (issue #8): la curva horaria se revisa con retraso y el acumulado del día puede bajar
+        # legítimamente sin que haya habido un reseteo de contador real.
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
     )
@@ -457,7 +464,10 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
         if kind == "kwh":
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-            self._attr_state_class = SensorStateClass.TOTAL_INCREASING if period_key == "today" else SensorStateClass.TOTAL
+            # TOTAL siempre, también en "today": la curva horaria de la que sale este tramo se
+            # revisa con retraso (mismo motivo que EdistribucionImportedEnergySensor, issue #8) —
+            # TOTAL_INCREASING aquí metería el mismo offset espurio en Long-Term Statistics.
+            self._attr_state_class = SensorStateClass.TOTAL
         else:
             # device_class=MONETARY solo admite None o TOTAL como state_class (ver v1.21.1).
             self._attr_device_class = SensorDeviceClass.MONETARY
@@ -510,7 +520,10 @@ class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
         if kind == "kwh":
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-            self._attr_state_class = SensorStateClass.TOTAL_INCREASING if period_key == "today" else SensorStateClass.TOTAL
+            # TOTAL siempre, también en "today": la curva horaria de la que sale este tramo se
+            # revisa con retraso (mismo motivo que EdistribucionImportedEnergySensor, issue #8) —
+            # TOTAL_INCREASING aquí metería el mismo offset espurio en Long-Term Statistics.
+            self._attr_state_class = SensorStateClass.TOTAL
         else:
             # device_class=MONETARY solo admite None o TOTAL como state_class (ver v1.21.1).
             self._attr_device_class = SensorDeviceClass.MONETARY

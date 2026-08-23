@@ -655,3 +655,28 @@ async def test_always_created_sensors_present(hass):
     assert "contA_exported_energy_today" in ids
     assert "contA_contracted_power" in ids
     assert "contA_month_vs_last_year" in ids
+
+
+async def test_today_energy_sensors_use_total_not_total_increasing(hass):
+    """Regresión issue #8: la curva horaria de e-distribución se revisa con retraso y el acumulado
+    del día puede bajar legítimamente (sin que haya habido un reseteo de contador real).
+    TOTAL_INCREASING le haría creer a HA que fue un reseteo real y metería un offset espurio en el
+    "sum" de Long-Term Statistics — TOTAL es el state_class correcto aquí, igual que ya lo es en
+    los sensores de semana/mes y en los de coste/compensación monetarios."""
+    from homeassistant.components.sensor import SensorStateClass
+
+    bundles = {"contA": _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+    for uid in (
+        "contA_imported_energy_today",
+        "contA_exported_energy_today",
+        "contA_punta_kwh_today",
+        "contA_llano_kwh_today",
+        "contA_valle_kwh_today",
+    ):
+        # `.state_class` (la propiedad de SensorEntity), no `_attr_state_class` directo — en los
+        # sensores imported/exported ese state_class vive en `entity_description`, no en un
+        # `_attr_state_class` de instancia, y la propiedad es la que HA de verdad consulta.
+        assert by_id[uid].state_class == SensorStateClass.TOTAL, uid
