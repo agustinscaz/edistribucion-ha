@@ -115,7 +115,14 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       { timeout: 20000 }
     );
     await page.goto(`${baseUrl}/areaprivada/s/wp-downloadcertificates`, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
-    const supplyRes = await supplyResPromise;
+    const supplyRes = await supplyResPromise.catch(async (e) => {
+      // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): getListCups no llegó a
+      // tiempo — volcamos URL/HTML de la página en ese momento para ver qué cambió en el sitio.
+      const html = await page.content().catch(() => "<no se pudo leer content()>");
+      console.error(`[DEBUG getListCups timeout] url=${page.url()}`);
+      console.error(`[DEBUG getListCups timeout] html(0-2000)=${html.slice(0, 2000)}`);
+      throw e;
+    });
     const supplyJson = await supplyRes.json();
     const supplyAction = supplyJson.actions?.[0];
     if (!supplyAction || supplyAction.state !== "SUCCESS") {
