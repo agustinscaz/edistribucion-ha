@@ -4,7 +4,7 @@ const { Bonjour } = require("bonjour-service");
 const { EdistribucionSession } = require("./session");
 const { getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand } = require("./dataApi");
 const { startChromiumWatchdog, getWatchdogStats } = require("./chromiumWatchdog");
-const { InvalidCredentialsError } = require("./errors");
+const { InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
 
 const OPTIONS_PATH = "/data/options.json";
 let options = {};
@@ -25,12 +25,12 @@ if (!DNI || !PASSWORD) {
   process.exit(1);
 }
 
-// DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): el CDP de Playwright a veces
-// revienta el proceso entero con un "Assertion error" no capturable desde playwrightLogin.js (lo
-// lanza un handler interno de _CRSession, fuera de cualquier promesa nuestra) — sin esto, el log
-// solo muestra el stack trace sin hora, imposible de correlacionar con los ciclos de sondeo de HA.
+// El CDP de Playwright puede reventar el proceso entero con un "Assertion error" interno (lanzado
+// desde un handler de _CRSession, fuera de cualquier promesa nuestra — no capturable con try/catch
+// normal). No hay forma de seguir con seguridad tras eso, pero al menos se deja un log con hora
+// para poder correlacionarlo con los ciclos de sondeo de HA en vez de un stack trace sin fecha.
 process.on("uncaughtException", (e) => {
-  console.error(`[DEBUG uncaughtException] ${new Date().toISOString()} — ${e.message}`);
+  console.error(`[uncaughtException] ${new Date().toISOString()} — ${e.message}`);
   process.exit(1);
 });
 
@@ -43,6 +43,9 @@ const app = express();
 function respondError(res, e) {
   if (e instanceof InvalidCredentialsError) {
     return res.status(401).json({ error: e.message, code: "invalid_credentials" });
+  }
+  if (e instanceof PasswordChangeRequiredError) {
+    return res.status(401).json({ error: e.message, code: "password_change_required" });
   }
   return res.status(502).json({ error: e.message });
 }

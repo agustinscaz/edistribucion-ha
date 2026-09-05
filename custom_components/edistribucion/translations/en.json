@@ -246,6 +246,10 @@
     "invalid_credentials": {
       "title": "Invalid credentials in the e-distribución add-on",
       "description": "The add-on rejected the login due to an incorrect DNI/password. Fix them under Settings → Add-ons → e-distribución → Configuration, and restart the add-on."
+    },
+    "password_change_required": {
+      "title": "e-distribución requires a password change",
+      "description": "The configured password is still correct, but e-distribución is redirecting to a forced password-change screen before letting you continue (usually a periodic expiry policy). Log in manually to the Zona Privada (zonaprivada.edistribucion.com), change the password, and update the new one under Settings → Add-ons → e-distribución → Configuration."
     }
   }
 }

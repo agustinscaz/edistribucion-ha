@@ -15,7 +15,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError
+from .api import EdistribucionApiClient, EdistribucionApiError, InvalidCredentialsError, PasswordChangeRequiredError
 from .const import (
     CONF_CONTRACTED_POWER_PUNTA,
     CONF_CONTRACTED_POWER_VALLE,
@@ -35,6 +35,7 @@ RANGE_WEEK = "2"
 
 ISSUE_CONNECTION = "addon_connection_failed"
 ISSUE_INVALID_CREDENTIALS = "invalid_credentials"
+ISSUE_PASSWORD_CHANGE_REQUIRED = "password_change_required"
 
 _PVPC_STORAGE_VERSION = 1
 
@@ -245,6 +246,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             self._consecutive_failures = 0
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_CONNECTION}_{self.entry_id}")
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}")
+            ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_PASSWORD_CHANGE_REQUIRED}_{self.entry_id}")
             await self._async_backfill_statistics_if_needed(data)
             await self._async_update_year_to_date_if_needed(data)
             return data
@@ -260,6 +262,20 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 translation_key="invalid_credentials",
             )
             raise UpdateFailed(f"Credenciales incorrectas en el add-on: {err}") from err
+        except PasswordChangeRequiredError as err:
+            # Distinto de credenciales incorrectas: la contraseña configurada sigue siendo la
+            # correcta, pero e-distribución exige cambiarla (política de caducidad periódica,
+            # confirmado en vivo el 05-sep-2026) antes de dejar continuar — hace falta acción manual
+            # del usuario en la Zona Privada, no tiene sentido reintentar solo.
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_PASSWORD_CHANGE_REQUIRED}_{self.entry_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="password_change_required",
+            )
+            raise UpdateFailed(f"e-distribución exige cambiar la contraseña de la cuenta: {err}") from err
         except EdistribucionApiError as err:
             self._consecutive_failures += 1
             if self._consecutive_failures == CONSECUTIVE_FAILURES_FOR_REPAIR:

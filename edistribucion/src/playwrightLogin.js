@@ -1,5 +1,5 @@
 const { chromium } = require("playwright");
-const { InvalidCredentialsError } = require("./errors");
+const { InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
 
 /**
  * Hace login real contra la Zona Privada de e-distribución usando un navegador Chromium real
@@ -19,16 +19,26 @@ const { InvalidCredentialsError } = require("./errors");
  */
 async function loginAndCaptureSession({ dni, password, baseUrl }) {
   const browser = await chromium.launch({ headless: true });
-  // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): marca en qué paso se quedó
-  // colgado el login para no tener que adivinar por la línea del stack trace, que Playwright no
-  // incluye en el mensaje de timeout genérico.
-  let step = "launch";
-  let page;
   try {
     const context = await browser.newContext();
-    page = await context.newPage();
+    const page = await context.newPage();
 
-    step = "goto login";
+    // e-distribución a veces fuerza un cambio de contraseña tras el login (política de caducidad
+    // periódica, no credenciales mal escritas) y redirige a esta pantalla de Salesforce en vez de a
+    // la SPA normal — confirmado en vivo el 05-sep-2026, causaba un timeout genérico de 20s sin
+    // pista de la causa real. Se detecta por navegación (no por polling) para fallar YA, no tras
+    // agotar los 20s de espera de getLoginInfo.
+    let resolvePasswordChangeDetected;
+    const passwordChangeDetectedPromise = new Promise((resolve) => {
+      resolvePasswordChangeDetected = resolve;
+    });
+    const onFrameNavigated = (frame) => {
+      if (frame === page.mainFrame() && /\/ChangePassword\b/i.test(frame.url())) {
+        resolvePasswordChangeDetected(frame.url());
+      }
+    };
+    page.on("framenavigated", onFrameNavigated);
+
     await page.goto(`${baseUrl}/areaprivada/s/login/?language=es`, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1200);
     try {
@@ -76,11 +86,13 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       })
       .catch((e) => e);
 
-    step = "click entrar";
     await page.getByRole("button", { name: /entrar/i }).click();
 
-    step = "esperando captura CDP del login (LightningLoginForm.login)";
     const loginCapture = await loginCapturePromise;
+    // Ya no hace falta seguir interceptando respuestas por CDP — desactivarlo antes de que la
+    // página siga navegando evita dejar el dominio Fetch a medias si más adelante se cierra el
+    // browser con un intercept todavía pendiente.
+    await client.send("Fetch.disable").catch(() => {});
     if (loginCapture.error) throw loginCapture.error;
     const loginActionResult = loginCapture.json.actions?.[0];
     if (!loginActionResult || loginActionResult.state !== "SUCCESS") {
@@ -93,8 +105,17 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       throw new InvalidCredentialsError(loginActionResult.returnValue);
     }
 
-    step = "esperando WP_Monitor_CTRL.getLoginInfo";
-    const loginInfoRes = await loginInfoPromise;
+    const passwordChangeRacePromise = passwordChangeDetectedPromise.then((url) => {
+      throw new PasswordChangeRequiredError(
+        `e-distribución exige cambiar la contraseña de la cuenta antes de continuar (redirigido a ${url}). ` +
+          "Iniciá sesión manualmente en la Zona Privada, cambiala, y actualizá la nueva contraseña en las opciones del add-on."
+      );
+    });
+    // Si gana loginInfoPromise (caso normal), esta promesa queda pendiente/rechazada sin que nadie
+    // más la consuma — sin este catch, Node avisaría de una unhandled rejection más tarde si la
+    // detección llega igualmente después (p.ej. navegación tardía a esa URL por otra razón).
+    passwordChangeRacePromise.catch(() => {});
+    const loginInfoRes = await Promise.race([loginInfoPromise, passwordChangeRacePromise]);
     if (loginInfoRes instanceof Error) throw loginInfoRes;
     const loginInfoJson = await loginInfoRes.json();
     const loginInfoAction = loginInfoJson.actions?.[0];
@@ -123,9 +144,7 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       (res) => res.request().method() === "POST" && res.url().includes("WP_DescargaCertificadosLectura_CTRL.getListCups"),
       { timeout: 20000 }
     );
-    step = "goto wp-downloadcertificates";
     await page.goto(`${baseUrl}/areaprivada/s/wp-downloadcertificates`, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
-    step = "esperando WP_DescargaCertificadosLectura_CTRL.getListCups";
     const supplyRes = await supplyResPromise;
     const supplyJson = await supplyRes.json();
     const supplyAction = supplyJson.actions?.[0];
@@ -153,17 +172,6 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 
     return { cookieHeader, auraToken, auraContext, visId, name: loginInfo.Name, supplyPoints };
-  } catch (e) {
-    // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): volcamos en qué paso se
-    // quedó colgado el login (Playwright no lo dice en el mensaje de timeout genérico) + URL/HTML
-    // de la página en ese momento, para ver qué cambió en el sitio de e-distribución.
-    const url = page ? page.url() : "<sin página>";
-    const html = page ? await page.content().catch((ce) => `<no se pudo leer content(): ${ce.message}>`) : "<sin página>";
-    console.error(`[DEBUG login] se quedó en el paso: ${step}`);
-    console.error(`[DEBUG login] error: ${e.message}`);
-    console.error(`[DEBUG login] url=${url}`);
-    console.error(`[DEBUG login] html(0-3000)=${html.slice(0, 3000)}`);
-    throw e;
   } finally {
     await browser.close().catch(() => {});
   }

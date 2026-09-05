@@ -22,6 +22,12 @@ class InvalidCredentialsError(EdistribucionApiError):
     hace falta corregir dni/password en la configuración del add-on."""
 
 
+class PasswordChangeRequiredError(EdistribucionApiError):
+    """e-distribución exige cambiar la contraseña de la cuenta (redirige a su pantalla de cambio de
+    contraseña tras el login) — no son credenciales incorrectas, pero tampoco sirve reintentar: hace
+    falta cambiarla a mano en la Zona Privada y actualizar la nueva en el add-on."""
+
+
 class EdistribucionApiClient:
     """Envuelve las llamadas HTTP al add-on `edistribucion-ha-addon`."""
 
@@ -69,6 +75,8 @@ class EdistribucionApiClient:
             pass
         if resp.status == 401 and code == "invalid_credentials":
             return InvalidCredentialsError("El add-on rechazó el login: credenciales incorrectas")
+        if resp.status == 401 and code == "password_change_required":
+            return PasswordChangeRequiredError("e-distribución exige cambiar la contraseña de la cuenta")
         return EdistribucionApiError(f"{path} -> HTTP {resp.status}: {body_text[:300]}")
 
     async def _get(self, path: str) -> dict | list:

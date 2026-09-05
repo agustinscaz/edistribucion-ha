@@ -246,6 +246,10 @@
     "invalid_credentials": {
       "title": "Credenciales incorrectas en el add-on de e-distribución",
       "description": "El add-on ha rechazado el login por DNI/contraseña incorrectos. Corrígelos en Ajustes → Complementos → e-distribución → Configuración, y reinicia el add-on."
+    },
+    "password_change_required": {
+      "title": "e-distribución exige cambiar la contraseña de la cuenta",
+      "description": "La contraseña configurada sigue siendo correcta, pero e-distribución redirige a una pantalla de cambio de contraseña obligatorio antes de dejar continuar (suele pasar por caducidad periódica). Entra manualmente en la Zona Privada (zonaprivada.edistribucion.com), cambia la contraseña, y actualiza la nueva en Ajustes → Complementos → e-distribución → Configuración."
     }
   }
 }

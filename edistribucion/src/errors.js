@@ -7,4 +7,10 @@ class AuthError extends Error {}
  * un error genérico de conexión. */
 class InvalidCredentialsError extends Error {}
 
-module.exports = { AuthError, InvalidCredentialsError };
+/** e-distribución exige cambiar la contraseña de la cuenta (redirige a la pantalla de Salesforce
+ * ChangePassword tras el login) — no son credenciales incorrectas, pero tampoco sirve reintentar:
+ * hace falta cambiarla a mano en la Zona Privada y actualizar la nueva en el add-on. Confirmado en
+ * vivo el 05-sep-2026: antes de esto se veía como un timeout genérico de 20s sin pista de la causa. */
+class PasswordChangeRequiredError extends Error {}
+
+module.exports = { AuthError, InvalidCredentialsError, PasswordChangeRequiredError };
