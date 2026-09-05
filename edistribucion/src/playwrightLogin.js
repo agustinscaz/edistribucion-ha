@@ -19,10 +19,16 @@ const { InvalidCredentialsError } = require("./errors");
  */
 async function loginAndCaptureSession({ dni, password, baseUrl }) {
   const browser = await chromium.launch({ headless: true });
+  // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): marca en qué paso se quedó
+  // colgado el login para no tener que adivinar por la línea del stack trace, que Playwright no
+  // incluye en el mensaje de timeout genérico.
+  let step = "launch";
+  let page;
   try {
     const context = await browser.newContext();
-    const page = await context.newPage();
+    page = await context.newPage();
 
+    step = "goto login";
     await page.goto(`${baseUrl}/areaprivada/s/login/?language=es`, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1200);
     try {
@@ -70,8 +76,10 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       })
       .catch((e) => e);
 
+    step = "click entrar";
     await page.getByRole("button", { name: /entrar/i }).click();
 
+    step = "esperando captura CDP del login (LightningLoginForm.login)";
     const loginCapture = await loginCapturePromise;
     if (loginCapture.error) throw loginCapture.error;
     const loginActionResult = loginCapture.json.actions?.[0];
@@ -85,6 +93,7 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       throw new InvalidCredentialsError(loginActionResult.returnValue);
     }
 
+    step = "esperando WP_Monitor_CTRL.getLoginInfo";
     const loginInfoRes = await loginInfoPromise;
     if (loginInfoRes instanceof Error) throw loginInfoRes;
     const loginInfoJson = await loginInfoRes.json();
@@ -114,15 +123,10 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
       (res) => res.request().method() === "POST" && res.url().includes("WP_DescargaCertificadosLectura_CTRL.getListCups"),
       { timeout: 20000 }
     );
+    step = "goto wp-downloadcertificates";
     await page.goto(`${baseUrl}/areaprivada/s/wp-downloadcertificates`, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
-    const supplyRes = await supplyResPromise.catch(async (e) => {
-      // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): getListCups no llegó a
-      // tiempo — volcamos URL/HTML de la página en ese momento para ver qué cambió en el sitio.
-      const html = await page.content().catch(() => "<no se pudo leer content()>");
-      console.error(`[DEBUG getListCups timeout] url=${page.url()}`);
-      console.error(`[DEBUG getListCups timeout] html(0-2000)=${html.slice(0, 2000)}`);
-      throw e;
-    });
+    step = "esperando WP_DescargaCertificadosLectura_CTRL.getListCups";
+    const supplyRes = await supplyResPromise;
     const supplyJson = await supplyRes.json();
     const supplyAction = supplyJson.actions?.[0];
     if (!supplyAction || supplyAction.state !== "SUCCESS") {
@@ -149,6 +153,17 @@ async function loginAndCaptureSession({ dni, password, baseUrl }) {
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 
     return { cookieHeader, auraToken, auraContext, visId, name: loginInfo.Name, supplyPoints };
+  } catch (e) {
+    // DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): volcamos en qué paso se
+    // quedó colgado el login (Playwright no lo dice en el mensaje de timeout genérico) + URL/HTML
+    // de la página en ese momento, para ver qué cambió en el sitio de e-distribución.
+    const url = page ? page.url() : "<sin página>";
+    const html = page ? await page.content().catch((ce) => `<no se pudo leer content(): ${ce.message}>`) : "<sin página>";
+    console.error(`[DEBUG login] se quedó en el paso: ${step}`);
+    console.error(`[DEBUG login] error: ${e.message}`);
+    console.error(`[DEBUG login] url=${url}`);
+    console.error(`[DEBUG login] html(0-3000)=${html.slice(0, 3000)}`);
+    throw e;
   } finally {
     await browser.close().catch(() => {});
   }

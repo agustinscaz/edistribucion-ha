@@ -25,6 +25,15 @@ if (!DNI || !PASSWORD) {
   process.exit(1);
 }
 
+// DEBUG TEMPORAL (quitar tras diagnosticar el corte del 1-sep-2026): el CDP de Playwright a veces
+// revienta el proceso entero con un "Assertion error" no capturable desde playwrightLogin.js (lo
+// lanza un handler interno de _CRSession, fuera de cualquier promesa nuestra) — sin esto, el log
+// solo muestra el stack trace sin hora, imposible de correlacionar con los ciclos de sondeo de HA.
+process.on("uncaughtException", (e) => {
+  console.error(`[DEBUG uncaughtException] ${new Date().toISOString()} — ${e.message}`);
+  process.exit(1);
+});
+
 const session = new EdistribucionSession({ dni: DNI, password: PASSWORD, baseUrl: BASE_URL });
 const app = express();
 
