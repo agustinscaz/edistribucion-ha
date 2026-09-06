@@ -118,32 +118,63 @@ async def test_supply_point_calls_run_in_parallel(hass):
     """Regresión issue #17: las 5 llamadas por CUPS (potencia contratada + consumo hoy/semana/mes/
     mismo mes año pasado) deben ir en PARALELO, no una detrás de otra — en secuencial, un add-on
     caído hacía fallar las 5 EN CADENA (cada una con su propio ciclo de reintentos) antes de darse
-    por vencido con este CUPS. Se comprueba con el mismo retraso artificial en las 5 llamadas: en
-    paralelo el tiempo total ronda ese único retraso; en secuencial habría sido ~5 veces mayor."""
+    por vencido con este CUPS.
+
+    Se comprueba de forma ESTRUCTURAL (cuántas llamadas están "en vuelo" a la vez), no por tiempo
+    total transcurrido: un umbral de reloj real resultó flaky en CI bajo carga variable del runner
+    (confirmado: en el mismo entorno, un único `asyncio.sleep(0.2)` real llegó a tardar >1.8s de
+    reloj sin que hubiera ningún fallo de concurrencia real). Cada llamada simulada se bloquea hasta
+    que las 5 hayan arrancado; si el coordinator volviera a lanzarlas en secuencial, la primera se
+    quedaría esperando para siempre a que arrancasen las otras 4 (que nunca llegarían a lanzarse) —
+    por eso todo el bloque va envuelto en un timeout explícito, para fallar con un mensaje claro en
+    vez de colgar la suite."""
     import asyncio
-    import time
 
     entry = _make_entry(hass)
     client = _make_client()
-    delay = 0.2
+    in_flight = 0
+    max_in_flight = 0
+    all_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _track() -> None:
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        if in_flight == 5:
+            all_started.set()
+        await release.wait()
+        in_flight -= 1
 
     async def slow_consumption(cont_id, range_type=None, date=None):
-        await asyncio.sleep(delay)
+        await _track()
         return {"totalImportedKwh": 5.0, "hourlyByDate": {}}
 
     async def slow_contracted_power(cont_id):
-        await asyncio.sleep(delay)
+        await _track()
         return {"contractedPowerPuntaKw": 3.5, "contractedPowerValleKw": 3.5}
 
     client.async_get_consumption.side_effect = slow_consumption
     client.async_get_contracted_power.side_effect = slow_contracted_power
     coordinator = EdistribucionCoordinator(hass, client, entry)
 
-    start = time.monotonic()
-    await coordinator._async_update_data()
-    elapsed = time.monotonic() - start
+    async def _run() -> None:
+        async def _release_once_all_started() -> None:
+            await all_started.wait()
+            release.set()
 
-    assert elapsed < delay * 2  # en secuencial habría sido >= 5 * delay
+        releaser = asyncio.create_task(_release_once_all_started())
+        try:
+            await coordinator._async_update_data()
+        finally:
+            releaser.cancel()
+
+    try:
+        await asyncio.wait_for(_run(), timeout=5)
+    except asyncio.TimeoutError:
+        pytest.fail("Las 5 llamadas nunca llegaron a estar en vuelo a la vez — ¿han vuelto a ir en secuencial?")
+
+    assert max_in_flight == 5
 
 
 async def test_invalid_credentials_raises_update_failed_and_creates_repair(hass):
