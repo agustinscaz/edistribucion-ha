@@ -7,8 +7,9 @@ import logging
 from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_SCAN_INTERVAL
+from homeassistant.const import CONF_SCAN_INTERVAL, UnitOfEnergy
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
@@ -24,9 +25,9 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
-from .costs import estimate_energy_cost
+from .costs import LLANO, PUNTA, VALLE, cost_breakdown, estimate_energy_cost, surplus_compensation_value
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
-from .statistics import async_backfill_energy_statistics
+from .statistics import _parse_day, async_backfill_derived_daily_statistics, async_backfill_energy_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         self.last_success_time: datetime | None = None
         self._consecutive_failures = 0
         self._last_backfill_day: str | None = None
+        self._last_derived_backfill_day: str | None = None
         # Última vez que se vio cambiar importado/exportado "de hoy" de cada CUPS — para el
         # atributo de "frescura del dato" (ver sensor.py): la curva horaria de e-distribución se
         # publica con retraso, así que el valor puede quedarse igual varias horas sin que eso
@@ -248,6 +250,7 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_INVALID_CREDENTIALS}_{self.entry_id}")
             ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_PASSWORD_CHANGE_REQUIRED}_{self.entry_id}")
             await self._async_backfill_statistics_if_needed(data)
+            await self._async_backfill_derived_statistics_if_needed(data)
             await self._async_update_year_to_date_if_needed(data)
             return data
         except InvalidCredentialsError as err:
@@ -301,6 +304,106 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             sp = bundle.get("supply_point") or {}
             await async_backfill_energy_statistics(self.hass, sp.get("cups", ""), bundle.get("month"))
         self._last_backfill_day = today_key
+
+    async def _async_backfill_derived_statistics_if_needed(self, data: dict) -> None:
+        """Como `_async_backfill_statistics_if_needed` (Panel de Energía), pero para los sensores
+        derivados "_hoy" propios de la integración (issue #20): kWh/coste importado y exportado por
+        tramo, energía importada/exportada de hoy, y compensación de excedentes de hoy. Un corte de
+        sesión de varios días deja estos sensores SIN estadísticas para esos días — el dato en sí
+        sigue disponible al recuperarse (`bundle["month"]` cubre ~30 días hacia atrás, ver
+        RANGE_MONTH), solo faltaba reconstruir el histórico de Home Assistant.
+
+        Solo rellena, por sensor, los DÍAS QUE NO TENGAN NINGUNA ESTADÍSTICA (ver
+        `statistics.async_backfill_derived_daily_statistics`) — un día con polling normal no se
+        toca, para no sustituir su histórico horario real por un único punto diario más basto."""
+        today_key = dt_util.now().strftime("%Y-%m-%d")
+        if self._last_derived_backfill_day == today_key:
+            return
+        registry = er.async_get(self.hass)
+        today_str = dt_util.now().strftime("%d/%m/%Y")
+        for cont_id, bundle in data.items():
+            sp = bundle.get("supply_point") or {}
+            hourly = ((bundle.get("month") or {}).get("hourlyByDate")) or {}
+            past_dates = sorted((d for d in hourly if d != today_str), key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
+            if not past_dates:
+                continue
+            await self._async_backfill_derived_for_cups(registry, cont_id, sp, hourly, past_dates)
+        self._last_derived_backfill_day = today_key
+
+    async def _async_backfill_derived_for_cups(
+        self, registry: er.EntityRegistry, cont_id: str, sp: dict, hourly: dict, past_dates: list[str]
+    ) -> None:
+        """Recalcula, para CADA día pasado de `past_dates`, el mismo desglose que ya usa
+        `native_value` de cada sensor "_hoy" (ver sensor.py: `_EdistribucionTramoSensor`/
+        `_EdistribucionExportTramoSensor`/`EdistribucionImportedEnergySensor`/etc.), a partir del
+        `hourlyByDate` de ESE día en vez de "el día más reciente" — así se reutiliza exactamente la
+        misma fórmula que ya está verificada en vivo, sin duplicar reglas de impuestos/tramos aparte.
+        Un sensor que no existe (tarifa/opciones no lo crean, ver `async_setup_entry`) se salta solo
+        (la búsqueda en el registro de entidades devuelve None)."""
+        import_prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
+        surplus_price = sp.get("surplus_price") or 0
+        export_prices = {PUNTA: surplus_price, LLANO: surplus_price, VALLE: surplus_price}
+        holiday_region = sp.get("holiday_region")
+        zone = sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+        iee_percent = sp.get("iee_percent") or 0
+        iva_percent = sp.get("iva_percent") or 0
+
+        imported_series: list[tuple[datetime, float]] = []
+        exported_series: list[tuple[datetime, float]] = []
+        import_breakdown_series: dict[str, list[tuple[datetime, float]]] = {
+            "kwh_punta": [], "kwh_llano": [], "kwh_valle": [], "coste_punta": [], "coste_llano": [], "coste_valle": [],
+        }
+        export_breakdown_series: dict[str, list[tuple[datetime, float]]] = {
+            "kwh_punta": [], "kwh_llano": [], "kwh_valle": [], "coste_punta": [], "coste_llano": [], "coste_valle": [],
+        }
+        surplus_series: list[tuple[datetime, float]] = []
+
+        for date_str in past_dates:
+            hours = hourly[date_str]
+            day_start = _parse_day(date_str)
+            day_source = {"hourlyByDate": {date_str: hours}}
+
+            imported_kwh = sum(h.get("importedKwh") or 0 for h in hours)
+            exported_kwh = sum(h.get("exportedKwh") or 0 for h in hours)
+            imported_series.append((day_start, imported_kwh))
+            exported_series.append((day_start, exported_kwh))
+
+            import_breakdown = cost_breakdown(
+                day_source, import_prices, holiday_region, iee_percent=iee_percent, iva_percent=iva_percent, zone=zone
+            )
+            if import_breakdown:
+                for key, series in import_breakdown_series.items():
+                    series.append((day_start, import_breakdown[key]))
+
+            export_breakdown = cost_breakdown(day_source, export_prices, holiday_region, field="exportedKwh", zone=zone)
+            if export_breakdown:
+                for key, series in export_breakdown_series.items():
+                    series.append((day_start, export_breakdown[key]))
+
+            surplus_series.append((day_start, surplus_compensation_value(sp, exported_kwh) or 0.0))
+
+        kwh_unit, kwh_class = UnitOfEnergy.KILO_WATT_HOUR, "energy"
+        eur_unit, eur_class = "EUR", None
+        targets: list[tuple[str, str | None, str | None, list[tuple[datetime, float]]]] = [
+            (f"{cont_id}_imported_energy_today", kwh_unit, kwh_class, imported_series),
+            (f"{cont_id}_exported_energy_today", kwh_unit, kwh_class, exported_series),
+        ]
+        for tramo in (PUNTA, LLANO, VALLE):
+            targets.append((f"{cont_id}_{tramo}_kwh_today", kwh_unit, kwh_class, import_breakdown_series[f"kwh_{tramo}"]))
+            targets.append((f"{cont_id}_{tramo}_cost_today", eur_unit, eur_class, import_breakdown_series[f"coste_{tramo}"]))
+            targets.append((f"{cont_id}_{tramo}_exported_kwh_today", kwh_unit, kwh_class, export_breakdown_series[f"kwh_{tramo}"]))
+            targets.append(
+                (f"{cont_id}_{tramo}_exported_compensation_today", eur_unit, eur_class, export_breakdown_series[f"coste_{tramo}"])
+            )
+        targets.append((f"{cont_id}_surplus_compensation_today", eur_unit, eur_class, surplus_series))
+
+        for unique_id, unit, unit_class, day_values in targets:
+            if not day_values:
+                continue
+            entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+            if entity_id is None:
+                continue  # sensor no creado (tarifa/opciones no lo requieren) — nada que rellenar
+            await async_backfill_derived_daily_statistics(self.hass, entity_id, unit, unit_class, day_values)
 
     async def _async_update_year_to_date_if_needed(self, data: dict) -> None:
         """Una vez al día, se asegura de tener cacheado el total de CADA mes ya completado de este

@@ -28,7 +28,7 @@ from homeassistant.components.recorder.statistics import get_last_statistics, st
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
 
-from custom_components.edistribucion.statistics import async_backfill_energy_statistics
+from custom_components.edistribucion.statistics import async_backfill_derived_daily_statistics, async_backfill_energy_statistics
 
 # Sin `enable_custom_integrations` a propósito: ese fixture depende de `hass`, así que lo
 # instanciaría ANTES de que `recorder_mock` pueda configurar la base de datos falsa (pytest-
@@ -210,3 +210,87 @@ async def test_carry_over_avoids_race_between_consecutive_months(recorder_mock, 
     await async_wait_recording_done(hass)
 
     assert await _last_sum(hass) == pytest.approx(8.7 + 2.0)
+
+
+async def _sum_at_for(hass, statistic_id: str, day: str) -> float | None:
+    """Como `_sum_at`, pero para cualquier `statistic_id` (los tests de abajo usan un entity_id de
+    sensor, no el statistic_id externo del Panel de Energía)."""
+    from datetime import datetime
+
+    start = dt_util.as_utc(dt_util.as_local(datetime.strptime(day, "%d/%m/%Y")))
+
+    def _query():
+        return statistics_during_period(
+            hass, start_time=start, end_time=None, statistic_ids={statistic_id}, period="hour", units=None, types={"sum"}
+        )
+
+    result = await get_instance(hass).async_add_executor_job(_query)
+    rows = result.get(statistic_id)
+    if not rows:
+        return None
+    return rows[0]["sum"]
+
+
+_DERIVED_ENTITY_ID = "sensor.test_edistribucion_imported_energy_today"
+
+
+class TestAsyncBackfillDerivedDailyStatistics:
+    """Test de integración de `async_backfill_derived_daily_statistics` (issue #20) contra el
+    recorder real. A diferencia de `async_backfill_energy_statistics` (idempotente, reescribe
+    siempre el mes completo), esta función SOLO debe tocar días sin NINGUNA estadística previa —
+    un día con polling normal (aunque sea parcial) debe quedar intacto."""
+
+    async def test_fills_a_missing_day_and_continues_the_running_sum(self, recorder_mock, hass):
+        await async_backfill_derived_daily_statistics(
+            hass, _DERIVED_ENTITY_ID, "kWh", "energy", [(_day("30/07/2026"), 4.0)]
+        )
+        await async_wait_recording_done(hass)
+        assert await _sum_at_for(hass, _DERIVED_ENTITY_ID, "30/07/2026") == pytest.approx(4.0)
+
+        # Segunda llamada: 30/07 reaparece (con OTRO valor, para poder distinguir si se toca) junto
+        # con 31/07, que es un hueco real y nuevo.
+        await async_backfill_derived_daily_statistics(
+            hass, _DERIVED_ENTITY_ID, "kWh", "energy", [(_day("30/07/2026"), 999.0), (_day("31/07/2026"), 3.0)]
+        )
+        await async_wait_recording_done(hass)
+
+        # 30/07 ya tenía dato -> intacto, NO se sobrescribe con 999.0.
+        assert await _sum_at_for(hass, _DERIVED_ENTITY_ID, "30/07/2026") == pytest.approx(4.0)
+        # 31/07 era un hueco real -> se rellena, continuando el sum desde el 30/07 real (4.0), no
+        # desde el valor descartado (999.0) ni desde 0.
+        assert await _sum_at_for(hass, _DERIVED_ENTITY_ID, "31/07/2026") == pytest.approx(4.0 + 3.0)
+
+    async def test_noop_when_no_day_is_actually_missing(self, recorder_mock, hass, caplog):
+        import logging
+
+        await async_backfill_derived_daily_statistics(
+            hass, _DERIVED_ENTITY_ID, "kWh", "energy", [(_day("30/07/2026"), 4.0)]
+        )
+        await async_wait_recording_done(hass)
+
+        with caplog.at_level(logging.INFO, logger="custom_components.edistribucion.statistics"):
+            caplog.clear()
+            await async_backfill_derived_daily_statistics(
+                hass, _DERIVED_ENTITY_ID, "kWh", "energy", [(_day("30/07/2026"), 999.0)]
+            )
+            await async_wait_recording_done(hass)
+            assert not any("Backfill de" in r.message for r in caplog.records)
+
+        assert await _sum_at_for(hass, _DERIVED_ENTITY_ID, "30/07/2026") == pytest.approx(4.0)
+
+    async def test_fills_several_consecutive_gap_days_from_scratch(self, recorder_mock, hass):
+        entity_id = "sensor.test_edistribucion_punta_cost_today"
+        day_values = [(_day("01/08/2026"), 1.0), (_day("02/08/2026"), 2.5), (_day("03/08/2026"), 0.3)]
+
+        await async_backfill_derived_daily_statistics(hass, entity_id, "EUR", None, day_values)
+        await async_wait_recording_done(hass)
+
+        assert await _sum_at_for(hass, entity_id, "01/08/2026") == pytest.approx(1.0)
+        assert await _sum_at_for(hass, entity_id, "02/08/2026") == pytest.approx(3.5)
+        assert await _sum_at_for(hass, entity_id, "03/08/2026") == pytest.approx(3.8)
+
+
+def _day(date_str: str):
+    from custom_components.edistribucion.statistics import _parse_day
+
+    return _parse_day(date_str)

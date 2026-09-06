@@ -15,6 +15,7 @@ from custom_components.edistribucion.statistics import (
     _merge_duplicate_starts,
     _parse_day,
     _parse_hour,
+    async_backfill_derived_daily_statistics,
     async_backfill_energy_statistics,
     months_back,
 )
@@ -209,3 +210,26 @@ class TestAsyncBackfillEnergyStatistics:
         hass = _FakeHass(components={"recorder"})
         month_data = {"dailyTotals": [{"date": "30/07/2026", "importedKwh": 5.0}]}
         await async_backfill_energy_statistics(hass, "ES123", month_data)  # no debe lanzar
+
+
+class TestAsyncBackfillDerivedDailyStatistics:
+    """`async_backfill_derived_daily_statistics` (issue #20) — relleno de estadísticas de los
+    sensores "_hoy" propios (no del Panel de Energía). La parte que sí toca el recorder real
+    (detección de huecos, arrastre de sum) se prueba en test_statistics_recorder.py."""
+
+    async def test_noop_without_day_values(self):
+        # No debe ni mirar hass.config si no hay nada que rellenar.
+        await async_backfill_derived_daily_statistics(_FakeHass(), "sensor.x", "kWh", "energy", [])
+
+    async def test_noop_without_recorder_component(self):
+        hass = _FakeHass(components=set())
+        day_values = [(datetime(2026, 7, 30, tzinfo=timezone.utc), 5.0)]
+        await async_backfill_derived_daily_statistics(hass, "sensor.x", "kWh", "energy", day_values)  # no debe lanzar
+
+    async def test_graceful_with_fake_hass(self):
+        """Con "recorder" en components pero un hass que no es el real (sin `.data`), debe degradar
+        con un aviso, no lanzar — mismo manejo de errores generoso que
+        `async_backfill_energy_statistics`."""
+        hass = _FakeHass(components={"recorder"})
+        day_values = [(datetime(2026, 7, 30, tzinfo=timezone.utc), 5.0)]
+        await async_backfill_derived_daily_statistics(hass, "sensor.x", "kWh", "energy", day_values)  # no debe lanzar

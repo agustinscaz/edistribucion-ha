@@ -523,3 +523,103 @@ async def test_load_pvpc_cache_noop_without_stored_file(hass):
     coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
     await coordinator.async_load_pvpc_prices_cache()  # no debe lanzar sin archivo previo
     assert coordinator.pvpc_prices == {}
+
+
+class TestBackfillDerivedStatistics:
+    """Orquestación de `_async_backfill_derived_statistics_if_needed` (issue #20): construye, para
+    cada sensor "_hoy" REGISTRADO (ver entity registry), la serie diaria a partir de
+    `bundle["month"]["hourlyByDate"]`, excluyendo el día de HOY (lo sigue cubriendo el polling
+    normal). La escritura real contra el recorder se prueba en test_statistics_recorder.py — aquí
+    se comprueba solo el "qué entity_id, con qué valores" que le pasa a esa función."""
+
+    async def test_only_registered_sensors_are_backfilled_with_the_right_daily_values(self, hass, monkeypatch):
+        from homeassistant.helpers import entity_registry as er
+
+        from custom_components.edistribucion import coordinator as coordinator_module
+        from custom_components.edistribucion.statistics import _parse_day
+
+        registry = er.async_get(hass)
+        entry = _make_entry(hass)
+        imported_entity_id = registry.async_get_or_create(
+            "sensor", DOMAIN, "cont1_imported_energy_today", config_entry=entry
+        ).entity_id
+        # "cont1_punta_cost_today" NO se registra a propósito (simula tarifa "fija" activa, donde
+        # los sensores por tramo no se crean) -- debe quedar fuera de las llamadas de backfill.
+
+        calls: list[tuple] = []
+
+        async def fake_backfill(hass_, entity_id, unit, unit_class, day_values):
+            calls.append((entity_id, unit, unit_class, day_values))
+
+        monkeypatch.setattr(coordinator_module, "async_backfill_derived_daily_statistics", fake_backfill)
+
+        client = _make_client()
+        today_str = coordinator_module.dt_util.now().strftime("%d/%m/%Y")
+        past_day = "01/01/2020"
+        client.async_get_consumption.return_value = {
+            "totalImportedKwh": 5.0,
+            "hourlyByDate": {
+                past_day: [{"hour": "10 - 11 h", "importedKwh": 2.0, "exportedKwh": 0.0}],
+                today_str: [{"hour": "0 - 1 h", "importedKwh": 1.0}],
+            },
+        }
+        coordinator = EdistribucionCoordinator(hass, client, entry)
+
+        await coordinator._async_update_data()
+
+        entity_ids_called = {c[0] for c in calls}
+        assert imported_entity_id in entity_ids_called
+        assert not any("cost_today" in eid or "kwh_" in eid for eid in entity_ids_called)
+
+        imported_call = next(c for c in calls if c[0] == imported_entity_id)
+        _entity_id, unit, unit_class, day_values = imported_call
+        assert unit == "kWh"
+        assert unit_class == "energy"
+        # Solo el día pasado -- "hoy" queda excluido (lo cubre el polling normal).
+        assert day_values == [(_parse_day(past_day), 2.0)]
+
+    async def test_noop_without_any_past_day_in_month_data(self, hass, monkeypatch):
+        from custom_components.edistribucion import coordinator as coordinator_module
+
+        calls = []
+
+        async def fake_backfill(*args, **kwargs):
+            calls.append(args)
+
+        monkeypatch.setattr(coordinator_module, "async_backfill_derived_daily_statistics", fake_backfill)
+
+        entry = _make_entry(hass)
+        client = _make_client()  # hourlyByDate vacío por defecto
+        coordinator = EdistribucionCoordinator(hass, client, entry)
+
+        await coordinator._async_update_data()
+
+        assert calls == []
+
+    async def test_runs_at_most_once_per_day(self, hass, monkeypatch):
+        from homeassistant.helpers import entity_registry as er
+
+        from custom_components.edistribucion import coordinator as coordinator_module
+
+        calls = []
+
+        async def fake_backfill(*args, **kwargs):
+            calls.append(args)
+
+        monkeypatch.setattr(coordinator_module, "async_backfill_derived_daily_statistics", fake_backfill)
+
+        entry = _make_entry(hass)
+        er.async_get(hass).async_get_or_create("sensor", DOMAIN, "cont1_imported_energy_today", config_entry=entry)
+        client = _make_client()
+        client.async_get_consumption.return_value = {
+            "totalImportedKwh": 5.0,
+            "hourlyByDate": {"01/01/2020": [{"hour": "10 - 11 h", "importedKwh": 2.0}]},
+        }
+        coordinator = EdistribucionCoordinator(hass, client, entry)
+
+        await coordinator._async_update_data()
+        first_run_calls = len(calls)
+        assert first_run_calls > 0
+
+        await coordinator._async_update_data()
+        assert len(calls) == first_run_calls  # segunda vez el mismo día: no repite el backfill

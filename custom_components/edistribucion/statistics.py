@@ -182,6 +182,98 @@ async def _async_last_saved_stat_before(hass: HomeAssistant, statistic_id: str, 
     return await _query_last_before(hass, statistic_id, dt_util.utc_from_timestamp(0), before)
 
 
+async def _async_days_with_existing_stats(hass: HomeAssistant, statistic_id: str, start: datetime, end: datetime) -> set:
+    """Días (fecha LOCAL) que YA tienen alguna estadística guardada para `statistic_id` dentro de
+    [start, end] — usado por `async_backfill_derived_daily_statistics` para no pisar días con
+    polling normal al rellenar huecos. Consulta BLOQUEANTE al recorder, se ejecuta en su executor."""
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.statistics import statistics_during_period
+
+    def _query() -> set:
+        result = statistics_during_period(hass, start_time=start, end_time=end, statistic_ids={statistic_id}, period="hour", units=None, types={"sum"})
+        days = set()
+        for row in result.get(statistic_id) or []:
+            row_start = row["start"]
+            if isinstance(row_start, (int, float)):
+                row_start = dt_util.utc_from_timestamp(row_start)
+            days.add(dt_util.as_local(row_start).date())
+        return days
+
+    return await get_instance(hass).async_add_executor_job(_query)
+
+
+async def async_backfill_derived_daily_statistics(
+    hass: HomeAssistant,
+    entity_id: str,
+    unit: str | None,
+    unit_class: str | None,
+    day_values: list[tuple[datetime, float]],
+) -> None:
+    """Rellena las estadísticas de UN sensor "_hoy" ya existente (identificado por su `entity_id`
+    real) para los días de `day_values` (cronológico, un punto DIARIO ya calculado con la MISMA
+    fórmula que usa `native_value` del sensor, a partir de `hourlyByDate` del mes en curso) que se
+    hayan quedado sin NINGUNA estadística — típicamente un corte de sesión con el add-on caído
+    varios días seguidos (issue #20): el dato en sí seguía disponible al recuperarse, pero nada
+    volvía a mirar atrás para reconstruir el histórico de esos sensores.
+
+    Son estadísticas del propio sensor (`source="recorder"`, `statistic_id` = su `entity_id`), a
+    diferencia de `async_backfill_energy_statistics` (estadísticas EXTERNAS aparte, para el Panel de
+    Energía). A propósito NO es idempotente como esa: si un día YA tiene algún dato (aunque sea
+    parcial), se deja intacto, para no sustituir el histórico horario real que capturó el propio
+    polling de Home Assistant por un único punto diario más basto — solo entra en juego para huecos
+    completos (el add-on estuvo caído el día entero)."""
+    if not day_values:
+        return
+    if "recorder" not in hass.config.components:
+        return
+
+    try:
+        from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+        from homeassistant.components.recorder.statistics import async_import_statistics
+    except ImportError as err:  # el recorder no está disponible en esta instalación
+        _LOGGER.debug("Recorder/Statistics API no disponible, sin relleno de histórico de %s: %s", entity_id, err)
+        return
+
+    try:
+        from homeassistant.components.recorder.models import StatisticMeanType
+
+        mean_type_kwargs: dict = {"mean_type": StatisticMeanType.NONE}
+    except ImportError:
+        mean_type_kwargs = {"has_mean": False}
+
+    try:
+        existing_days = await _async_days_with_existing_stats(hass, entity_id, day_values[0][0], dt_util.utcnow())
+        missing = [(start, value) for start, value in day_values if start.date() not in existing_days]
+        if not missing:
+            return
+
+        try:
+            last_saved = await _async_last_saved_stat_before(hass, entity_id, missing[0][0])
+        except Exception as err:  # noqa: BLE001 — sin poder leerlo, se asume "sin dato previo" (0.0)
+            _LOGGER.warning("No se pudo leer el último sum guardado de %s (relleno diario): %s", entity_id, err)
+            last_saved = None
+        running_total = _carry_over_sum(last_saved, missing[0][0])
+
+        stats: list[StatisticData] = []
+        for start, value in missing:
+            running_total += value
+            stats.append(StatisticData(start=start, sum=running_total, state=value))
+
+        metadata = StatisticMetaData(
+            **mean_type_kwargs,
+            has_sum=True,
+            name=None,
+            source="recorder",
+            statistic_id=entity_id,
+            unit_class=unit_class,
+            unit_of_measurement=unit,
+        )
+        async_import_statistics(hass, metadata, stats)
+        _LOGGER.info("Backfill de %d día(s) sin estadísticas para %s", len(missing), entity_id)
+    except Exception as err:  # noqa: BLE001 — un fallo aquí no debe romper el ciclo del coordinator
+        _LOGGER.warning("No se pudo rellenar el histórico diario de %s: %s", entity_id, err)
+
+
 async def async_backfill_energy_statistics(
     hass: HomeAssistant,
     cups: str,
