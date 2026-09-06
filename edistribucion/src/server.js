@@ -68,9 +68,14 @@ app.get("/supply-points", async (req, res) => {
   }
 });
 
+const VALID_RANGES = ["1", "2", "3"];
+
 app.get("/consumption/:contId", async (req, res) => {
   const { contId } = req.params;
   const { range, date } = req.query;
+  if (range !== undefined && !VALID_RANGES.includes(String(range))) {
+    return res.status(400).json({ error: `'range' inválido: '${range}'. Valores válidos: 1=día, 2=semana, 3=mes.` });
+  }
   try {
     const result = await session.withSession((state) =>
       range ? getConsumptionByRange(state, contId, String(range), date) : getDefaultConsumption(state, contId)
