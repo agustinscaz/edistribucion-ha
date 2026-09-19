@@ -101,6 +101,15 @@ HOLIDAY_REGIONS = {
 # — a diferencia de un rename, aquí no hay nada que "perder" al rellenar una clave que nunca
 # existió, así que no hace falta esperar a que el usuario abra Opciones). Si alguien ya había puesto
 # 0 a propósito para una de las dos, ese 0 se respeta (setdefault, no se sobrescribe).
+# Issue #30: 5,11269632% es el tipo estatal GENERAL vigente, base imponible = energía + potencia
+# (confirmado: no es solo sobre energía) — sigue siendo lo correcto para la inmensa mayoría de
+# contratos. Pero existen exenciones de IEE NO automáticas (exigen inscripción específica en
+# registros territoriales, art. 93/94.5/94.9 de la Ley de Impuestos Especiales) — la más relevante
+# para esta integración es la de autoconsumo con excedentes acogido a compensación (art. 94.9): la
+# energía compensada con el excedente horario queda exenta de IEE. Un usuario inscrito en esa
+# exención verá 0€ de IEE en su factura real aunque tenga consumo de red — para ese caso hay que
+# poner `iee_percent=0` a mano en Opciones, NO cambiar este default global (rompería el cálculo
+# para la mayoría de usuarios, que sí pagan el tipo general).
 CONF_IEE_PERCENT = "iee_percent"
 DEFAULT_IEE_PERCENT = 5.11269632  # tipo estatal fijo vigente del IEE
 CONF_IVA_PERCENT = "iva_percent"
