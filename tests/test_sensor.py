@@ -923,3 +923,52 @@ async def test_month_range_attributes_missing_when_no_dates(hass):
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     assert "rango_real" not in by_id["contA_estimated_cost_month"].extra_state_attributes
     assert by_id["contA_punta_kwh_today"].extra_state_attributes == {}
+
+
+async def test_today_sensors_expose_real_date(hass):
+    """Issue #26: `consumption` (sin `range`) puede devolver el último día CERRADO en vez de hoy,
+    sin avisar, cuando e-distribución todavía no ha procesado el día en curso — a diferencia de
+    `week`/`month`, que sí incluyen la fecha de hoy (con ceros) cuando pasa esto. Todos los sensores
+    "_hoy" que dependen de `bundle["consumption"]` deben exponer `fecha_real` (la fecha de
+    `dailyTotals`) para poder distinguir "esto es hoy en vivo" de "esto es ayer"."""
+    bundles = {
+        "contA": _bundle(
+            {
+                "price_punta": 0.25,
+                "price_power_punta": 0.1,
+                "price_power_valle": 0.05,
+                "surplus_compensation": True,
+                "surplus_price": 0.05,
+            }
+        )
+    }
+    bundles["contA"]["consumption"] = {
+        "dailyTotals": [{"date": "18/09/2026", "importedKwh": 5.933, "exportedKwh": 10.793}],
+        "hourlyByDate": {"18/09/2026": [{"hour": "10 - 11 h", "importedKwh": 2.0, "exportedKwh": 1.0}]},
+    }
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    for uid in (
+        "contA_imported_energy_today",
+        "contA_exported_energy_today",
+        "contA_estimated_cost_today",
+        "contA_estimated_cost_today_with_power",
+        "contA_punta_kwh_today",
+        "contA_punta_cost_today",
+        "contA_punta_exported_kwh_today",
+        "contA_punta_exported_compensation_today",
+        "contA_surplus_compensation_today",
+        "contA_self_consumption_today",
+        "contA_net_balance_today",
+    ):
+        assert by_id[uid].extra_state_attributes["fecha_real"] == "18/09/2026", uid
+
+
+async def test_today_date_attribute_missing_without_daily_totals(hass):
+    """Sin `dailyTotals` en `consumption` (bundle recién iniciado, o un fallo puntual), no debe
+    aparecer `fecha_real` ni romper con KeyError — mismo criterio que `rango_real` para "mes"."""
+    bundles = {"contA": _bundle({"price_punta": 0.25})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert "fecha_real" not in by_id["contA_imported_energy_today"].extra_state_attributes
+    assert "fecha_real" not in by_id["contA_self_consumption_today"].extra_state_attributes

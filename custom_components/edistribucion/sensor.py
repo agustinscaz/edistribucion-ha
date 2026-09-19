@@ -63,6 +63,19 @@ def _latest_day_hourly(consumption: dict | None) -> dict | None:
     return {"hourlyByDate": {latest_date: consumption["hourlyByDate"][latest_date]}}
 
 
+def _today_date_attributes(consumption: dict | None) -> dict:
+    """Fecha real (DD/MM/YYYY) del día que devuelve `consumption` (sin `range`, el que alimenta los
+    sensores "_hoy"). Issue #26: cuando e-distribución todavía no ha procesado el día en curso, el
+    add-on no lo señala con un valor vacío (como sí hacen `week`/`month`, que incluyen la fecha de
+    hoy con ceros) — en su lugar devuelve directamente el último día CERRADO con datos reales, sin
+    ninguna marca de que es un día distinto. Este atributo permite distinguir desde HA "esto es hoy
+    en vivo" de "esto es el último día cerrado, probablemente ayer", sin tener que activar logs."""
+    day = _latest_daily_total(consumption)
+    if not day:
+        return {}
+    return {"fecha_real": day["date"]}
+
+
 def _month_range_attributes(month: dict | None) -> dict:
     """Fechas reales (`startDate`/`endDate`, ya devueltas por el add-on en `mapParamsWS_v2`) que
     cubre un bundle "mes" — para poder confirmar desde HA, sin leer código, si `range=3` da el mes
@@ -281,7 +294,10 @@ class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return _freshness_attributes(self.coordinator, self._cont_id, "imported")
+        return {
+            **_freshness_attributes(self.coordinator, self._cont_id, "imported"),
+            **_today_date_attributes(self._bundle.get("consumption")),
+        }
 
 
 class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
@@ -308,7 +324,10 @@ class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return _freshness_attributes(self.coordinator, self._cont_id, "exported")
+        return {
+            **_freshness_attributes(self.coordinator, self._cont_id, "exported"),
+            **_today_date_attributes(self._bundle.get("consumption")),
+        }
 
 
 class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
@@ -453,7 +472,11 @@ class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {**super().extra_state_attributes, **_freshness_attributes(self.coordinator, self._cont_id, "imported")}
+        return {
+            **super().extra_state_attributes,
+            **_freshness_attributes(self.coordinator, self._cont_id, "imported"),
+            **_today_date_attributes(self._bundle.get("consumption")),
+        }
 
 
 class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
@@ -551,9 +574,9 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        if self._period_key != "month":
-            return {}
-        return _month_range_attributes(self._bundle.get("month"))
+        if self._period_key == "month":
+            return _month_range_attributes(self._bundle.get("month"))
+        return _today_date_attributes(self._bundle.get("consumption"))
 
 
 class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
@@ -609,9 +632,9 @@ class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        if self._period_key != "month":
-            return {}
-        return _month_range_attributes(self._bundle.get("month"))
+        if self._period_key == "month":
+            return _month_range_attributes(self._bundle.get("month"))
+        return _today_date_attributes(self._bundle.get("consumption"))
 
 
 class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):
@@ -963,7 +986,10 @@ class EdistribucionSurplusCompensationTodaySensor(_EdistribucionSurplusCompensat
 
     @property
     def extra_state_attributes(self) -> dict:
-        return _freshness_attributes(self.coordinator, self._cont_id, "exported")
+        return {
+            **_freshness_attributes(self.coordinator, self._cont_id, "exported"),
+            **_today_date_attributes(self._bundle.get("consumption")),
+        }
 
 
 class EdistribucionSurplusCompensationWeekSensor(_EdistribucionSurplusCompensationSensor):
@@ -1065,6 +1091,10 @@ class EdistribucionSelfConsumptionTodaySensor(_EdistribucionSelfConsumptionSenso
     def _exported_kwh(self) -> float | None:
         day = _latest_daily_total(self._bundle.get("consumption"))
         return day["exportedKwh"] if day else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _today_date_attributes(self._bundle.get("consumption"))
 
 
 class EdistribucionSelfConsumptionMonthSensor(_EdistribucionSelfConsumptionSensor):
@@ -1255,6 +1285,7 @@ class EdistribucionEstimatedCostTodayWithPowerSensor(_EdistribucionBaseSensor):
     def extra_state_attributes(self) -> dict:
         return {
             **_freshness_attributes(self.coordinator, self._cont_id, "imported"),
+            **_today_date_attributes(self._bundle.get("consumption")),
             "coste_energia": self._energy_cost,
             "termino_potencia": self._power_cost,
         }
@@ -1408,7 +1439,11 @@ class EdistribucionNetBalanceTodaySensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"compensacion": self._compensation, "coste_con_potencia": self._cost_with_power}
+        return {
+            "compensacion": self._compensation,
+            "coste_con_potencia": self._cost_with_power,
+            **_today_date_attributes(self._bundle.get("consumption")),
+        }
 
 
 class _EdistribucionNetBalancePeriodSensor(_EdistribucionBaseSensor):

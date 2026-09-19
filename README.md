@@ -123,6 +123,8 @@ Los sensores de semana/mes llevan un atributo `daily_totals` con el desglose dí
 
 Los sensores de "mes" que dependen del consumo mensual (coste/potencia/tramos) llevan además un atributo `rango_real` con las fechas exactas (`YYYY-MM-DD a YYYY-MM-DD`) que cubre e-distribución para ese periodo — útil para comprobar si en tu caso es el mes calendario a la fecha o una ventana de días distinta.
 
+**Ojo con los sensores "_hoy":** e-distribución no siempre tiene procesados los datos de hoy — a media mañana, o incluso todo el día en algunos suministros, puede que el dato "de hoy" sea en realidad el de ayer, sin ningún aviso visual. Todos los sensores "_hoy" que dependen del consumo diario (energía, coste, tramos, autosuficiencia, compensación de excedentes, balance neto) llevan un atributo `fecha_real` (`DD/MM/YYYY`) con la fecha exacta que están mostrando — compáralo con la fecha de hoy para saber si el valor es en vivo o es el último día cerrado.
+
 Además, agrupadas bajo el dispositivo **"e-distribución (add-on)"** (no ligado a ningún CUPS concreto):
 
 | Entidad | Descripción |
