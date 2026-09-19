@@ -406,6 +406,19 @@ def surplus_compensation_value(sp_opts: dict, exported_kwh: float | None) -> flo
     return round(exported_kwh * price, 4)
 
 
+def energy_cost_configured(sp_opts: dict) -> bool:
+    """¿Hay suficiente configurado en este CUPS como para que el coste de energía pueda dar algo?
+    Compartida entre sensor.py (qué sensores crear) y statistics.py (issue #27: qué estadísticas
+    externas de coste vale la pena mantener — sin esto, un CUPS con tarifa fija sin precio puesto
+    acumularía para siempre un `edistribucion:<cups>_energy_cost` con puros ceros)."""
+    tariff_type = sp_opts.get("tariff_type")
+    if tariff_type == TARIFF_FIJA:
+        return bool(sp_opts.get("fixed_price"))
+    if tariff_type == TARIFF_PVPC:
+        return True  # no hace falta configurar nada más — el precio PVPC es público, sin clave
+    return bool(sp_opts.get("price_punta") or sp_opts.get("price_llano") or sp_opts.get("price_valle"))
+
+
 def monthly_summary_csv(sp_opts: dict, month_data: dict | None, pvpc_prices_by_zone: dict[str, dict[str, float]] | None = None) -> str:
     """Resumen del mes en texto CSV (concepto,valor): coste de energía (desglosado por periodo si
     la tarifa lo permite), término de potencia, compensación de excedentes si aplica, y un total

@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .costs import energy_cost_configured, estimate_energy_cost, power_cost, surplus_compensation_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -368,3 +369,170 @@ async def async_backfill_energy_statistics(
                 carry_over[statistic_id] = running_total
         except Exception as err:  # noqa: BLE001 — un fallo aquí no debe romper el arranque de la integración
             _LOGGER.warning("No se pudo rellenar el histórico de %s (%s): %s", cups, flow, err)
+
+
+def _cost_days(month_data: dict) -> list[tuple[datetime, dict, float, float]]:
+    """Un día por entrada de `hourlyByDate` (orden cronológico): (inicio del día en UTC, ESE
+    bloque horario envuelto como fuente para `estimate_energy_cost`/`cost_breakdown`, kWh
+    importados, kWh exportados). Sin `hourlyByDate` no hay nada que hacer para tramos/pvpc
+    (necesitan el desglose por hora) — mismo límite que ya tiene `_async_backfill_derived_for_cups`
+    en coordinator.py."""
+    hourly = month_data.get("hourlyByDate") or {}
+    if not hourly:
+        return []
+    days = []
+    for date_str in sorted(hourly, key=lambda d: datetime.strptime(d, "%d/%m/%Y")):
+        hours = hourly[date_str]
+        imported_kwh = sum(h.get("importedKwh") or 0 for h in hours)
+        exported_kwh = sum(h.get("exportedKwh") or 0 for h in hours)
+        days.append((_parse_day(date_str), {"hourlyByDate": {date_str: hours}}, imported_kwh, exported_kwh))
+    return days
+
+
+async def _async_write_cost_statistic(
+    hass: HomeAssistant,
+    *,
+    cups: str,
+    metric: str,
+    label: str,
+    points: list[tuple[datetime, float]],
+    mean_type_kwargs: dict,
+    carry_over: dict[str, float] | None,
+) -> None:
+    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+    from homeassistant.components.recorder.statistics import async_add_external_statistics
+
+    statistic_id = f"{DOMAIN}:{cups.lower()}_{metric}"
+    if carry_over is not None and statistic_id in carry_over:
+        running_total = carry_over[statistic_id]
+    else:
+        try:
+            last_saved = await _async_last_saved_stat_before(hass, statistic_id, points[0][0])
+        except Exception as err:  # noqa: BLE001 — sin poder leerlo, se asume "sin dato previo" (0.0)
+            _LOGGER.warning("No se pudo leer el último sum guardado de %s (%s): %s", cups, metric, err)
+            last_saved = None
+        running_total = _carry_over_sum(last_saved, points[0][0])
+        if last_saved is not None and statistic_id not in _carry_over_logged:
+            _LOGGER.info(
+                "Arrastrando sum=%.4f de %s (%s) desde antes de %s", last_saved[1], cups, metric, points[0][0].isoformat()
+            )
+            _carry_over_logged.add(statistic_id)
+
+    stats: list[StatisticData] = []
+    for start, value in points:
+        running_total += value
+        stats.append(StatisticData(start=start, sum=running_total, state=value))
+
+    metadata = StatisticMetaData(
+        **mean_type_kwargs,
+        has_sum=True,
+        name=f"e-distribución {cups} — {label}",
+        source=DOMAIN,
+        statistic_id=statistic_id,
+        unit_of_measurement="EUR",
+    )
+    async_add_external_statistics(hass, metadata, stats)
+    if carry_over is not None:
+        carry_over[statistic_id] = running_total
+
+
+async def async_backfill_cost_statistics(
+    hass: HomeAssistant,
+    cups: str,
+    sp: dict,
+    month_data: dict | None,
+    pvpc_prices: dict[str, dict[str, float]],
+    *,
+    carry_over: dict[str, float] | None = None,
+) -> None:
+    """Como `async_backfill_energy_statistics`, pero para estadísticas EXTERNAS en EUR: coste de
+    energía, término de potencia y compensación de excedentes — issue #27, para que el acumulado
+    del año (`coordinator.year_to_date_completed_months`) pueda sumar `change` de estas
+    estadísticas para los meses ya cerrados, en vez de volver a pedirle el histórico a
+    e-distribución (que solo retiene granularidad diaria ~1-2 meses hacia atrás, ver issue #25).
+
+    Por qué estadísticas EXTERNAS propias y no las del propio sensor "_hoy" (`sensor.<cups>_
+    coste_estimado_hoy`, `_termino_de_potencia_hoy`, etc.): esos sensores usan `state_class=TOTAL`
+    SIN `last_reset`, y leyendo `compile_statistics` en
+    `homeassistant/components/sensor/recorder.py` se confirma que esa combinación NO compensa el
+    reseteo diario a medianoche — sin un reset explícito, el reset solo se detecta la PRIMERA vez
+    que se compilan estadísticas para ese sensor; a partir de ahí, cada bajada (incluida la de
+    medianoche) se suma tal cual (`_sum += new_state - old_state`), así que el `sum` resultante
+    telescopa a `estado_actual − primer_estado_histórico`, no un acumulado real. Con estadísticas
+    EXTERNAS, el `running_total` lo arrastra esta propia integración explícitamente (mismo
+    mecanismo ya probado para energía en `async_backfill_energy_statistics`), así que sí acumula
+    correctamente entre días y meses.
+
+    Recalcula CADA vez el coste de los días que trae `month_data` (con el `sp` VIGENTE ahora
+    mismo) — igual que ya hacen los sensores `_mes`, que tampoco recuerdan precios antiguos si las
+    Opciones cambian a mitad de mes; un mes que ya salió de la ventana de `month_data` de
+    e-distribución deja de recalcularse y su `sum` queda fijo para siempre (igual que ya pasa con
+    la energía). Se salta por completo la métrica que no esté configurada para este CUPS (tarifa
+    fija sin precio, sin término de potencia, sin compensación de excedentes activada) — para no
+    acumular una estadística permanente a puro cero."""
+    if not month_data or not month_data.get("hourlyByDate"):
+        return
+    if "recorder" not in hass.config.components:
+        return
+
+    try:
+        from homeassistant.components.recorder.models import StatisticMeanType
+
+        mean_type_kwargs: dict = {"mean_type": StatisticMeanType.NONE}
+    except ImportError:
+        mean_type_kwargs = {"has_mean": False}
+
+    days = _cost_days(month_data)
+    if not days:
+        return
+
+    if energy_cost_configured(sp):
+        try:
+            points = [
+                (day_start, (estimate_energy_cost(sp, imported_kwh, day_source, pvpc_prices) or {}).get("total") or 0.0)
+                for day_start, day_source, imported_kwh, _exported_kwh in days
+            ]
+            await _async_write_cost_statistic(
+                hass,
+                cups=cups,
+                metric="energy_cost",
+                label="coste de energía",
+                points=points,
+                mean_type_kwargs=mean_type_kwargs,
+                carry_over=carry_over,
+            )
+        except Exception as err:  # noqa: BLE001 — un fallo aquí no debe romper el ciclo del coordinator
+            _LOGGER.warning("No se pudo rellenar el histórico de coste de energía de %s: %s", cups, err)
+
+    if power_cost(sp) > 0:
+        try:
+            daily_power_cost = power_cost(sp)
+            points = [(day_start, daily_power_cost) for day_start, _source, _imp, _exp in days]
+            await _async_write_cost_statistic(
+                hass,
+                cups=cups,
+                metric="power_cost",
+                label="término de potencia",
+                points=points,
+                mean_type_kwargs=mean_type_kwargs,
+                carry_over=carry_over,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("No se pudo rellenar el histórico de término de potencia de %s: %s", cups, err)
+
+    if sp.get("surplus_compensation") and sp.get("surplus_price"):
+        try:
+            points = [
+                (day_start, surplus_compensation_value(sp, exported_kwh) or 0.0) for day_start, _source, _imp, exported_kwh in days
+            ]
+            await _async_write_cost_statistic(
+                hass,
+                cups=cups,
+                metric="surplus_compensation",
+                label="compensación de excedentes",
+                points=points,
+                mean_type_kwargs=mean_type_kwargs,
+                carry_over=carry_over,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("No se pudo rellenar el histórico de compensación de excedentes de %s: %s", cups, err)

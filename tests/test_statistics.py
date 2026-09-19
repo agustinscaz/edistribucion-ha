@@ -9,12 +9,14 @@ from datetime import datetime, timezone
 
 from custom_components.edistribucion.statistics import (
     _carry_over_sum,
+    _cost_days,
     _daily_points,
     _hourly_points,
     _leading_hour,
     _merge_duplicate_starts,
     _parse_day,
     _parse_hour,
+    async_backfill_cost_statistics,
     async_backfill_derived_daily_statistics,
     async_backfill_energy_statistics,
     months_back,
@@ -182,6 +184,44 @@ class TestCarryOverSum:
         assert _carry_over_sum(last_saved, first_point) == 0.0
 
 
+class TestCostDays:
+    """`_cost_days` (issue #27) — un día por entrada de `hourlyByDate`, en orden cronológico, con
+    los kWh importados/exportados ya sumados y el bloque horario de ESE día envuelto para
+    `estimate_energy_cost`/`cost_breakdown`."""
+
+    def test_empty_without_hourly_by_date(self):
+        assert _cost_days({}) == []
+        assert _cost_days({"hourlyByDate": {}}) == []
+
+    def test_sums_kwh_and_wraps_the_day_source(self):
+        month_data = {
+            "hourlyByDate": {
+                "30/07/2026": [
+                    {"hour": "0 - 1 h", "importedKwh": 1.0, "exportedKwh": 0.5},
+                    {"hour": "1 - 2 h", "importedKwh": 2.0, "exportedKwh": 0.0},
+                ]
+            }
+        }
+        days = _cost_days(month_data)
+        assert len(days) == 1
+        day_start, day_source, imported_kwh, exported_kwh = days[0]
+        assert day_start.day == 30
+        assert imported_kwh == 3.0
+        assert exported_kwh == 0.5
+        assert set(day_source["hourlyByDate"]) == {"30/07/2026"}
+
+    def test_chronological_order(self):
+        month_data = {"hourlyByDate": {"15/08/2026": [{"hour": "0 - 1 h"}], "01/08/2026": [{"hour": "0 - 1 h"}]}}
+        days = _cost_days(month_data)
+        assert [d[0].day for d in days] == [1, 15]
+
+    def test_missing_field_defaults_to_zero(self):
+        month_data = {"hourlyByDate": {"30/07/2026": [{"hour": "0 - 1 h"}]}}
+        days = _cost_days(month_data)
+        assert days[0][2] == 0.0
+        assert days[0][3] == 0.0
+
+
 class _FakeConfig:
     def __init__(self, components):
         self.components = components
@@ -210,6 +250,24 @@ class TestAsyncBackfillEnergyStatistics:
         hass = _FakeHass(components={"recorder"})
         month_data = {"dailyTotals": [{"date": "30/07/2026", "importedKwh": 5.0}]}
         await async_backfill_energy_statistics(hass, "ES123", month_data)  # no debe lanzar
+
+
+class TestAsyncBackfillCostStatistics:
+    _SP = {"cups": "ES123", "tariff_type": "fija", "fixed_price": 0.2}
+
+    async def test_noop_without_month_data(self):
+        await async_backfill_cost_statistics(_FakeHass(), "ES123", self._SP, None, pvpc_prices={})
+        await async_backfill_cost_statistics(_FakeHass(), "ES123", self._SP, {"hourlyByDate": {}}, pvpc_prices={})
+
+    async def test_noop_without_recorder_component(self):
+        hass = _FakeHass(components=set())
+        month_data = {"hourlyByDate": {"30/07/2026": [{"hour": "0 - 1 h", "importedKwh": 5.0}]}}
+        await async_backfill_cost_statistics(hass, "ES123", self._SP, month_data, pvpc_prices={})  # no debe lanzar
+
+    async def test_graceful_when_recorder_api_not_importable(self):
+        hass = _FakeHass(components={"recorder"})
+        month_data = {"hourlyByDate": {"30/07/2026": [{"hour": "0 - 1 h", "importedKwh": 5.0}]}}
+        await async_backfill_cost_statistics(hass, "ES123", self._SP, month_data, pvpc_prices={})  # no debe lanzar
 
 
 class TestAsyncBackfillDerivedDailyStatistics:

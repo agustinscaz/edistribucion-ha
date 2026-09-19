@@ -25,9 +25,9 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
-from .costs import LLANO, PUNTA, VALLE, cost_breakdown, estimate_energy_cost, power_cost, surplus_compensation_value
+from .costs import LLANO, PUNTA, VALLE, cost_breakdown, surplus_compensation_value
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
-from .statistics import _parse_day, async_backfill_derived_daily_statistics, async_backfill_energy_statistics
+from .statistics import _parse_day, async_backfill_cost_statistics, async_backfill_derived_daily_statistics, async_backfill_energy_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,14 +84,14 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         # signifique que la integración esté fallando.
         self._last_value_change: dict[str, dict[str, datetime]] = {}
         self._previous_values: dict[str, dict[str, float]] = {}
-        # Total (kWh/coste) de cada mes YA COMPLETADO, cacheado por (cont_id, año, mes) — un mes
-        # cerrado no vuelve a cambiar nunca, así que una vez pedido no hace falta volver a pedirlo
-        # (ver _async_update_year_to_date_if_needed). `_year_to_date_completed` es la SUMA ya
-        # hecha de esta caché para el año en curso, recalculada a partir de ella cada día (barato,
-        # sin llamadas al add-on) — el mes en curso se suma en vivo aparte, con lo que ya se tiene
-        # en `bundle["month"]`, no hace falta guardarlo en ninguna de las dos cachés.
-        self._year_to_date_month_cache: dict[tuple[str, int, int], dict[str, float]] = {}
+        # Acumulado de los meses YA COMPLETADOS de este año, recalculado una vez al día a partir de
+        # las estadísticas del recorder (issue #27 — ver _async_update_year_to_date_if_needed), no
+        # de volver a pedirle el histórico a e-distribución. `_year_to_date_completed` es la suma
+        # (por CUPS); `_year_to_date_details` es el desglose mes a mes que usa diagnostics.py/el
+        # atributo `meses_completados_detalle` del sensor de coste acumulado (issues #25/#29). El
+        # mes en curso se suma en vivo aparte, con lo que ya se tiene en `bundle["month"]`.
         self._year_to_date_completed: dict[str, dict[str, float]] = {}
+        self._year_to_date_details: dict[str, dict[int, dict[str, float]]] = {}
         self._year_to_date_fetched_day: str | None = None
 
     def _pvpc_zones_needed(self) -> set[str]:
@@ -296,13 +296,18 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
         """Repite el relleno de estadísticas del Dashboard de Energía una vez al día (no solo al
         configurar la integración) — así los meses nuevos se rellenan solos aunque Home Assistant
         lleve semanas sin reiniciarse. Es idempotente (ver statistics.py), así que repetirlo más a
-        menudo no haría daño, pero tampoco aportaría nada."""
+        menudo no haría daño, pero tampoco aportaría nada.
+
+        También mantiene las estadísticas EXTERNAS de coste (issue #27: `energy_cost`/`power_cost`/
+        `surplus_compensation`) que alimentan el acumulado del año — ver
+        `_async_update_year_to_date_if_needed`."""
         today_key = dt_util.now().strftime("%Y-%m-%d")
         if self._last_backfill_day == today_key:
             return
         for bundle in data.values():
             sp = bundle.get("supply_point") or {}
             await async_backfill_energy_statistics(self.hass, sp.get("cups", ""), bundle.get("month"))
+            await async_backfill_cost_statistics(self.hass, sp.get("cups", ""), sp, bundle.get("month"), self.pvpc_prices)
         self._last_backfill_day = today_key
 
     async def _async_backfill_derived_statistics_if_needed(self, data: dict) -> None:
@@ -405,94 +410,110 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 continue  # sensor no creado (tarifa/opciones no lo requieren) — nada que rellenar
             await async_backfill_derived_daily_statistics(self.hass, entity_id, unit, unit_class, day_values)
 
-    async def _async_update_year_to_date_if_needed(self, data: dict) -> None:
-        """Una vez al día, se asegura de tener cacheado el total de CADA mes ya completado de este
-        año (el mes en curso se suma en vivo cada ciclo con lo que ya se tiene en
-        `bundle["month"]`, no hace falta repetirlo). Un mes cerrado no vuelve a cambiar NUNCA, así
-        que solo se le pide al add-on la primera vez que hace falta (ver
-        `_year_to_date_month_cache`) — no todos los meses completados en cada ejecución diaria,
-        que en diciembre serían 11 llamadas de más por CUPS y por día, para siempre, sin ganar nada
-        (el número no cambia hasta que cierra un mes nuevo).
+    _YEAR_TO_DATE_METRICS = (
+        ("imported_kwh", "imported_energy"),
+        ("exported_kwh", "exported_energy"),
+        ("cost", "energy_cost"),
+        ("power_cost", "power_cost"),
+        ("surplus_compensation", "surplus_compensation"),
+    )
 
-        LIMITACIÓN conocida con tarifa "pvpc": el coste de meses anteriores usa los precios PVPC
-        que haya cacheados en `self.pvpc_prices` (solo el mes en curso, ver
-        `_async_update_pvpc_prices`) — no se vuelve a pedir el histórico de precios a ESIOS día a
-        día para no sobrecargar esa API pública, así que el coste de meses PVPC anteriores al
-        actual puede salir incompleto (ver `horas_sin_precio` si se calcula aparte)."""
+    async def _async_monthly_statistic_changes(self, statistic_id: str, start: datetime, end: datetime) -> dict[int, float]:
+        """{mes (1-12): `change` de ESE mes} para `statistic_id` entre `start` y `end` (exclusivo),
+        vía `recorder.statistics_during_period(period="month", types={"change"})` — `change` ya es
+        la resta hecha por el propio recorder entre el `sum` al principio y al final de cada mes,
+        así que no hace falta guardar ni sumar nada aparte (issue #27). Un mes SIN ninguna fila
+        devuelta (`statistic_id` no existía todavía esos días — CUPS recién configurado, o métrica
+        nueva en esta versión) queda AUSENTE del dict, no en 0.0 — para diferenciarlo de un mes que
+        sí se pudo medir y dio 0 kWh/EUR real."""
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.statistics import statistics_during_period
+
+        def _query() -> dict[int, float]:
+            result = statistics_during_period(
+                self.hass, start_time=start, end_time=end, statistic_ids={statistic_id}, period="month", units=None, types={"change"}
+            )
+            changes: dict[int, float] = {}
+            for row in result.get(statistic_id) or []:
+                row_start = row["start"]
+                if isinstance(row_start, (int, float)):  # timestamp UNIX crudo según versión de HA
+                    row_start = dt_util.utc_from_timestamp(row_start)
+                changes[dt_util.as_local(row_start).month] = row.get("change") or 0.0
+            return changes
+
+        try:
+            return await get_instance(self.hass).async_add_executor_job(_query)
+        except Exception as err:  # noqa: BLE001 — un fallo de lectura no debe romper el ciclo
+            _LOGGER.warning("No se pudo leer estadísticas de %s para el acumulado del año: %s", statistic_id, err)
+            return {}
+
+    async def _async_update_year_to_date_if_needed(self, data: dict) -> None:
+        """Una vez al día, recalcula el acumulado de los meses YA COMPLETADOS de este año a partir
+        de las estadísticas EXTERNAS que esta misma integración mantiene con arrastre correcto
+        entre días/meses (`edistribucion:<cups>_imported_energy`/`_exported_energy` para energía,
+        `_energy_cost`/`_power_cost`/`_surplus_compensation` para EUR — ver
+        `_async_backfill_statistics_if_needed` y statistics.py).
+
+        Issue #27: ANTES esto le volvía a pedir a e-distribución (`async_get_consumption`) cada mes
+        ya cerrado del año, y e-distribución solo retiene granularidad diaria ~1-2 meses hacia
+        atrás — pasado ese margen, la API devolvía 0.0 SIN error (issue #25), dejando el acumulado
+        del año permanentemente por debajo de lo real. Las estadísticas del recorder, en cambio,
+        persisten indefinidamente una vez escritas, así que ya no hace falta volver a pedirle nada
+        al add-on para esto: se lee lo que el propio Home Assistant ya tiene guardado.
+
+        LIMITACIÓN (aceptada, ver issue #27): un mes anterior a que la estadística correspondiente
+        empezara a escribirse (CUPS instalado a mitad de año, o justo tras esta actualización para
+        coste/potencia/compensación, nuevas en esta versión) no tiene ningún punto que sumar y
+        cuenta como 0 — de forma HONESTA (sin inventar un cero disfrazado de dato real, a
+        diferencia del bug de #25)."""
         today_key = dt_util.now().strftime("%Y-%m-%d")
         if self._year_to_date_fetched_day == today_key:
             return
+        if "recorder" not in self.hass.config.components:
+            self._year_to_date_fetched_day = today_key
+            return
+
         now = dt_util.now()
+        start_of_year = dt_util.as_utc(now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0))
+        start_of_this_month = dt_util.as_utc(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+
         for cont_id, bundle in data.items():
             sp = bundle.get("supply_point") or {}
-            for month in range(1, now.month):  # meses ya completados de este año (1..mes_actual-1)
-                cache_key = (cont_id, now.year, month)
-                if cache_key in self._year_to_date_month_cache:
-                    continue  # mes cerrado, ya cacheado — no cambia, no hace falta volver a pedirlo
-                month_date = now.replace(month=month, day=1).strftime("%Y-%m-%d")
-                try:
-                    month_data = await self.client.async_get_consumption(cont_id, RANGE_MONTH, month_date)
-                except EdistribucionApiError as err:
-                    # warning, no debug (issue #25): un mes completado que nunca llega a cachearse
-                    # deja el acumulado del año permanentemente por debajo de lo real hasta que la
-                    # llamada funcione un día — vale la pena que se note sin tener que activar logs
-                    # en debug para descubrirlo.
-                    _LOGGER.warning(
-                        "Sin consumo de %s/%s para el acumulado del año de %s: %s", month, now.year, sp.get("cups"), err
-                    )
-                    continue
-                breakdown = estimate_energy_cost(sp, month_data.get("totalImportedKwh"), month_data, self.pvpc_prices)
-                exported_kwh = month_data.get("totalExportedKwh") or 0.0
-                # power_cost/surplus_compensation_value se calculan CON el `sp` (precios, potencia
-                # contratada, compensación) vigente en el momento de cachear este mes — igual que
-                # `cost` ya hacía con la tarifa de energía, un mes cerrado no se recalcula si el
-                # usuario cambia sus Opciones más tarde (ver docstring de la función).
-                self._year_to_date_month_cache[cache_key] = {
-                    "imported_kwh": month_data.get("totalImportedKwh") or 0.0,
-                    "exported_kwh": exported_kwh,
-                    "cost": (breakdown.get("total") or 0.0) if breakdown else 0.0,
-                    "power_cost": power_cost(sp) * len(month_data.get("dailyTotals") or []),
-                    "surplus_compensation": surplus_compensation_value(sp, exported_kwh) or 0.0,
-                }
+            cups = (sp.get("cups") or "").lower()
+            totals = {field: 0.0 for field, _suffix in self._YEAR_TO_DATE_METRICS}
+            details: dict[int, dict[str, float]] = {month: dict(totals) for month in range(1, now.month)}
 
-            # Suma SOLO los meses de ESTE cont_id y de ESTE año ya cacheados — filtrar por año
-            # evita arrastrar totales de años anteriores si Home Assistant lleva corriendo sin
-            # reiniciar más de un año (la caché en memoria no se limpia sola al cambiar de año).
-            totals = {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0}
-            for (c_id, year, _month), values in self._year_to_date_month_cache.items():
-                if c_id == cont_id and year == now.year:
-                    totals["imported_kwh"] += values["imported_kwh"]
-                    totals["exported_kwh"] += values["exported_kwh"]
-                    totals["cost"] += values["cost"]
-                    totals["power_cost"] += values.get("power_cost") or 0.0
-                    totals["surplus_compensation"] += values.get("surplus_compensation") or 0.0
-            self._year_to_date_completed[cont_id] = totals
+            if cups and start_of_this_month > start_of_year:  # enero: ningún mes cerrado todavía
+                for field, suffix in self._YEAR_TO_DATE_METRICS:
+                    statistic_id = f"{DOMAIN}:{cups}_{suffix}"
+                    changes = await self._async_monthly_statistic_changes(statistic_id, start_of_year, start_of_this_month)
+                    for month, change in changes.items():
+                        if month not in details:
+                            continue  # fuera de rango (no debería pasar, cinturón de seguridad)
+                        details[month][field] = round(change, 4)
+                        totals[field] += change
+
+            self._year_to_date_completed[cont_id] = {field: round(value, 4) for field, value in totals.items()}
+            self._year_to_date_details[cont_id] = details
         self._year_to_date_fetched_day = today_key
 
     def year_to_date_completed_months(self, cont_id: str) -> dict[str, float]:
         """kWh importado/exportado, coste de energía, término de potencia y compensación de
-        excedentes de los meses YA COMPLETADOS de este año para este CUPS (cacheado una vez al día,
-        ver `_async_update_year_to_date_if_needed`) — falta sumarle el mes en curso, que cada
-        sensor añade en vivo con lo que ya tiene a mano."""
+        excedentes de los meses YA COMPLETADOS de este año para este CUPS (recalculado una vez al
+        día a partir de estadísticas del recorder, ver `_async_update_year_to_date_if_needed`) —
+        falta sumarle el mes en curso, que cada sensor añade en vivo con lo que ya tiene a mano."""
         return self._year_to_date_completed.get(
             cont_id,
             {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0},
         )
 
     def year_to_date_month_details(self, cont_id: str) -> dict[int, dict[str, float]]:
-        """Detalle MES A MES (1-12) de lo cacheado para el acumulado del año de este CUPS —
-        pensado para diagnosticar sin depender de logs en debug (issue #25): un mes ausente aquí
-        todavía no se pudo cachear (ver el warning de `_async_update_year_to_date_if_needed`), y un
-        mes presente con `imported_kwh` en 0.0 pese a haber tenido consumo real indica que
-        `async_get_consumption` para esa fecha pasada está devolviendo datos vacíos/incorrectos SIN
-        lanzar excepción (no necesariamente un fallo de conexión — ver la incertidumbre de si
-        `range=3` respeta la fecha pedida, issue #21)."""
-        now = dt_util.now()
-        return {
-            month: values
-            for (c_id, year, month), values in self._year_to_date_month_cache.items()
-            if c_id == cont_id and year == now.year
-        }
+        """Detalle MES A MES (1-12, meses ya completados de este año) de lo que hay acumulado en
+        las estadísticas del recorder para este CUPS — pensado para diagnosticar sin depender de
+        logs en debug (issue #25/#29): cada mes incluye las 5 métricas de
+        `year_to_date_completed_months`, en 0.0 si esa estadística todavía no tenía ningún punto
+        ese mes (ver la LIMITACIÓN de `_async_update_year_to_date_if_needed`)."""
+        return self._year_to_date_details.get(cont_id, {})
 
     def _track_value_freshness(self, cont_id: str, bundle: dict) -> None:
         """Registra cuándo cambió por última vez el importado/exportado "de hoy" de este CUPS —

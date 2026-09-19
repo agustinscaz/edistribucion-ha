@@ -28,7 +28,11 @@ from homeassistant.components.recorder.statistics import get_last_statistics, st
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
 
-from custom_components.edistribucion.statistics import async_backfill_derived_daily_statistics, async_backfill_energy_statistics
+from custom_components.edistribucion.statistics import (
+    async_backfill_cost_statistics,
+    async_backfill_derived_daily_statistics,
+    async_backfill_energy_statistics,
+)
 
 # Sin `enable_custom_integrations` a propósito: ese fixture depende de `hass`, así que lo
 # instanciaría ANTES de que `recorder_mock` pueda configurar la base de datos falsa (pytest-
@@ -288,6 +292,53 @@ class TestAsyncBackfillDerivedDailyStatistics:
         assert await _sum_at_for(hass, entity_id, "01/08/2026") == pytest.approx(1.0)
         assert await _sum_at_for(hass, entity_id, "02/08/2026") == pytest.approx(3.5)
         assert await _sum_at_for(hass, entity_id, "03/08/2026") == pytest.approx(3.8)
+
+
+class TestAsyncBackfillCostStatistics:
+    """`async_backfill_cost_statistics` (issue #27) contra el recorder real — que cada métrica se
+    salte por completo (ninguna estadística escrita, ni siquiera a 0.0) cuando no está configurada
+    para este CUPS, y que la que sí aplica arrastre correctamente entre días."""
+
+    _CUPS = "ES0031500160526001DS0G"
+
+    @staticmethod
+    def _month_data(day: str, imported_kwh: float, exported_kwh: float = 0.0) -> dict:
+        return {"hourlyByDate": {day: [{"hour": "12 - 13 h", "importedKwh": imported_kwh, "exportedKwh": exported_kwh}]}}
+
+    async def test_skips_power_cost_when_not_configured(self, recorder_mock, hass):
+        sp = {"cups": self._CUPS, "tariff_type": "fija", "fixed_price": 0.2}  # sin potencia contratada/precio
+        await async_backfill_cost_statistics(hass, self._CUPS, sp, self._month_data("30/07/2026", 5.0), pvpc_prices={})
+        await async_wait_recording_done(hass)
+
+        statistic_id = f"edistribucion:{self._CUPS.lower()}_power_cost"
+        assert await _sum_at_for(hass, statistic_id, "30/07/2026") is None
+
+    async def test_skips_surplus_compensation_when_not_enabled(self, recorder_mock, hass):
+        sp = {"cups": self._CUPS, "tariff_type": "fija", "fixed_price": 0.2}  # sin surplus_compensation
+        await async_backfill_cost_statistics(hass, self._CUPS, sp, self._month_data("30/07/2026", 5.0, 2.0), pvpc_prices={})
+        await async_wait_recording_done(hass)
+
+        statistic_id = f"edistribucion:{self._CUPS.lower()}_surplus_compensation"
+        assert await _sum_at_for(hass, statistic_id, "30/07/2026") is None
+
+    async def test_skips_energy_cost_for_fija_without_price(self, recorder_mock, hass):
+        sp = {"cups": self._CUPS, "tariff_type": "fija", "fixed_price": 0}
+        await async_backfill_cost_statistics(hass, self._CUPS, sp, self._month_data("30/07/2026", 5.0), pvpc_prices={})
+        await async_wait_recording_done(hass)
+
+        statistic_id = f"edistribucion:{self._CUPS.lower()}_energy_cost"
+        assert await _sum_at_for(hass, statistic_id, "30/07/2026") is None
+
+    async def test_energy_cost_carries_over_across_month_boundary(self, recorder_mock, hass):
+        sp = {"cups": self._CUPS, "tariff_type": "fija", "fixed_price": 0.2}
+        await async_backfill_cost_statistics(hass, self._CUPS, sp, self._month_data("31/07/2026", 10.0), pvpc_prices={})
+        await async_wait_recording_done(hass)
+        await async_backfill_cost_statistics(hass, self._CUPS, sp, self._month_data("01/08/2026", 5.0), pvpc_prices={})
+        await async_wait_recording_done(hass)
+
+        statistic_id = f"edistribucion:{self._CUPS.lower()}_energy_cost"
+        # 10 kWh x 0.2 €/kWh (julio) + 5 kWh x 0.2 €/kWh (agosto), arrastrado, no reiniciado a 0.
+        assert await _sum_at_for(hass, statistic_id, "01/08/2026") == pytest.approx(2.0 + 1.0)
 
 
 def _day(date_str: str):

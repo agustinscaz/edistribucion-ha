@@ -249,11 +249,16 @@ class TestRellenarHistoricoService:
         coordinator.client.async_get_consumption = fake_get_consumption
 
         backfilled_cups = []
+        cost_backfilled_cups = []
 
         async def fake_backfill(hass_arg, cups, month_data, **kwargs):
             backfilled_cups.append(cups)
 
+        async def fake_cost_backfill(hass_arg, cups, sp, month_data, pvpc_prices, **kwargs):
+            cost_backfilled_cups.append(cups)
+
         monkeypatch.setattr("custom_components.edistribucion.async_backfill_energy_statistics", fake_backfill)
+        monkeypatch.setattr("custom_components.edistribucion.async_backfill_cost_statistics", fake_cost_backfill)
 
         result = await hass.services.async_call(
             DOMAIN, "rellenar_historico", {"meses": 3}, blocking=True, return_response=True
@@ -261,6 +266,9 @@ class TestRellenarHistoricoService:
 
         assert result == {"suministros": 1, "meses_rellenados": 3}
         assert backfilled_cups == ["ES0031500160526001DS0F"] * 3
+        # Issue #27: rellenar_historico también rellena las estadísticas de coste, no solo energía
+        # — sin esto, el acumulado del año quedaría sin datos para los meses rellenados a mano.
+        assert cost_backfilled_cups == ["ES0031500160526001DS0F"] * 3
 
     async def test_fills_only_the_given_device_when_device_id_provided(self, hass, mock_add_on, monkeypatch):
         entry = MockConfigEntry(domain=DOMAIN, data={"host": "localhost", "port": 8099}, options={})

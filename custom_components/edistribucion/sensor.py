@@ -30,6 +30,7 @@ from .costs import (
     average_price_per_kwh,
     cost_breakdown,
     current_period,
+    energy_cost_configured as _energy_cost_configured,
     estimate_cost_as_tariff,
     estimate_energy_cost,
     next_period_change,
@@ -86,16 +87,6 @@ def _month_range_attributes(month: dict | None) -> dict:
     if not start or not end:
         return {}
     return {"rango_real": f"{start} a {end}"}
-
-
-def _energy_cost_configured(sp: dict) -> bool:
-    """¿Hay suficiente configurado en este CUPS como para que el coste de energía pueda dar algo?"""
-    tariff_type = sp.get("tariff_type")
-    if tariff_type == TARIFF_FIJA:
-        return bool(sp.get("fixed_price"))
-    if tariff_type == TARIFF_PVPC:
-        return True  # no hace falta configurar nada más — el precio PVPC es público, sin clave
-    return bool(sp.get("price_punta") or sp.get("price_llano") or sp.get("price_valle"))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -710,10 +701,11 @@ class EdistribucionYearToDateCostSensor(_EdistribucionBaseSensor):
         return {
             "kwh_importados_año": round((completed.get("imported_kwh") or 0.0) + (month.get("totalImportedKwh") or 0.0), 2),
             "kwh_exportados_año": round((completed.get("exported_kwh") or 0.0) + (month.get("totalExportedKwh") or 0.0), 2),
-            # Diagnóstico issue #25: un mes ausente aquí no se pudo cachear todavía (ver logs de
-            # warning); un mes presente con "kwh_importados" en 0.0 pese a consumo real conocido
-            # apunta a que la fecha pasada pedida está devolviendo datos vacíos/incorrectos SIN
-            # lanzar excepción — no un simple fallo de conexión.
+            # Diagnóstico issue #25 (issue #27 cambió la fuente a estadísticas del recorder, no ya
+            # a e-distribución): SIEMPRE aparecen todos los meses ya completados de este año, con
+            # "kwh_importados" en 0.0 si la estadística externa correspondiente todavía no tenía
+            # ningún punto ese mes (CUPS instalado a mitad de año, o la propia estadística siendo
+            # más nueva que ese mes) — ya no indica un fallo silencioso de la API.
             "meses_completados_detalle": {
                 str(m): {"kwh_importados": v["imported_kwh"], "kwh_exportados": v["exported_kwh"]}
                 for m, v in sorted(details.items())
@@ -1212,9 +1204,10 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionPowerCostPeriodSensor):
 
 
 class EdistribucionPowerCostYearSensor(_EdistribucionBaseSensor):
-    """Término de potencia acumulado en lo que va de año: meses ya completados (cacheados en
-    coordinator._year_to_date_month_cache, con el precio de potencia vigente cuando se cacheó cada
-    uno) + el mes en curso, en vivo (mismo cálculo que EdistribucionPowerCostMonthSensor)."""
+    """Término de potencia acumulado en lo que va de año: meses ya completados (issue #27, sumados
+    de las estadísticas del recorder que esta integración mantiene con arrastre propio, ver
+    coordinator._async_update_year_to_date_if_needed) + el mes en curso, en vivo (mismo cálculo que
+    EdistribucionPowerCostMonthSensor)."""
 
     entity_description = SensorEntityDescription(
         key="power_cost_year",

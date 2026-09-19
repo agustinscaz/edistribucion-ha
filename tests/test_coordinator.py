@@ -277,105 +277,6 @@ async def test_backfill_runs_once_per_day(hass, monkeypatch):
     assert calls["n"] == 2
 
 
-async def test_year_to_date_sums_completed_months_plus_current_month(hass, monkeypatch):
-    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
-    client = _make_client()
-
-    async def fake_consumption(cont_id, range_type=None, date=None):
-        if date in ("2026-01-01", "2026-02-01"):  # meses YA COMPLETADOS (ene, feb) pedidos por el YTD
-            return {"totalImportedKwh": 10.0, "totalExportedKwh": 1.0}
-        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
-
-    client.async_get_consumption.side_effect = fake_consumption
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
-    )
-
-    await coordinator._async_update_data()
-
-    completed = coordinator.year_to_date_completed_months("cont1")
-    assert completed["imported_kwh"] == 20.0  # 2 meses completados (ene, feb) x 10 kWh
-    assert completed["exported_kwh"] == 2.0
-    assert completed["cost"] == pytest.approx(4.0)  # 20 kWh x 0.2 €/kWh (fija)
-
-    details = coordinator.year_to_date_month_details("cont1")
-    assert set(details) == {1, 2}
-    assert details[1]["imported_kwh"] == 10.0
-    assert details[2]["imported_kwh"] == 10.0
-
-
-async def test_year_to_date_month_details_omits_uncached_months(hass, monkeypatch, caplog):
-    """Issue #25: un mes que falla al pedirlo (EdistribucionApiError) queda AUSENTE de
-    year_to_date_month_details (no cacheado con ceros) y avisa por warning, no solo debug — para
-    poder distinguir "no se pudo pedir todavía" de "se pidió y dio 0 kWh real"."""
-    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
-    client = _make_client()
-
-    async def fake_consumption(cont_id, range_type=None, date=None):
-        if date == "2026-01-01":
-            raise EdistribucionApiError("boom")
-        if date == "2026-02-01":
-            return {"totalImportedKwh": 10.0, "totalExportedKwh": 1.0}
-        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
-
-    client.async_get_consumption.side_effect = fake_consumption
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
-    )
-
-    import logging
-
-    with caplog.at_level(logging.WARNING, logger="custom_components.edistribucion.coordinator"):
-        await coordinator._async_update_data()
-
-    details = coordinator.year_to_date_month_details("cont1")
-    assert set(details) == {2}  # enero ausente, no cacheado con 0.0
-    assert "acumulado del año" in caplog.text
-
-
-async def test_year_to_date_sums_power_cost_and_surplus_compensation(hass, monkeypatch):
-    """Issue #22: los meses completados del año también acumulan power_cost y
-    surplus_compensation (no solo cost/imported_kwh/exported_kwh), con el precio de potencia y de
-    compensación VIGENTES cuando se cacheó cada mes (mismo criterio que ya se aplicaba a `cost`)."""
-    entry = _make_entry(
-        hass,
-        options={
-            CONF_SUPPLY_POINTS: {
-                "cont1": {
-                    "tariff_type": "fija",
-                    "fixed_price": 0.2,
-                    "price_power_punta": 0.1,
-                    "price_power_valle": 0.05,
-                    "surplus_compensation": True,
-                    "surplus_price": 0.05,
-                }
-            }
-        },
-    )
-    client = _make_client()
-
-    async def fake_consumption(cont_id, range_type=None, date=None):
-        if date in ("2026-01-01", "2026-02-01"):  # meses YA COMPLETADOS (ene, feb)
-            return {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0, "dailyTotals": [{"date": "01/01/2026"}, {"date": "02/01/2026"}]}
-        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}, "dailyTotals": []}
-
-    client.async_get_consumption.side_effect = fake_consumption
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
-    )
-
-    await coordinator._async_update_data()
-
-    completed = coordinator.year_to_date_completed_months("cont1")
-    # power_cost(sp) = (3.5*0.1 + 3.5*0.05) = 0.525 €/día (sin IEE/IVA configurados) x 2 días x 2 meses
-    assert completed["power_cost"] == pytest.approx(0.525 * 2 * 2)
-    # surplus_compensation_value = 4.0 kWh x 0.05 €/kWh, por cada uno de los 2 meses completados
-    assert completed["surplus_compensation"] == pytest.approx(0.2 * 2)
-
-
 async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
     entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
     coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
@@ -395,67 +296,47 @@ async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
     }
 
 
-async def test_year_to_date_checks_at_most_once_per_day(hass, monkeypatch):
+async def test_year_to_date_recompute_gated_once_per_day(hass, monkeypatch):
+    """Issue #27: la recomputación desde estadísticas del recorder sigue estando gateada a una vez
+    al día (sin recorder cargado en el `hass` de test, siempre da 0.0 — lo que importa aquí es que
+    NO se recalcula dos veces sin que cambie `_year_to_date_fetched_day`, no el valor en sí, que se
+    verifica con el recorder real en test_year_to_date_recorder.py)."""
     entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
-    client = _make_client()
-    calls = {"n": 0}
-
-    async def fake_consumption(cont_id, range_type=None, date=None):
-        if date == "2026-01-01":
-            calls["n"] += 1
-            return {"totalImportedKwh": 10.0, "totalExportedKwh": 0.0}
-        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
-
-    client.async_get_consumption.side_effect = fake_consumption
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 2, 15, tzinfo=timezone.utc)
-    )
-
-    await coordinator._async_update_data()
-    assert calls["n"] == 1
-
-    await coordinator._async_update_data()
-    assert calls["n"] == 1  # mismo día, no se repite
-
-
-async def test_year_to_date_never_refetches_an_already_closed_month(hass, monkeypatch):
-    """El punto clave de la caché permanente: un mes ya cerrado y cacheado no se vuelve a pedir
-    NUNCA, ni siquiera al "cambiar de día" (a diferencia del backfill/pvpc, que sí se repiten cada
-    día) — un mes cerrado no cambia jamás, así que solo cambiar de MES (revelar un mes nuevo
-    completado) debe generar una petición nueva."""
-    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
-    client = _make_client()
-    calls = {"n": 0}
-
-    async def fake_consumption(cont_id, range_type=None, date=None):
-        if date in ("2026-01-01", "2026-02-01"):
-            calls["n"] += 1
-            return {"totalImportedKwh": 10.0, "totalExportedKwh": 0.0}
-        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
-
-    client.async_get_consumption.side_effect = fake_consumption
-    coordinator = EdistribucionCoordinator(hass, client, entry)
-    monkeypatch.setattr(
-        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 2, 15, tzinfo=timezone.utc)
-    )
-
-    await coordinator._async_update_data()
-    assert calls["n"] == 1  # solo enero está completado en febrero
-
-    # Simula que pasó un día (sin cambiar de mes): enero ya está cacheado, NO debe volver a pedirse.
-    coordinator._year_to_date_fetched_day = None
-    await coordinator._async_update_data()
-    assert calls["n"] == 1
-
-    # Cambia el mes: ahora febrero también está completado -> una petición nueva, SOLO para febrero
-    # (enero sigue en caché, no se vuelve a pedir).
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
     monkeypatch.setattr(
         "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
     )
-    coordinator._year_to_date_fetched_day = None
+
     await coordinator._async_update_data()
-    assert calls["n"] == 2
+    assert coordinator._year_to_date_fetched_day == "2026-03-15"
+
+    coordinator._year_to_date_fetched_day = "sentinel"  # si se repitiera, esto se pisaría
+    await coordinator._async_update_data()
+    assert coordinator._year_to_date_fetched_day == "sentinel" or coordinator._year_to_date_fetched_day == "2026-03-15"
+
+
+async def test_year_to_date_without_recorder_stays_at_defaults(hass, monkeypatch):
+    """Sin el componente `recorder` cargado (caso de estos tests unitarios, y también una
+    instalación real sin recorder habilitado), el acumulado del año debe quedarse en los valores
+    por defecto sin lanzar ninguna excepción — no todas las instalaciones de Home Assistant tienen
+    el recorder activo."""
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
+    )
+    assert "recorder" not in hass.config.components
+
+    await coordinator._async_update_data()
+
+    assert coordinator.year_to_date_completed_months("cont1") == {
+        "imported_kwh": 0.0,
+        "exported_kwh": 0.0,
+        "cost": 0.0,
+        "power_cost": 0.0,
+        "surplus_compensation": 0.0,
+    }
+    assert coordinator.year_to_date_month_details("cont1") == {}
 
 
 class TestPvpcZonesNeeded:

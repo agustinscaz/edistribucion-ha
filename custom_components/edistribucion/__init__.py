@@ -19,7 +19,7 @@ from .coordinator import RANGE_MONTH, EdistribucionCoordinator
 from .costs import monthly_summary_csv
 from .esios import DEFAULT_PVPC_ZONE, cheapest_window, pvpc_prices_to_csv
 from .migration import async_apply_default_tax_percentages, async_migrate_legacy_options
-from .statistics import async_backfill_energy_statistics, months_back
+from .statistics import async_backfill_cost_statistics, async_backfill_energy_statistics, months_back
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -179,25 +179,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_RELLENAR_HISTORICO):
 
         async def _async_service_rellenar_historico(call: ServiceCall) -> dict:
-            """Rellena el histórico de estadísticas del Dashboard de Energía para los últimos
-            `meses` (incluido el mes en curso, ver `months_back`) — el backfill automático del
-            coordinator solo se repite día a día para el mes en curso, así que esto sirve para
-            recuperar de golpe meses anteriores (recién instalada la integración, o si vienes de
-            otra solución). Sin `device_id`, rellena todos los suministros seguidos."""
+            """Rellena el histórico de estadísticas del Dashboard de Energía Y de coste (issue #27,
+            estas últimas alimentan el acumulado del año) para los últimos `meses` (incluido el mes
+            en curso, ver `months_back`) — el backfill automático del coordinator solo se repite
+            día a día para el mes en curso, así que esto sirve para recuperar de golpe meses
+            anteriores (recién instalada la integración, actualizando desde antes de que existieran
+            las estadísticas de coste, o si vienes de otra solución). Sin `device_id`, rellena
+            todos los suministros seguidos."""
             meses = call.data["meses"]
             device_id = call.data.get("device_id")
 
-            targets: list[tuple[EdistribucionCoordinator, str, str]] = []
+            targets: list[tuple[EdistribucionCoordinator, str, str, dict]] = []
             if device_id:
                 target_coordinator, cont_id = _resolve_device(hass, device_id)
                 bundle = target_coordinator.data.get(cont_id) or {}
-                cups = (bundle.get("supply_point") or {}).get("cups", "")
-                targets.append((target_coordinator, cont_id, cups))
+                sp = bundle.get("supply_point") or {}
+                targets.append((target_coordinator, cont_id, sp.get("cups", ""), sp))
             else:
                 for target_coordinator in hass.data.get(DOMAIN, {}).values():
                     for cont_id, bundle in target_coordinator.data.items():
-                        cups = (bundle.get("supply_point") or {}).get("cups", "")
-                        targets.append((target_coordinator, cont_id, cups))
+                        sp = bundle.get("supply_point") or {}
+                        targets.append((target_coordinator, cont_id, sp.get("cups", ""), sp))
 
             now = dt_util.now()
             months_filled = 0
@@ -205,10 +207,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # entre ellos, y `async_add_external_statistics` encola la escritura sin esperar a que
             # el recorder la confirme — releer la BD para el arrastre del mes siguiente podría no
             # ver todavía la del anterior. Manteniendo el `running_total` en memoria entre
-            # iteraciones (ver `async_backfill_energy_statistics`) se evita esa carrera del todo,
-            # sin depender de ningún tiempo de confirmación del recorder.
+            # iteraciones (ver `async_backfill_energy_statistics`/`async_backfill_cost_statistics`)
+            # se evita esa carrera del todo, sin depender de ningún tiempo de confirmación del
+            # recorder. Un único dict vale para energía Y coste: las claves son statistic_id
+            # completos (`edistribucion:<cups>_<métrica>`), no colisionan entre sí.
             carry_over: dict[str, float] = {}
-            for target_coordinator, cont_id, cups in targets:
+            for target_coordinator, cont_id, cups, sp in targets:
                 for month_start in months_back(now, meses):
                     try:
                         month_data = await target_coordinator.client.async_get_consumption(
@@ -218,6 +222,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.debug("Sin consumo de %s para %s: %s", cups, month_start.strftime("%Y-%m"), err)
                         continue
                     await async_backfill_energy_statistics(hass, cups, month_data, carry_over=carry_over)
+                    await async_backfill_cost_statistics(hass, cups, sp, month_data, target_coordinator.pvpc_prices, carry_over=carry_over)
                     months_filled += 1
 
             return {"suministros": len(targets), "meses_rellenados": months_filled}
