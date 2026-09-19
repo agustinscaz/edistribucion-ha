@@ -724,3 +724,33 @@ async def test_power_cost_month_handles_null_daily_totals(hass):
     sensor = by_id["contA_power_cost_month"]
     assert sensor._days_elapsed == 0
     assert sensor.native_value == 0
+
+
+async def test_month_sensors_expose_real_date_range(hass):
+    """Issue #21: los sensores que dependen de `bundle["month"]` exponen `rango_real` (a partir de
+    `startDate`/`endDate`, ya devueltos por el add-on) para poder confirmar desde HA si `range=3`
+    es el mes calendario a la fecha o una ventana rolling, sin tener que leer código."""
+    bundles = {"contA": _bundle({"price_punta": 0.25, "price_power_punta": 0.1, "price_power_valle": 0.05})}
+    bundles["contA"]["month"]["startDate"] = "2026-08-20"
+    bundles["contA"]["month"]["endDate"] = "2026-09-19"
+    bundles["contA"]["month"]["dailyTotals"] = [{"date": "19/09/2026"}]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    for uid in (
+        "contA_power_cost_month",
+        "contA_estimated_cost_month",
+        "contA_estimated_cost_month_with_power",
+        "contA_punta_cost_month",
+        "contA_punta_kwh_month",
+    ):
+        assert by_id[uid].extra_state_attributes["rango_real"] == "2026-08-20 a 2026-09-19", uid
+
+
+async def test_month_range_attributes_missing_when_no_dates(hass):
+    """Sin `startDate`/`endDate` en el bundle (add-on viejo, o "today"/"week"), no debe aparecer
+    `rango_real` ni romper con KeyError."""
+    bundles = {"contA": _bundle({"price_punta": 0.25})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert "rango_real" not in by_id["contA_estimated_cost_month"].extra_state_attributes
+    assert by_id["contA_punta_kwh_today"].extra_state_attributes == {}

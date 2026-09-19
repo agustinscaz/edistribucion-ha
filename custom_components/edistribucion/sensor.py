@@ -63,6 +63,18 @@ def _latest_day_hourly(consumption: dict | None) -> dict | None:
     return {"hourlyByDate": {latest_date: consumption["hourlyByDate"][latest_date]}}
 
 
+def _month_range_attributes(month: dict | None) -> dict:
+    """Fechas reales (`startDate`/`endDate`, ya devueltas por el add-on en `mapParamsWS_v2`) que
+    cubre un bundle "mes" — para poder confirmar desde HA, sin leer código, si `range=3` da el mes
+    calendario a la fecha o una ventana rolling de N días (ver issue #21)."""
+    if not month:
+        return {}
+    start, end = month.get("startDate"), month.get("endDate")
+    if not start or not end:
+        return {}
+    return {"rango_real": f"{start} a {end}"}
+
+
 def _energy_cost_configured(sp: dict) -> bool:
     """¿Hay suficiente configurado en este CUPS como para que el coste de energía pueda dar algo?"""
     tariff_type = sp.get("tariff_type")
@@ -449,6 +461,10 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     def _hourly_source(self) -> dict | None:
         return self._bundle.get("month")
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {**super().extra_state_attributes, **_month_range_attributes(self._bundle.get("month"))}
+
 
 class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
     """kWh o coste de UN tramo (punta/llano/valle) de la tarifa 'tramos' (ver costs.cost_breakdown)
@@ -505,6 +521,12 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
         breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
         return breakdown.get(breakdown_key)
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        if self._period_key != "month":
+            return {}
+        return _month_range_attributes(self._bundle.get("month"))
+
 
 class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
     """kWh exportados o compensación de UN tramo (punta/llano/valle) — mismo bucketing horario/
@@ -557,6 +579,12 @@ class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
         breakdown_key = f"kwh_{self._tramo}" if self._kind == "kwh" else f"coste_{self._tramo}"
         return breakdown.get(breakdown_key)
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        if self._period_key != "month":
+            return {}
+        return _month_range_attributes(self._bundle.get("month"))
+
 
 class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):
     """Precio medio real pagado por kWh este mes (coste total ÷ kWh importados) — para comparar
@@ -590,7 +618,12 @@ class EdistribucionYearToDateCostSensor(_EdistribucionBaseSensor):
     que ya se tiene en `bundle["month"]`). Para tarifa pvpc, los meses anteriores al actual pueden
     salir con coste incompleto — no se vuelve a pedir el histórico de precios PVPC día a día a
     ESIOS para no sobrecargar esa API pública, solo se usa lo que ya haya cacheado del mes en
-    curso."""
+    curso.
+
+    OJO: "el mes en curso" asume que `bundle["month"]` (range=3) es el mes calendario a la fecha —
+    sin confirmar todavía si e-distribución en realidad devuelve una ventana rolling de N días (ver
+    issue #21; los sensores que dependen de `bundle["month"]` exponen `rango_real` como atributo
+    para poder comprobarlo sin leer código)."""
 
     entity_description = SensorEntityDescription(
         key="year_to_date_cost",
@@ -1067,6 +1100,7 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
             "coste_diario": daily_cost,
             "iee_percent": sp.get("iee_percent") or 0,
             "iva_percent": sp.get("iva_percent") or 0,
+            **_month_range_attributes(self._bundle.get("month")),
         }
 
 
@@ -1157,7 +1191,11 @@ class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {"coste_energia": self._energy_cost, "termino_potencia": self._power_cost}
+        return {
+            "coste_energia": self._energy_cost,
+            "termino_potencia": self._power_cost,
+            **_month_range_attributes(self._bundle.get("month")),
+        }
 
 
 class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):
