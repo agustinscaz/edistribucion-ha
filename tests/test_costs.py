@@ -552,16 +552,67 @@ class TestPowerCost:
         crear los sensores de término de potencia solo por el alquiler si es lo único que se puso."""
         assert power_cost({"meter_rental_eur_day": 0.03}) == pytest.approx(0.03)
 
-    def test_meter_rental_gets_iee_and_iva_applied(self):
-        """El alquiler entra en la base imponible ANTES de IEE/IVA, igual que la potencia — así lo
-        muestra una factura real española (concepto de base + impuestos al final, no un importe ya
-        con impuestos)."""
+    def test_meter_rental_gets_iva_but_not_iee(self):
+        """Issue #30: confirmado contra una factura real (y dos fuentes independientes) que la base
+        imponible del IEE es únicamente energía + potencia, NO "otros conceptos" como el alquiler
+        de equipos — a diferencia de lo que se pensó al añadir esto en #24. El alquiler SÍ lleva
+        IVA, como el resto de la factura, solo no IEE."""
         sp = {"meter_rental_eur_day": 1.0, "iee_percent": 5.11269632, "iva_percent": 21}
-        assert power_cost(sp) == pytest.approx(apply_iva(apply_iee(1.0, 5.11269632), 21))
+        assert power_cost(sp) == pytest.approx(apply_iva(1.0, 21))
 
     def test_meter_rental_missing_defaults_to_zero(self):
         sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08}
         assert power_cost(sp) == pytest.approx(0.4)  # sin cambios frente al comportamiento anterior
+
+    def test_iee_only_applies_to_power_term_not_meter_rental(self):
+        """La potencia SÍ lleva IEE, el alquiler que se le suma en el mismo cálculo NO — deben
+        tratarse por separado, no como un único total antes de aplicar impuestos."""
+        sp = {
+            "contracted_power_punta_kw": 5.0,
+            "price_power_punta": 0.08,
+            "meter_rental_eur_day": 1.0,
+            "iee_percent": 5.11269632,
+            "iva_percent": 21,
+        }
+        expected = apply_iva(apply_iee(0.4, 5.11269632) + 1.0, 21)
+        assert power_cost(sp) == pytest.approx(expected)
+
+    def test_bono_social_added_to_total(self):
+        """La financiación del bono social (€/día, fijo por contrato) se suma al total, igual que
+        el alquiler del equipo de medida."""
+        sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08, "bono_social_eur_day": 0.02}
+        assert power_cost(sp) == pytest.approx(0.4 + 0.02)
+
+    def test_bono_social_alone_without_contracted_power(self):
+        assert power_cost({"bono_social_eur_day": 0.02}) == pytest.approx(0.02)
+
+    def test_bono_social_gets_iva_but_not_iee(self):
+        sp = {"bono_social_eur_day": 1.0, "iee_percent": 5.11269632, "iva_percent": 21}
+        assert power_cost(sp) == pytest.approx(apply_iva(1.0, 21))
+
+    def test_bono_social_missing_defaults_to_zero(self):
+        sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08}
+        assert power_cost(sp) == pytest.approx(0.4)
+
+    def test_matches_real_invoice_niba_august_2026(self):
+        """Regresión de verificación end-to-end contra una factura real (issue #30): CUPS
+        ES0031500160526001DS0F, agosto 2026, niba Tres. Potencia 3,5kW punta/valle a 0,079/0,059
+        €/kW/día, alquiler 0,0266 €/día, bono social 0,024688 €/día, 31 días, SIN IEE (0%, el caso
+        concreto de esta factura, ver #30) y 21% IVA -> total real: Potencia 14,97€ + Alquiler
+        0,82€ + Bono Social 0,77€ + IVA 3,48€ = 20,04€ (antes del saldo descontado de la wallet,
+        que no es parte de este cálculo)."""
+        sp = {
+            "contracted_power_punta_kw": 3.5,
+            "contracted_power_valle_kw": 3.5,
+            "price_power_punta": 0.079,
+            "price_power_valle": 0.059,
+            "meter_rental_eur_day": 0.0266,
+            "bono_social_eur_day": 0.024688,
+            "iee_percent": 0,
+            "iva_percent": 21,
+        }
+        daily_cost = power_cost(sp)
+        assert daily_cost * 31 == pytest.approx(20.04, abs=0.01)
 
 
 class TestSelfConsumptionRatio:

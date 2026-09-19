@@ -43,6 +43,7 @@
           "price_power_punta": "Gailur-orduko potentzia prezioa (€/kW/egun)",
           "price_power_valle": "Sakonaldiko potentzia prezioa (€/kW/egun)",
           "meter_rental_eur_day": "Neurgailuaren alokairua (€/egun, zure merkaturatzailearen fakturaren arabera)",
+          "bono_social_eur_day": "Bono sozialaren finantzaketa (€/egun, zure merkaturatzailearen fakturaren arabera)",
           "fixed_price": "Prezio finkoa (€/kWh, tarifa 'finkoa' bada)",
           "price_punta": "Gailur-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",
           "price_llano": "Arrunt-orduko prezioa (€/kWh, tarifa 'tarteak' bada)",

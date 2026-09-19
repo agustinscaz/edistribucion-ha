@@ -54,10 +54,20 @@ CONF_PRICE_POWER_VALLE = "price_power_valle"  # €/kW/día
 # vivo de ningún lado (a diferencia de la potencia contratada). Es un importe FIJO por contrato
 # (no cambia salvo que cambies de equipo), así que basta con teclearlo una vez mirando la factura
 # de la comercializadora. Por defecto 0 para no romper a nadie que no lo configure (issue #24). Se
-# suma al término de potencia ANTES de aplicar IEE/IVA (costs.power_cost) — en una factura real
-# española, "alquiler de equipos de medida y control" es un concepto de base imponible más, junto a
-# potencia y energía, no un importe ya con impuestos aplicado.
+# suma al total ANTES de aplicar IVA (costs.power_cost) — pero, a diferencia de lo que se pensó al
+# añadir esto, NO lleva IEE: confirmado contra una factura real (issue #30) y dos fuentes
+# independientes (Agencia Tributaria/Repsol) que la base imponible del IEE es únicamente energía +
+# potencia, no "otros conceptos" como el alquiler de equipos o la financiación del bono social.
 CONF_METER_RENTAL_EUR_DAY = "meter_rental_eur_day"  # €/día
+
+# Financiación del Bono Social: cargo regulado que TODAS las comercializadoras deben repercutir a
+# los clientes que no son beneficiarios del bono social (financia el descuento de quienes sí lo
+# son) — aparece en toda factura española como línea propia ("Financiación Bono Social"), pero
+# e-distribución no lo reporta (es un concepto de la comercializadora, no de la distribuidora,
+# igual que el alquiler de equipos). Mismo motivo y mismo criterio que
+# CONF_METER_RENTAL_EUR_DAY: importe FIJO €/día que hay que teclear mirando la factura, por defecto
+# 0 para no romper a nadie que no lo configure, sin IEE (solo IVA) por el mismo motivo de arriba.
+CONF_BONO_SOCIAL_EUR_DAY = "bono_social_eur_day"  # €/día
 
 # Región (CCAA) para festivos, por CUPS — con tarifa "tramos", un festivo entre semana cuenta como
 # valle todo el día (igual que fin de semana), en vez de como si fuera un día laborable normal. Los

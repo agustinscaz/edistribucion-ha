@@ -16,6 +16,7 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .api import EdistribucionApiClient, EdistribucionApiError
 from .const import (
+    CONF_BONO_SOCIAL_EUR_DAY,
     CONF_HOLIDAY_REGION,
     CONF_IEE_PERCENT,
     CONF_IVA_PERCENT,
@@ -134,6 +135,7 @@ _SUPPLY_POINT_FIELD_DEFAULTS = {
     CONF_PRICE_POWER_PUNTA: 0,
     CONF_PRICE_POWER_VALLE: 0,
     CONF_METER_RENTAL_EUR_DAY: 0,
+    CONF_BONO_SOCIAL_EUR_DAY: 0,
     "fixed_price": 0,
     "price_punta": 0,
     "price_llano": 0,
@@ -215,6 +217,7 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                 CONF_PRICE_POWER_PUNTA: user_input.get(CONF_PRICE_POWER_PUNTA, 0),
                 CONF_PRICE_POWER_VALLE: user_input.get(CONF_PRICE_POWER_VALLE, 0),
                 CONF_METER_RENTAL_EUR_DAY: user_input.get(CONF_METER_RENTAL_EUR_DAY, 0),
+                CONF_BONO_SOCIAL_EUR_DAY: user_input.get(CONF_BONO_SOCIAL_EUR_DAY, 0),
                 "fixed_price": user_input.get("fixed_price", 0),
                 "price_punta": user_input.get("price_punta", 0),
                 "price_llano": user_input.get("price_llano", 0),
@@ -253,6 +256,9 @@ class EdistribucionOptionsFlow(config_entries.OptionsFlow):
                     vol.Coerce(float), vol.Range(min=0, max=5)
                 ),
                 vol.Optional(CONF_METER_RENTAL_EUR_DAY, default=prev.get(CONF_METER_RENTAL_EUR_DAY, 0)): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=5)
+                ),
+                vol.Optional(CONF_BONO_SOCIAL_EUR_DAY, default=prev.get(CONF_BONO_SOCIAL_EUR_DAY, 0)): vol.All(
                     vol.Coerce(float), vol.Range(min=0, max=5)
                 ),
                 vol.Optional("fixed_price", default=prev.get("fixed_price", 0)): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),

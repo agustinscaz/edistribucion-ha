@@ -43,6 +43,7 @@
           "price_power_punta": "Leistungspreis Spitzenlast (€/kW/Tag)",
           "price_power_valle": "Leistungspreis Schwachlast (€/kW/Tag)",
           "meter_rental_eur_day": "Zählermiete (€/Tag, laut Rechnung deines Stromanbieters)",
+          "bono_social_eur_day": "Finanzierung des Sozialbonus (€/Tag, laut Rechnung deines Stromanbieters)",
           "fixed_price": "Festpreis (€/kWh, wenn Tarif 'fest')",
           "price_punta": "Preis Spitzenlast (€/kWh, wenn Tarif 'zeitgestaffelt')",
           "price_llano": "Preis Mittellast (€/kWh, wenn Tarif 'zeitgestaffelt')",

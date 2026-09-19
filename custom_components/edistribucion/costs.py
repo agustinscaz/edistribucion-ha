@@ -361,20 +361,27 @@ def average_price_per_kwh(cost_total: float | None, imported_kwh: float | None) 
 
 
 def power_cost(sp_opts: dict) -> float:
-    """Término de potencia de ESTE CUPS, CON IEE + IVA: kW contratados (punta/valle) × precio
-    €/kW/día + alquiler del equipo de medida (€/día, fijo por contrato, issue #24 — la
-    comercializadora lo factura, e-distribución no lo reporta así que hay que teclearlo a mano
-    mirando la factura), con el IEE y el IVA de `sp_opts` aplicados encima EN ESE ORDEN (ver
-    `apply_iee`/`apply_iva`) — se factura siempre, sea cual sea la tarifa de energía elegida
-    (fija/tramos/pvpc). Con esto sumado, `estimated_cost_*_with_power` puede cuadrar centavo a
-    centavo con la factura real en vez de solo aproximarla."""
+    """Término de potencia de ESTE CUPS: kW contratados (punta/valle) × precio €/kW/día, con el IEE
+    de `sp_opts` aplicado — se factura siempre, sea cual sea la tarifa de energía elegida
+    (fija/tramos/pvpc). El alquiler del equipo de medida (issue #24) y la financiación del bono
+    social (€/día cada uno, fijos por contrato — la comercializadora los factura, e-distribución no
+    los reporta así que hay que teclearlos a mano mirando la factura) se suman DESPUÉS, SIN IEE:
+    confirmado contra una factura real (issue #30, y dos fuentes independientes) que la base
+    imponible del IEE es únicamente energía + potencia, no "otros conceptos" de la factura. El IVA
+    de `sp_opts` se aplica al final sobre el total completo (potencia con IEE + alquiler + bono
+    social), que sí lleva IVA como el resto de la factura. Con esto sumado,
+    `estimated_cost_*_with_power` puede cuadrar centavo a centavo con la factura real en vez de
+    solo aproximarla."""
     punta_kw = sp_opts.get("contracted_power_punta_kw") or 0
     valle_kw = sp_opts.get("contracted_power_valle_kw") or 0
     price_punta = sp_opts.get("price_power_punta") or 0
     price_valle = sp_opts.get("price_power_valle") or 0
+    power_term = punta_kw * price_punta + valle_kw * price_valle
+    power_term_with_iee = apply_iee(power_term, sp_opts.get("iee_percent") or 0)
+
     meter_rental = sp_opts.get("meter_rental_eur_day") or 0
-    total_sin_impuestos = punta_kw * price_punta + valle_kw * price_valle + meter_rental
-    total_con_iee = apply_iee(total_sin_impuestos, sp_opts.get("iee_percent") or 0)
+    bono_social = sp_opts.get("bono_social_eur_day") or 0
+    total_con_iee = power_term_with_iee + meter_rental + bono_social
     return apply_iva(total_con_iee, sp_opts.get("iva_percent") or 0)
 
 

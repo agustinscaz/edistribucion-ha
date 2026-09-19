@@ -43,6 +43,7 @@
           "price_power_punta": "Preu potència punta (€/kW/dia)",
           "price_power_valle": "Preu potència vall (€/kW/dia)",
           "meter_rental_eur_day": "Lloguer de l'equip de mesura (€/dia, segons la factura de la teva comercialitzadora)",
+          "bono_social_eur_day": "Finançament del bo social (€/dia, segons la factura de la teva comercialitzadora)",
           "fixed_price": "Preu fix (€/kWh, si la tarifa és 'fixa')",
           "price_punta": "Preu en punta (€/kWh, si la tarifa és 'trams')",
           "price_llano": "Preu en pla (€/kWh, si la tarifa és 'trams')",

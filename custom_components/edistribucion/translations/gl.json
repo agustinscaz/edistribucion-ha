@@ -43,6 +43,7 @@
           "price_power_punta": "Prezo potencia punta (€/kW/día)",
           "price_power_valle": "Prezo potencia val (€/kW/día)",
           "meter_rental_eur_day": "Alugueiro do equipo de medida (€/día, segundo a factura da túa comercializadora)",
+          "bono_social_eur_day": "Financiamento do bono social (€/día, segundo a factura da túa comercializadora)",
           "fixed_price": "Prezo fixo (€/kWh, se a tarifa é 'fixa')",
           "price_punta": "Prezo en punta (€/kWh, se a tarifa é 'tramos')",
           "price_llano": "Prezo en chaira (€/kWh, se a tarifa é 'tramos')",
