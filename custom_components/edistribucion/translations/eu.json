@@ -139,6 +139,9 @@
       "net_balance_today": {
         "name": "Gaurko balantze garbia"
       },
+      "net_balance_yesterday": {
+        "name": "Atzoko balantze garbia"
+      },
       "net_balance_week": {
         "name": "Asteko balantze garbia"
       },

@@ -139,6 +139,9 @@
       "net_balance_today": {
         "name": "Bilancio netto oggi"
       },
+      "net_balance_yesterday": {
+        "name": "Bilancio netto ieri"
+      },
       "net_balance_week": {
         "name": "Bilancio netto (settimana)"
       },

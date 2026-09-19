@@ -139,6 +139,9 @@
       "net_balance_today": {
         "name": "Balanç net avui"
       },
+      "net_balance_yesterday": {
+        "name": "Balanç net ahir"
+      },
       "net_balance_week": {
         "name": "Balanç net (setmana)"
       },

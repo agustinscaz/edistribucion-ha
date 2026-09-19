@@ -13,6 +13,8 @@ from custom_components.edistribucion.sensor import (
     _energy_cost_configured,
     _latest_day_hourly,
     _latest_daily_total,
+    _second_latest_day_hourly,
+    _second_latest_daily_total,
 )
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
@@ -53,6 +55,51 @@ class TestLatestDayHourly:
         }
         result = _latest_day_hourly(consumption)
         assert set(result["hourlyByDate"]) == {"15/07/2026"}
+
+
+class TestSecondLatestDailyTotal:
+    def test_none_without_month(self):
+        assert _second_latest_daily_total(None) is None
+
+    def test_none_without_daily_totals(self):
+        assert _second_latest_daily_total({}) is None
+
+    def test_none_with_only_one_day(self):
+        month = {"dailyTotals": [{"date": "19/09/2026", "importedKwh": 1.0}]}
+        assert _second_latest_daily_total(month) is None
+
+    def test_picks_day_before_the_most_recent(self):
+        month = {
+            "dailyTotals": [
+                {"date": "17/09/2026", "importedKwh": 1.0},
+                {"date": "19/09/2026", "importedKwh": 3.0},
+                {"date": "18/09/2026", "importedKwh": 2.0},
+            ]
+        }
+        result = _second_latest_daily_total(month)
+        assert result["date"] == "18/09/2026"
+
+
+class TestSecondLatestDayHourly:
+    def test_none_without_month(self):
+        assert _second_latest_day_hourly(None) is None
+
+    def test_none_without_hourly_by_date(self):
+        assert _second_latest_day_hourly({}) is None
+
+    def test_none_with_only_one_day(self):
+        month = {"hourlyByDate": {"19/09/2026": [{"hour": "0 - 1 h", "importedKwh": 1.0}]}}
+        assert _second_latest_day_hourly(month) is None
+
+    def test_trims_to_the_day_before_the_most_recent(self):
+        month = {
+            "hourlyByDate": {
+                "19/09/2026": [{"hour": "0 - 1 h", "importedKwh": 3.0}],
+                "18/09/2026": [{"hour": "0 - 1 h", "importedKwh": 2.0}],
+            }
+        }
+        result = _second_latest_day_hourly(month)
+        assert set(result["hourlyByDate"]) == {"18/09/2026"}
 
 
 class TestEnergyCostConfigured:
@@ -279,7 +326,7 @@ async def test_net_balance_sensors_gated_on_energy_power_and_surplus(hass):
     bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
     entities = await _setup_with_fake_coordinator(hass, bundles)
     ids = _unique_ids(entities)
-    for period in ("today", "week", "month", "year"):
+    for period in ("today", "yesterday", "week", "month", "year"):
         assert f"contA_net_balance_{period}" in ids, period
 
     hass.data[DOMAIN].clear()
@@ -301,6 +348,35 @@ async def test_net_balance_today_value(hass):
     # coste: 4.0 kWh x 0.2 €/kWh = 0.8 € energía + (3.5*0.1 + 3.5*0.05) = 0.525 € potencia = 1.325 €
     # compensación: 2.0 kWh x 0.05 €/kWh = 0.1 €
     assert sensor.native_value == pytest.approx(0.1 - 1.325)
+
+
+async def test_net_balance_yesterday_value(hass):
+    """El balance de "ayer" sale de `bundle["month"]`, no de `bundle["consumption"]` (issue #26):
+    el día inmediatamente anterior al más reciente de `dailyTotals`, para no depender de si "hoy"
+    ya tiene datos reales."""
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    bundles["contA"]["month"]["dailyTotals"] = [
+        {"date": "17/09/2026", "importedKwh": 1.0, "exportedKwh": 0.0},
+        {"date": "19/09/2026", "importedKwh": 0.0, "exportedKwh": 0.0},  # "hoy", sin procesar
+        {"date": "18/09/2026", "importedKwh": 4.0, "exportedKwh": 2.0},  # "ayer" de verdad
+    ]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_net_balance_yesterday"]
+    # coste: 4.0 kWh x 0.2 €/kWh = 0.8 € energía + 0.525 € potencia = 1.325 €
+    # compensación: 2.0 kWh x 0.05 €/kWh = 0.1 €
+    assert sensor.native_value == pytest.approx(0.1 - 1.325)
+    assert sensor.extra_state_attributes["fecha_real"] == "18/09/2026"
+
+
+async def test_net_balance_yesterday_none_with_only_one_day(hass):
+    """Con un solo día en `dailyTotals` (instalación recién arrancada), no hay "ayer" que calcular
+    — debe dar `None`, no romper."""
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    bundles["contA"]["month"]["dailyTotals"] = [{"date": "19/09/2026", "importedKwh": 0.0, "exportedKwh": 0.0}]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_net_balance_yesterday"].native_value is None
 
 
 async def test_net_balance_month_value(hass):

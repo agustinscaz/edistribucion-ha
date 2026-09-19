@@ -139,6 +139,9 @@
       "net_balance_today": {
         "name": "Чистый баланс сегодня"
       },
+      "net_balance_yesterday": {
+        "name": "Чистый баланс вчера"
+      },
       "net_balance_week": {
         "name": "Чистый баланс (неделя)"
       },

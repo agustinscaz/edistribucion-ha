@@ -64,6 +64,29 @@ def _latest_day_hourly(consumption: dict | None) -> dict | None:
     return {"hourlyByDate": {latest_date: consumption["hourlyByDate"][latest_date]}}
 
 
+def _second_latest_daily_total(month: dict | None) -> dict | None:
+    """El día INMEDIATAMENTE ANTERIOR al más reciente de `dailyTotals` de un bundle "mes" — a
+    diferencia de `_latest_daily_total` sobre `consumption` (que puede ser "hoy" sin procesar
+    todavía, ver issue #26), este se apoya en `month` (que sí incluye la fecha de hoy con ceros
+    cuando no está procesada) para aterrizar de forma fiable en un día YA CERRADO, sin depender de
+    que el add-on ya tenga datos reales de hoy."""
+    if not month or not month.get("dailyTotals"):
+        return None
+    days = sorted(month["dailyTotals"], key=lambda d: datetime.strptime(d["date"], "%d/%m/%Y"), reverse=True)
+    return days[1] if len(days) > 1 else None
+
+
+def _second_latest_day_hourly(month: dict | None) -> dict | None:
+    """Como `_second_latest_daily_total` pero con `hourlyByDate` recortado solo a ese día."""
+    if not month or not month.get("hourlyByDate"):
+        return None
+    dates = sorted(month["hourlyByDate"], key=lambda d: datetime.strptime(d, "%d/%m/%Y"), reverse=True)
+    if len(dates) < 2:
+        return None
+    date = dates[1]
+    return {"hourlyByDate": {date: month["hourlyByDate"][date]}}
+
+
 def _today_date_attributes(consumption: dict | None) -> dict:
     """Fecha real (DD/MM/YYYY) del día que devuelve `consumption` (sin `range`, el que alimenta los
     sensores "_hoy"). Issue #26: cuando e-distribución todavía no ha procesado el día en curso, el
@@ -140,6 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionSurplusCompensationYearSensor(coordinator, cont_id, sp))
             if power_cost(sp) > 0 and _energy_cost_configured(sp):
                 entities.append(EdistribucionNetBalanceTodaySensor(coordinator, cont_id, sp))
+                entities.append(EdistribucionNetBalanceYesterdaySensor(coordinator, cont_id, sp))
                 entities.append(EdistribucionNetBalanceWeekSensor(coordinator, cont_id, sp))
                 entities.append(EdistribucionNetBalanceMonthSensor(coordinator, cont_id, sp))
                 entities.append(EdistribucionNetBalanceYearSensor(coordinator, cont_id, sp))
@@ -1437,6 +1461,61 @@ class EdistribucionNetBalanceTodaySensor(_EdistribucionBaseSensor):
             "coste_con_potencia": self._cost_with_power,
             **_today_date_attributes(self._bundle.get("consumption")),
         }
+
+
+class EdistribucionNetBalanceYesterdaySensor(_EdistribucionBaseSensor):
+    """Como EdistribucionNetBalanceTodaySensor pero para AYER de verdad, no lo que devuelva
+    `consumption` (que puede ser el último día cerrado disfrazado de "hoy", issue #26) — se calcula
+    a partir del día inmediatamente anterior al más reciente de `bundle["month"]`, que sí incluye
+    la fecha de hoy con ceros cuando e-distribución aún no la procesó. Con esto, "ayer" aterriza de
+    forma fiable en un día ya cerrado independientemente de si "hoy" tiene datos reales todavía.
+    Mismo gate que EdistribucionNetBalanceTodaySensor (coste de energía + potencia + compensación
+    de excedentes configurados)."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_translation_key = "net_balance_yesterday"
+        self._attr_unique_id = f"{cont_id}_net_balance_yesterday"
+
+    @property
+    def _cost_with_power(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        month = self._bundle.get("month")
+        day = _second_latest_daily_total(month)
+        imported_kwh = day["importedKwh"] if day else None
+        hourly_source = _second_latest_day_hourly(month)
+        breakdown = estimate_energy_cost(sp, imported_kwh, hourly_source, self.coordinator.pvpc_prices)
+        energy_cost = breakdown["total"] if breakdown else None
+        if energy_cost is None:
+            return None
+        return round(energy_cost + power_cost(sp), 4)
+
+    @property
+    def _compensation(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        day = _second_latest_daily_total(self._bundle.get("month"))
+        exported_kwh = day["exportedKwh"] if day else None
+        return surplus_compensation_value(sp, exported_kwh)
+
+    @property
+    def native_value(self) -> float | None:
+        cost = self._cost_with_power
+        if cost is None:
+            return None
+        return round((self._compensation or 0.0) - cost, 4)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {"compensacion": self._compensation, "coste_con_potencia": self._cost_with_power}
+        day = _second_latest_daily_total(self._bundle.get("month"))
+        if day:
+            attrs["fecha_real"] = day["date"]
+        return attrs
 
 
 class _EdistribucionNetBalancePeriodSensor(_EdistribucionBaseSensor):
