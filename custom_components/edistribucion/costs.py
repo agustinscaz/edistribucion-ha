@@ -362,14 +362,18 @@ def average_price_per_kwh(cost_total: float | None, imported_kwh: float | None) 
 
 def power_cost(sp_opts: dict) -> float:
     """Término de potencia de ESTE CUPS, CON IEE + IVA: kW contratados (punta/valle) × precio
-    €/kW/día, con el IEE y el IVA de `sp_opts` aplicados encima EN ESE ORDEN (ver
+    €/kW/día + alquiler del equipo de medida (€/día, fijo por contrato, issue #24 — la
+    comercializadora lo factura, e-distribución no lo reporta así que hay que teclearlo a mano
+    mirando la factura), con el IEE y el IVA de `sp_opts` aplicados encima EN ESE ORDEN (ver
     `apply_iee`/`apply_iva`) — se factura siempre, sea cual sea la tarifa de energía elegida
-    (fija/tramos/pvpc)."""
+    (fija/tramos/pvpc). Con esto sumado, `estimated_cost_*_with_power` puede cuadrar centavo a
+    centavo con la factura real en vez de solo aproximarla."""
     punta_kw = sp_opts.get("contracted_power_punta_kw") or 0
     valle_kw = sp_opts.get("contracted_power_valle_kw") or 0
     price_punta = sp_opts.get("price_power_punta") or 0
     price_valle = sp_opts.get("price_power_valle") or 0
-    total_sin_impuestos = punta_kw * price_punta + valle_kw * price_valle
+    meter_rental = sp_opts.get("meter_rental_eur_day") or 0
+    total_sin_impuestos = punta_kw * price_punta + valle_kw * price_valle + meter_rental
     total_con_iee = apply_iee(total_sin_impuestos, sp_opts.get("iee_percent") or 0)
     return apply_iva(total_con_iee, sp_opts.get("iva_percent") or 0)
 

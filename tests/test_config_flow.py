@@ -196,6 +196,55 @@ class TestOptionsFlow:
         assert supply_points["contB"]["track"] is False
         assert supply_points["contB"]["fixed_price"] == 0.20
 
+    async def test_meter_rental_defaults_to_zero_and_can_be_set(self, hass, mock_add_on, config_entry):
+        """Issue #24: campo opcional meter_rental_eur_day, default 0 para no romper a nadie que no
+        lo configure, y persistido si se pone un valor."""
+        result = await hass.config_entries.options.async_init(config_entry.entry_id)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"scan_interval": 20})
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "track": True,
+                "alias": "Casa",
+                "tariff_type": "tramos",
+                "price_power_punta": 0.08,
+                "price_power_valle": 0.03,
+                "meter_rental_eur_day": 0.045,
+                "fixed_price": 0,
+                "price_punta": 0.25,
+                "price_llano": 0.18,
+                "price_valle": 0.10,
+                "holiday_region": "none",
+                "surplus_compensation": False,
+                "surplus_price": 0,
+                "pvpc_zone": "PCB",
+            },
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "track": False,
+                "alias": "",
+                "tariff_type": "fija",
+                "price_power_punta": 0,
+                "price_power_valle": 0,
+                # meter_rental_eur_day omitido a propósito -> debe caer al default 0
+                "fixed_price": 0.20,
+                "price_punta": 0,
+                "price_llano": 0,
+                "price_valle": 0,
+                "holiday_region": "none",
+                "surplus_compensation": False,
+                "surplus_price": 0,
+                "pvpc_zone": "PCB",
+            },
+        )
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        supply_points = result["data"][CONF_SUPPLY_POINTS]
+        assert supply_points["contA"]["meter_rental_eur_day"] == 0.045
+        assert supply_points["contB"]["meter_rental_eur_day"] == 0
+
     async def test_no_supply_points_finishes_immediately(self, hass, config_entry, aioclient_mock):
         aioclient_mock.get("http://localhost:8099/supply-points", json=[])
         result = await hass.config_entries.options.async_init(config_entry.entry_id)

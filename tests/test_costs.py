@@ -541,6 +541,28 @@ class TestPowerCost:
         }
         assert power_cost(sp) == pytest.approx(apply_iva(apply_iee(0.4, 5.11269632), 21))
 
+    def test_meter_rental_added_to_total(self):
+        """Issue #24: el alquiler del equipo de medida (fijo por contrato, viene de la factura de
+        la comercializadora) se suma al término de potencia."""
+        sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08, "meter_rental_eur_day": 0.03}
+        assert power_cost(sp) == pytest.approx(0.4 + 0.03)
+
+    def test_meter_rental_alone_without_contracted_power(self):
+        """Sin potencia contratada/precio configurados, el alquiler solo también cuenta — permite
+        crear los sensores de término de potencia solo por el alquiler si es lo único que se puso."""
+        assert power_cost({"meter_rental_eur_day": 0.03}) == pytest.approx(0.03)
+
+    def test_meter_rental_gets_iee_and_iva_applied(self):
+        """El alquiler entra en la base imponible ANTES de IEE/IVA, igual que la potencia — así lo
+        muestra una factura real española (concepto de base + impuestos al final, no un importe ya
+        con impuestos)."""
+        sp = {"meter_rental_eur_day": 1.0, "iee_percent": 5.11269632, "iva_percent": 21}
+        assert power_cost(sp) == pytest.approx(apply_iva(apply_iee(1.0, 5.11269632), 21))
+
+    def test_meter_rental_missing_defaults_to_zero(self):
+        sp = {"contracted_power_punta_kw": 5.0, "price_power_punta": 0.08}
+        assert power_cost(sp) == pytest.approx(0.4)  # sin cambios frente al comportamiento anterior
+
 
 class TestSelfConsumptionRatio:
     def test_no_grid_import_is_100_percent(self):

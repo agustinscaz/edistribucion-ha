@@ -42,6 +42,7 @@
           "iva_percent": "VAT to apply (%)",
           "price_power_punta": "Peak power price (€/kW/day)",
           "price_power_valle": "Off-peak power price (€/kW/day)",
+          "meter_rental_eur_day": "Meter rental (€/day, from your retailer's invoice)",
           "fixed_price": "Fixed price (€/kWh, if tariff is 'fixed')",
           "price_punta": "Peak price (€/kWh, if tariff is 'time-of-use')",
           "price_llano": "Flat price (€/kWh, if tariff is 'time-of-use')",

@@ -42,6 +42,7 @@
           "iva_percent": "IVA da applicare (%)",
           "price_power_punta": "Prezzo potenza di punta (€/kW/giorno)",
           "price_power_valle": "Prezzo potenza fuori punta (€/kW/giorno)",
+          "meter_rental_eur_day": "Noleggio contatore (€/giorno, secondo la fattura del tuo fornitore)",
           "fixed_price": "Prezzo fisso (€/kWh, se la tariffa è 'fissa')",
           "price_punta": "Prezzo in punta (€/kWh, se la tariffa è 'a fasce')",
           "price_llano": "Prezzo intermedio (€/kWh, se la tariffa è 'a fasce')",

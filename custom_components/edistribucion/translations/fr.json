@@ -42,6 +42,7 @@
           "iva_percent": "TVA à appliquer (%)",
           "price_power_punta": "Prix puissance heures pleines (€/kW/jour)",
           "price_power_valle": "Prix puissance heures creuses (€/kW/jour)",
+          "meter_rental_eur_day": "Location du compteur (€/jour, selon la facture de ton fournisseur)",
           "fixed_price": "Prix fixe (€/kWh, si le tarif est 'fixe')",
           "price_punta": "Prix en heures pleines (€/kWh, si le tarif est 'par tranches')",
           "price_llano": "Prix en heures intermédiaires (€/kWh, si le tarif est 'par tranches')",

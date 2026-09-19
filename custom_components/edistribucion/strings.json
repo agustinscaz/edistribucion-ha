@@ -42,6 +42,7 @@
           "iva_percent": "IVA a aplicar (%)",
           "price_power_punta": "Precio potencia punta (€/kW/día)",
           "price_power_valle": "Precio potencia valle (€/kW/día)",
+          "meter_rental_eur_day": "Alquiler equipo de medida (€/día, según factura de tu comercializadora)",
           "fixed_price": "Precio fijo (€/kWh, si la tarifa es 'fija')",
           "price_punta": "Precio en punta (€/kWh, si la tarifa es 'tramos')",
           "price_llano": "Precio en llano (€/kWh, si la tarifa es 'tramos')",

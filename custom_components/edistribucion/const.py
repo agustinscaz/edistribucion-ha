@@ -11,10 +11,11 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 15
 
 # Opciones: qué suministros seguir, con qué alias, y tarifa/precios de CADA UNO — dict
 # {contId: {"track": bool, "alias": str, "tariff_type": ..., "price_power_punta": ...,
-#   "price_power_valle": ..., "fixed_price": ..., "price_punta": ..., "price_llano": ...,
-#   "price_valle": ..., "surplus_compensation": bool, "surplus_price": ..., "pvpc_zone": ...}} —
-# esto es por CUPS, porque cada contrato puede ser distinto. La potencia contratada NO se pide
-# aquí — se lee en vivo de e-distribución (ver coordinator.py/CONF_CONTRACTED_POWER_PUNTA/VALLE).
+#   "price_power_valle": ..., "meter_rental_eur_day": ..., "fixed_price": ..., "price_punta": ...,
+#   "price_llano": ..., "price_valle": ..., "surplus_compensation": bool, "surplus_price": ...,
+#   "pvpc_zone": ...}} — esto es por CUPS, porque cada contrato puede ser distinto. La potencia
+# contratada NO se pide aquí — se lee en vivo de e-distribución (ver
+# coordinator.py/CONF_CONTRACTED_POWER_PUNTA/VALLE).
 CONF_SUPPLY_POINTS = "supply_points"
 
 # Tipos de tarifa de energía, configurables por CUPS (no a nivel de toda la integración, distintos
@@ -47,6 +48,16 @@ CONF_CONTRACTED_POWER_PUNTA = "contracted_power_punta_kw"
 CONF_CONTRACTED_POWER_VALLE = "contracted_power_valle_kw"
 CONF_PRICE_POWER_PUNTA = "price_power_punta"  # €/kW/día
 CONF_PRICE_POWER_VALLE = "price_power_valle"  # €/kW/día
+
+# Alquiler del equipo de medida (contador): lo factura la COMERCIALIZADORA, no e-distribución — no
+# está disponible en la API de la distribuidora que consume api.py, así que no se puede leer en
+# vivo de ningún lado (a diferencia de la potencia contratada). Es un importe FIJO por contrato
+# (no cambia salvo que cambies de equipo), así que basta con teclearlo una vez mirando la factura
+# de la comercializadora. Por defecto 0 para no romper a nadie que no lo configure (issue #24). Se
+# suma al término de potencia ANTES de aplicar IEE/IVA (costs.power_cost) — en una factura real
+# española, "alquiler de equipos de medida y control" es un concepto de base imponible más, junto a
+# potencia y energía, no un importe ya con impuestos aplicado.
+CONF_METER_RENTAL_EUR_DAY = "meter_rental_eur_day"  # €/día
 
 # Región (CCAA) para festivos, por CUPS — con tarifa "tramos", un festivo entre semana cuenta como
 # valle todo el día (igual que fin de semana), en vez de como si fuera un día laborable normal. Los
