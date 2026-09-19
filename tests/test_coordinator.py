@@ -299,6 +299,41 @@ async def test_year_to_date_sums_completed_months_plus_current_month(hass, monke
     assert completed["exported_kwh"] == 2.0
     assert completed["cost"] == pytest.approx(4.0)  # 20 kWh x 0.2 €/kWh (fija)
 
+    details = coordinator.year_to_date_month_details("cont1")
+    assert set(details) == {1, 2}
+    assert details[1]["imported_kwh"] == 10.0
+    assert details[2]["imported_kwh"] == 10.0
+
+
+async def test_year_to_date_month_details_omits_uncached_months(hass, monkeypatch, caplog):
+    """Issue #25: un mes que falla al pedirlo (EdistribucionApiError) queda AUSENTE de
+    year_to_date_month_details (no cacheado con ceros) y avisa por warning, no solo debug — para
+    poder distinguir "no se pudo pedir todavía" de "se pidió y dio 0 kWh real"."""
+    entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
+    client = _make_client()
+
+    async def fake_consumption(cont_id, range_type=None, date=None):
+        if date == "2026-01-01":
+            raise EdistribucionApiError("boom")
+        if date == "2026-02-01":
+            return {"totalImportedKwh": 10.0, "totalExportedKwh": 1.0}
+        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}}
+
+    client.async_get_consumption.side_effect = fake_consumption
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
+    )
+
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.edistribucion.coordinator"):
+        await coordinator._async_update_data()
+
+    details = coordinator.year_to_date_month_details("cont1")
+    assert set(details) == {2}  # enero ausente, no cacheado con 0.0
+    assert "acumulado del año" in caplog.text
+
 
 async def test_year_to_date_sums_power_cost_and_surplus_compensation(hass, monkeypatch):
     """Issue #22: los meses completados del año también acumulan power_cost y

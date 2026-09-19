@@ -82,6 +82,7 @@ class FakeCoordinator:
         self.pvpc_prices: dict[str, dict[str, float]] = {}
         self.last_success_time = None
         self._year_to_date: dict[str, dict[str, float]] = {}
+        self._year_to_date_details: dict[str, dict[int, dict[str, float]]] = {}
         self._last_value_change: dict[str, dict[str, object]] = {}
         from datetime import timedelta
 
@@ -95,6 +96,9 @@ class FakeCoordinator:
             cont_id,
             {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0},
         )
+
+    def year_to_date_month_details(self, cont_id):
+        return self._year_to_date_details.get(cont_id, {})
 
     def last_value_change(self, cont_id, flow):
         return self._last_value_change.get(cont_id, {}).get(flow)
@@ -166,6 +170,24 @@ async def test_cost_sensors_created_when_price_configured(hass):
     assert "contA_estimated_cost_month" in ids
     assert "contA_average_price_month" in ids
     assert "contA_year_to_date_cost" in ids
+
+
+async def test_year_to_date_cost_exposes_month_by_month_diagnostic(hass):
+    """Issue #25: meses_completados_detalle deja ver mes a mes qué se cacheó, sin depender de
+    activar logs en debug para diagnosticar un acumulado del año implausible."""
+    bundles = {"contA": _bundle({"tariff_type": "tramos", "price_punta": 0.25})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = entities[0].coordinator
+    coordinator._year_to_date_details["contA"] = {
+        1: {"imported_kwh": 0.0, "exported_kwh": 0.0},
+        2: {"imported_kwh": 120.0, "exported_kwh": 5.0},
+    }
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    attrs = by_id["contA_year_to_date_cost"].extra_state_attributes
+    assert attrs["meses_completados_detalle"] == {
+        "1": {"kwh_importados": 0.0, "kwh_exportados": 0.0},
+        "2": {"kwh_importados": 120.0, "kwh_exportados": 5.0},
+    }
 
 
 async def test_week_year_coverage_matrix_completed(hass):

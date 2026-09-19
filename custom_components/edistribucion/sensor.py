@@ -683,9 +683,18 @@ class EdistribucionYearToDateCostSensor(_EdistribucionBaseSensor):
     def extra_state_attributes(self) -> dict:
         completed = self.coordinator.year_to_date_completed_months(self._cont_id)
         month = self._bundle.get("month") or {}
+        details = self.coordinator.year_to_date_month_details(self._cont_id)
         return {
             "kwh_importados_año": round((completed.get("imported_kwh") or 0.0) + (month.get("totalImportedKwh") or 0.0), 2),
             "kwh_exportados_año": round((completed.get("exported_kwh") or 0.0) + (month.get("totalExportedKwh") or 0.0), 2),
+            # Diagnóstico issue #25: un mes ausente aquí no se pudo cachear todavía (ver logs de
+            # warning); un mes presente con "kwh_importados" en 0.0 pese a consumo real conocido
+            # apunta a que la fecha pasada pedida está devolviendo datos vacíos/incorrectos SIN
+            # lanzar excepción — no un simple fallo de conexión.
+            "meses_completados_detalle": {
+                str(m): {"kwh_importados": v["imported_kwh"], "kwh_exportados": v["exported_kwh"]}
+                for m, v in sorted(details.items())
+            },
         }
 
 

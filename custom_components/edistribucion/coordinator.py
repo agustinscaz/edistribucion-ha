@@ -433,7 +433,11 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                 try:
                     month_data = await self.client.async_get_consumption(cont_id, RANGE_MONTH, month_date)
                 except EdistribucionApiError as err:
-                    _LOGGER.debug(
+                    # warning, no debug (issue #25): un mes completado que nunca llega a cachearse
+                    # deja el acumulado del año permanentemente por debajo de lo real hasta que la
+                    # llamada funcione un día — vale la pena que se note sin tener que activar logs
+                    # en debug para descubrirlo.
+                    _LOGGER.warning(
                         "Sin consumo de %s/%s para el acumulado del año de %s: %s", month, now.year, sp.get("cups"), err
                     )
                     continue
@@ -474,6 +478,21 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
             cont_id,
             {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0},
         )
+
+    def year_to_date_month_details(self, cont_id: str) -> dict[int, dict[str, float]]:
+        """Detalle MES A MES (1-12) de lo cacheado para el acumulado del año de este CUPS —
+        pensado para diagnosticar sin depender de logs en debug (issue #25): un mes ausente aquí
+        todavía no se pudo cachear (ver el warning de `_async_update_year_to_date_if_needed`), y un
+        mes presente con `imported_kwh` en 0.0 pese a haber tenido consumo real indica que
+        `async_get_consumption` para esa fecha pasada está devolviendo datos vacíos/incorrectos SIN
+        lanzar excepción (no necesariamente un fallo de conexión — ver la incertidumbre de si
+        `range=3` respeta la fecha pedida, issue #21)."""
+        now = dt_util.now()
+        return {
+            month: values
+            for (c_id, year, month), values in self._year_to_date_month_cache.items()
+            if c_id == cont_id and year == now.year
+        }
 
     def _track_value_freshness(self, cont_id: str, bundle: dict) -> None:
         """Registra cuándo cambió por última vez el importado/exportado "de hoy" de este CUPS —
