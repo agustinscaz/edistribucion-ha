@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Расчётная стоимость (месяц)"
       },
+      "estimated_cost_week": {
+        "name": "Расчётная стоимость (неделя)"
+      },
       "estimated_cost_today_with_power": {
         "name": "Стоимость сегодня (с мощностью)"
       },
       "estimated_cost_month_with_power": {
         "name": "Стоимость за месяц (с мощностью)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Стоимость за неделю (с мощностью)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Накопленная стоимость за год (с мощностью)"
+      },
       "power_cost_today": {
         "name": "Плата за мощность (день)"
       },
+      "power_cost_week": {
+        "name": "Плата за мощность (неделя)"
+      },
       "power_cost_month": {
         "name": "Плата за мощность (месяц)"
+      },
+      "power_cost_year": {
+        "name": "Плата за мощность (год)"
       },
       "surplus_price": {
         "name": "Цена продажи излишков"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Компенсация за излишки (месяц)"
+      },
+      "surplus_compensation_year": {
+        "name": "Компенсация за излишки (год)"
       },
       "punta_exported_kwh_today": {
         "name": "Экспортированная энергия в пиковый период (сегодня)"

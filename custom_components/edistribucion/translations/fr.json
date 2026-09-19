@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Coût estimé (mois)"
       },
+      "estimated_cost_week": {
+        "name": "Coût estimé (semaine)"
+      },
       "estimated_cost_today_with_power": {
         "name": "Coût aujourd'hui (avec puissance)"
       },
       "estimated_cost_month_with_power": {
         "name": "Coût ce mois-ci (avec puissance)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Coût cette semaine (avec puissance)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Coût cumulé de l'année (avec puissance)"
+      },
       "power_cost_today": {
         "name": "Terme de puissance (jour)"
       },
+      "power_cost_week": {
+        "name": "Terme de puissance (semaine)"
+      },
       "power_cost_month": {
         "name": "Terme de puissance (mois)"
+      },
+      "power_cost_year": {
+        "name": "Terme de puissance (année)"
       },
       "surplus_price": {
         "name": "Prix de vente des excédents"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Compensation des excédents (mois)"
+      },
+      "surplus_compensation_year": {
+        "name": "Compensation des excédents (année)"
       },
       "punta_exported_kwh_today": {
         "name": "Énergie exportée en heures pleines (aujourd'hui)"

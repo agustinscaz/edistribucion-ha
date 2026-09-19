@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Hilabeteko kostu estimatua"
       },
+      "estimated_cost_week": {
+        "name": "Asteko kostu estimatua"
+      },
       "estimated_cost_today_with_power": {
         "name": "Gaurko kostua (potentziarekin)"
       },
       "estimated_cost_month_with_power": {
         "name": "Hilabete honetako kostua (potentziarekin)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Asteko kostua (potentziarekin)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Urteko kostu metatua (potentziarekin)"
+      },
       "power_cost_today": {
         "name": "Potentzia terminoa (eguna)"
       },
+      "power_cost_week": {
+        "name": "Potentzia terminoa (astea)"
+      },
       "power_cost_month": {
         "name": "Potentzia terminoa (hilabetea)"
+      },
+      "power_cost_year": {
+        "name": "Potentzia terminoa (urtea)"
       },
       "surplus_price": {
         "name": "Soberakinen salmenta prezioa"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Hilabeteko soberakinen konpentsazioa"
+      },
+      "surplus_compensation_year": {
+        "name": "Urteko soberakinen konpentsazioa"
       },
       "punta_exported_kwh_today": {
         "name": "Gaurko gailur-orduko esportatutako energia"

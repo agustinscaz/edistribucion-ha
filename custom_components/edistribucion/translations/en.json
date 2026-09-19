@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Estimated cost (month)"
       },
+      "estimated_cost_week": {
+        "name": "Estimated cost (week)"
+      },
       "estimated_cost_today_with_power": {
         "name": "Cost today (with power)"
       },
       "estimated_cost_month_with_power": {
         "name": "Cost this month (with power)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Cost this week (with power)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Year-to-date cost (with power)"
+      },
       "power_cost_today": {
         "name": "Power term (day)"
       },
+      "power_cost_week": {
+        "name": "Power term (week)"
+      },
       "power_cost_month": {
         "name": "Power term (month)"
+      },
+      "power_cost_year": {
+        "name": "Power term (year)"
       },
       "surplus_price": {
         "name": "Surplus sale price"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Surplus compensation (month)"
+      },
+      "surplus_compensation_year": {
+        "name": "Surplus compensation (year)"
       },
       "punta_exported_kwh_today": {
         "name": "Peak exported energy (today)"

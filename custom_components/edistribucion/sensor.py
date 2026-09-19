@@ -103,6 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         entities.append(EdistribucionMonthVsLastYearSensor(coordinator, cont_id, sp))
         if _energy_cost_configured(sp):
             entities.append(EdistribucionEstimatedCostTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionEstimatedCostWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionEstimatedCostMonthSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionAveragePriceMonthSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionYearToDateCostSensor(coordinator, cont_id, sp))
@@ -119,15 +120,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             entities.append(EdistribucionSimulatedCostMonthSensor(coordinator, cont_id, sp, simulated_tariff))
         if power_cost(sp) > 0:
             entities.append(EdistribucionPowerCostTodaySensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionPowerCostWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionPowerCostMonthSensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionPowerCostYearSensor(coordinator, cont_id, sp))
             if _energy_cost_configured(sp):
                 entities.append(EdistribucionEstimatedCostTodayWithPowerSensor(coordinator, cont_id, sp))
+                entities.append(EdistribucionEstimatedCostWeekWithPowerSensor(coordinator, cont_id, sp))
                 entities.append(EdistribucionEstimatedCostMonthWithPowerSensor(coordinator, cont_id, sp))
+                entities.append(EdistribucionEstimatedCostYearWithPowerSensor(coordinator, cont_id, sp))
         if sp.get("surplus_compensation") and sp.get("surplus_price"):
             entities.append(EdistribucionSurplusPriceSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationTodaySensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationWeekSensor(coordinator, cont_id, sp))
             entities.append(EdistribucionSurplusCompensationMonthSensor(coordinator, cont_id, sp))
+            entities.append(EdistribucionSurplusCompensationYearSensor(coordinator, cont_id, sp))
             for period_key in ("today", "month"):
                 for tramo in (PUNTA, LLANO, VALLE):
                     entities.append(_EdistribucionExportTramoSensor(coordinator, cont_id, sp, period_key, tramo, "kwh"))
@@ -464,6 +470,23 @@ class EdistribucionEstimatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
     @property
     def extra_state_attributes(self) -> dict:
         return {**super().extra_state_attributes, **_month_range_attributes(self._bundle.get("month"))}
+
+
+class EdistribucionEstimatedCostWeekSensor(_EdistribucionEstimatedCostSensor):
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "estimated_cost_week")
+        self._attr_unique_id = f"{cont_id}_estimated_cost_week"
+
+    @property
+    def _imported_kwh(self) -> float | None:
+        week = self._bundle.get("week")
+        return week.get("totalImportedKwh") if week else None
+
+    @property
+    def _hourly_source(self) -> dict | None:
+        return self._bundle.get("week")
 
 
 class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
@@ -955,6 +978,30 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
         return month.get("totalExportedKwh") if month else None
 
 
+class EdistribucionSurplusCompensationYearSensor(_EdistribucionSurplusCompensationSensor):
+    """Como EdistribucionSurplusCompensationMonthSensor pero acumulado en lo que va de año: meses ya
+    completados (cacheados con el precio de compensación vigente cuando se cacheó cada uno, ver
+    coordinator._async_update_year_to_date_if_needed) + el mes en curso, en vivo."""
+
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "surplus_compensation_year")
+        self._attr_unique_id = f"{cont_id}_surplus_compensation_year"
+
+    @property
+    def _exported_kwh(self) -> float | None:
+        month = self._bundle.get("month")
+        return month.get("totalExportedKwh") if month else None
+
+    @property
+    def native_value(self) -> float | None:
+        sp = self._bundle.get("supply_point") or {}
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        current = surplus_compensation_value(sp, self._exported_kwh) or 0.0
+        return round((completed.get("surplus_compensation") or 0.0) + current, 4)
+
+
 class _EdistribucionSelfConsumptionSensor(_EdistribucionBaseSensor):
     """RATIO exportación/intercambio total con la red (%), NO autosuficiencia real — issue #14:
     "autosuficiencia" prometía más de lo que este cálculo puede dar (solo ve importado/exportado
@@ -1059,32 +1106,36 @@ class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
         }
 
 
-class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
-    """Término de potencia acumulado del mes: coste diario × días ya facturados (los mismos días
-    que ya tienen datos de energía, para cuadrar con el resto de sensores "mes")."""
+class _EdistribucionPowerCostPeriodSensor(_EdistribucionBaseSensor):
+    """Término de potencia acumulado de un periodo (semana/mes): coste diario × días ya facturados
+    (los mismos días que ya tienen datos de energía, para cuadrar con el resto de sensores de ese
+    periodo) — mismo cálculo que `EdistribucionPowerCostTodaySensor`, pero multiplicado por los
+    días ya transcurridos del periodo en vez de asumir siempre 1 día."""
 
-    entity_description = SensorEntityDescription(
-        key="power_cost_month",
-        translation_key="power_cost_month",
-        device_class=SensorDeviceClass.MONETARY,
-        native_unit_of_measurement="EUR",
-        suggested_display_precision=2,
-        state_class=SensorStateClass.TOTAL,
-    )
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+    _attr_state_class = SensorStateClass.TOTAL
 
-    def __init__(self, coordinator, cont_id, supply_point) -> None:
+    def __init__(self, coordinator, cont_id, supply_point, period_key: str, translation_key: str) -> None:
         super().__init__(coordinator, cont_id, supply_point)
-        self._attr_unique_id = f"{cont_id}_power_cost_month"
+        self._period_key = period_key  # "week" | "month"
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{cont_id}_{translation_key}"
+
+    @property
+    def _period(self) -> dict | None:
+        return self._bundle.get(self._period_key)
 
     @property
     def _days_elapsed(self) -> int:
-        month = self._bundle.get("month")
-        if not month:
+        period = self._period
+        if not period:
             return 0
         # `or []`, no `.get(..., [])`: si "dailyTotals" viene como clave presente pero con valor
         # `null` (no ausente), `.get(clave, default)` NO usaría el default y `len(None)` reventaría
         # (issue #9).
-        return len(month.get("dailyTotals") or [])
+        return len(period.get("dailyTotals") or [])
 
     @property
     def native_value(self) -> float:
@@ -1095,13 +1146,56 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionBaseSensor):
     def extra_state_attributes(self) -> dict:
         sp = self._bundle.get("supply_point") or {}
         daily_cost = power_cost(sp)
-        return {
+        attrs = {
             "dias_facturados": self._days_elapsed,
             "coste_diario": daily_cost,
             "iee_percent": sp.get("iee_percent") or 0,
             "iva_percent": sp.get("iva_percent") or 0,
-            **_month_range_attributes(self._bundle.get("month")),
         }
+        if self._period_key == "month":
+            attrs.update(_month_range_attributes(self._period))
+        return attrs
+
+
+class EdistribucionPowerCostWeekSensor(_EdistribucionPowerCostPeriodSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "week", "power_cost_week")
+
+
+class EdistribucionPowerCostMonthSensor(_EdistribucionPowerCostPeriodSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "month", "power_cost_month")
+
+
+class EdistribucionPowerCostYearSensor(_EdistribucionBaseSensor):
+    """Término de potencia acumulado en lo que va de año: meses ya completados (cacheados en
+    coordinator._year_to_date_month_cache, con el precio de potencia vigente cuando se cacheó cada
+    uno) + el mes en curso, en vivo (mismo cálculo que EdistribucionPowerCostMonthSensor)."""
+
+    entity_description = SensorEntityDescription(
+        key="power_cost_year",
+        translation_key="power_cost_year",
+        device_class=SensorDeviceClass.MONETARY,
+        native_unit_of_measurement="EUR",
+        suggested_display_precision=2,
+        state_class=SensorStateClass.TOTAL,
+    )
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_unique_id = f"{cont_id}_power_cost_year"
+
+    @property
+    def _current_month_power_cost(self) -> float:
+        month = self._bundle.get("month")
+        # `or []`: mismo motivo que en EdistribucionPowerCostMonthSensor._days_elapsed (issue #9).
+        days_elapsed = len(month.get("dailyTotals") or []) if month else 0
+        return power_cost(self._bundle.get("supply_point") or {}) * days_elapsed
+
+    @property
+    def native_value(self) -> float:
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        return round((completed.get("power_cost") or 0.0) + self._current_month_power_cost, 4)
 
 
 class EdistribucionEstimatedCostTodayWithPowerSensor(_EdistribucionBaseSensor):
@@ -1152,34 +1246,40 @@ class EdistribucionEstimatedCostTodayWithPowerSensor(_EdistribucionBaseSensor):
         }
 
 
-class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionBaseSensor):
-    """Como EdistribucionEstimatedCostTodayWithPowerSensor pero para el mes en curso: coste de
-    energía del mes + término de potencia acumulado (igual que EdistribucionPowerCostMonthSensor,
-    que solo cuenta los días ya facturados, no el mes completo por adelantado)."""
+class _EdistribucionEstimatedCostWithPowerPeriodSensor(_EdistribucionBaseSensor):
+    """Como EdistribucionEstimatedCostTodayWithPowerSensor pero para un periodo (semana/mes): coste
+    de energía del periodo + término de potencia acumulado (igual que
+    _EdistribucionPowerCostPeriodSensor, que solo cuenta los días ya facturados, no el periodo
+    completo por adelantado)."""
 
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement = "EUR"
     _attr_suggested_display_precision = 2
     _attr_state_class = SensorStateClass.TOTAL
 
-    def __init__(self, coordinator, cont_id, supply_point) -> None:
+    def __init__(self, coordinator, cont_id, supply_point, period_key: str, translation_key: str) -> None:
         super().__init__(coordinator, cont_id, supply_point)
-        self._attr_translation_key = "estimated_cost_month_with_power"
-        self._attr_unique_id = f"{cont_id}_estimated_cost_month_with_power"
+        self._period_key = period_key  # "week" | "month"
+        self._attr_translation_key = translation_key
+        self._attr_unique_id = f"{cont_id}_{translation_key}"
+
+    @property
+    def _period(self) -> dict | None:
+        return self._bundle.get(self._period_key)
 
     @property
     def _energy_cost(self) -> float | None:
         sp = self._bundle.get("supply_point") or {}
-        month = self._bundle.get("month")
-        imported_kwh = month.get("totalImportedKwh") if month else None
-        breakdown = estimate_energy_cost(sp, imported_kwh, month, self.coordinator.pvpc_prices)
+        period = self._period
+        imported_kwh = period.get("totalImportedKwh") if period else None
+        breakdown = estimate_energy_cost(sp, imported_kwh, period, self.coordinator.pvpc_prices)
         return breakdown["total"] if breakdown else None
 
     @property
     def _power_cost(self) -> float:
-        month = self._bundle.get("month")
+        period = self._period
         # `or []`: mismo motivo que en EdistribucionPowerCostMonthSensor._days_elapsed (issue #9).
-        days_elapsed = len(month.get("dailyTotals") or []) if month else 0
+        days_elapsed = len(period.get("dailyTotals") or []) if period else 0
         return round(power_cost(self._bundle.get("supply_point") or {}) * days_elapsed, 4)
 
     @property
@@ -1191,11 +1291,62 @@ class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return {
-            "coste_energia": self._energy_cost,
-            "termino_potencia": self._power_cost,
-            **_month_range_attributes(self._bundle.get("month")),
-        }
+        attrs = {"coste_energia": self._energy_cost, "termino_potencia": self._power_cost}
+        if self._period_key == "month":
+            attrs.update(_month_range_attributes(self._period))
+        return attrs
+
+
+class EdistribucionEstimatedCostWeekWithPowerSensor(_EdistribucionEstimatedCostWithPowerPeriodSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "week", "estimated_cost_week_with_power")
+
+
+class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionEstimatedCostWithPowerPeriodSensor):
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point, "month", "estimated_cost_month_with_power")
+
+
+class EdistribucionEstimatedCostYearWithPowerSensor(_EdistribucionBaseSensor):
+    """Como EdistribucionEstimatedCostMonthWithPowerSensor pero acumulado en lo que va de año:
+    coste de energía año (mismo cálculo que EdistribucionYearToDateCostSensor) + término de
+    potencia año (mismo cálculo que EdistribucionPowerCostYearSensor)."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_native_unit_of_measurement = "EUR"
+    _attr_suggested_display_precision = 2
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, coordinator, cont_id, supply_point) -> None:
+        super().__init__(coordinator, cont_id, supply_point)
+        self._attr_translation_key = "estimated_cost_year_with_power"
+        self._attr_unique_id = f"{cont_id}_estimated_cost_year_with_power"
+
+    @property
+    def _energy_cost(self) -> float:
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        sp = self._bundle.get("supply_point") or {}
+        month = self._bundle.get("month")
+        imported_kwh = month.get("totalImportedKwh") if month else None
+        breakdown = estimate_energy_cost(sp, imported_kwh, month, self.coordinator.pvpc_prices)
+        current_month_cost = (breakdown or {}).get("total") or 0.0
+        return round((completed.get("cost") or 0.0) + current_month_cost, 2)
+
+    @property
+    def _power_cost(self) -> float:
+        completed = self.coordinator.year_to_date_completed_months(self._cont_id)
+        month = self._bundle.get("month")
+        days_elapsed = len(month.get("dailyTotals") or []) if month else 0
+        current_month_power_cost = power_cost(self._bundle.get("supply_point") or {}) * days_elapsed
+        return round((completed.get("power_cost") or 0.0) + current_month_power_cost, 4)
+
+    @property
+    def native_value(self) -> float:
+        return round(self._energy_cost + self._power_cost, 4)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"coste_energia": self._energy_cost, "termino_potencia": self._power_cost}
 
 
 class EdistribucionMonthVsLastYearSensor(_EdistribucionBaseSensor):

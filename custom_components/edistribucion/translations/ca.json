@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Cost estimat (mes)"
       },
+      "estimated_cost_week": {
+        "name": "Cost estimat (setmana)"
+      },
       "estimated_cost_today_with_power": {
         "name": "Cost avui (amb potència)"
       },
       "estimated_cost_month_with_power": {
         "name": "Cost aquest mes (amb potència)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Cost aquesta setmana (amb potència)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Cost acumulat de l'any (amb potència)"
+      },
       "power_cost_today": {
         "name": "Terme de potència (dia)"
       },
+      "power_cost_week": {
+        "name": "Terme de potència (setmana)"
+      },
       "power_cost_month": {
         "name": "Terme de potència (mes)"
+      },
+      "power_cost_year": {
+        "name": "Terme de potència (any)"
       },
       "surplus_price": {
         "name": "Preu venda d'excedents"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Compensació per excedents (mes)"
+      },
+      "surplus_compensation_year": {
+        "name": "Compensació per excedents (any)"
       },
       "punta_exported_kwh_today": {
         "name": "kWh exportats en punta (avui)"

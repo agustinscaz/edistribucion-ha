@@ -300,6 +300,47 @@ async def test_year_to_date_sums_completed_months_plus_current_month(hass, monke
     assert completed["cost"] == pytest.approx(4.0)  # 20 kWh x 0.2 €/kWh (fija)
 
 
+async def test_year_to_date_sums_power_cost_and_surplus_compensation(hass, monkeypatch):
+    """Issue #22: los meses completados del año también acumulan power_cost y
+    surplus_compensation (no solo cost/imported_kwh/exported_kwh), con el precio de potencia y de
+    compensación VIGENTES cuando se cacheó cada mes (mismo criterio que ya se aplicaba a `cost`)."""
+    entry = _make_entry(
+        hass,
+        options={
+            CONF_SUPPLY_POINTS: {
+                "cont1": {
+                    "tariff_type": "fija",
+                    "fixed_price": 0.2,
+                    "price_power_punta": 0.1,
+                    "price_power_valle": 0.05,
+                    "surplus_compensation": True,
+                    "surplus_price": 0.05,
+                }
+            }
+        },
+    )
+    client = _make_client()
+
+    async def fake_consumption(cont_id, range_type=None, date=None):
+        if date in ("2026-01-01", "2026-02-01"):  # meses YA COMPLETADOS (ene, feb)
+            return {"totalImportedKwh": 10.0, "totalExportedKwh": 4.0, "dailyTotals": [{"date": "01/01/2026"}, {"date": "02/01/2026"}]}
+        return {"totalImportedKwh": 5.0, "totalExportedKwh": 0.0, "hourlyByDate": {}, "dailyTotals": []}
+
+    client.async_get_consumption.side_effect = fake_consumption
+    coordinator = EdistribucionCoordinator(hass, client, entry)
+    monkeypatch.setattr(
+        "custom_components.edistribucion.coordinator.dt_util.now", lambda: datetime(2026, 3, 15, tzinfo=timezone.utc)
+    )
+
+    await coordinator._async_update_data()
+
+    completed = coordinator.year_to_date_completed_months("cont1")
+    # power_cost(sp) = (3.5*0.1 + 3.5*0.05) = 0.525 €/día (sin IEE/IVA configurados) x 2 días x 2 meses
+    assert completed["power_cost"] == pytest.approx(0.525 * 2 * 2)
+    # surplus_compensation_value = 4.0 kWh x 0.05 €/kWh, por cada uno de los 2 meses completados
+    assert completed["surplus_compensation"] == pytest.approx(0.2 * 2)
+
+
 async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
     entry = _make_entry(hass, options={CONF_SUPPLY_POINTS: {"cont1": {"tariff_type": "fija", "fixed_price": 0.2}}})
     coordinator = EdistribucionCoordinator(hass, _make_client(), entry)
@@ -310,7 +351,13 @@ async def test_year_to_date_no_completed_months_in_january(hass, monkeypatch):
     await coordinator._async_update_data()
 
     completed = coordinator.year_to_date_completed_months("cont1")
-    assert completed == {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0}
+    assert completed == {
+        "imported_kwh": 0.0,
+        "exported_kwh": 0.0,
+        "cost": 0.0,
+        "power_cost": 0.0,
+        "surplus_compensation": 0.0,
+    }
 
 
 async def test_year_to_date_checks_at_most_once_per_day(hass, monkeypatch):

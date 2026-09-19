@@ -25,7 +25,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
 )
-from .costs import LLANO, PUNTA, VALLE, cost_breakdown, estimate_energy_cost, surplus_compensation_value
+from .costs import LLANO, PUNTA, VALLE, cost_breakdown, estimate_energy_cost, power_cost, surplus_compensation_value
 from .esios import DEFAULT_PVPC_ZONE, EsiosError, async_get_pvpc_prices_for_day
 from .statistics import _parse_day, async_backfill_derived_daily_statistics, async_backfill_energy_statistics
 
@@ -438,29 +438,42 @@ class EdistribucionCoordinator(DataUpdateCoordinator):
                     )
                     continue
                 breakdown = estimate_energy_cost(sp, month_data.get("totalImportedKwh"), month_data, self.pvpc_prices)
+                exported_kwh = month_data.get("totalExportedKwh") or 0.0
+                # power_cost/surplus_compensation_value se calculan CON el `sp` (precios, potencia
+                # contratada, compensación) vigente en el momento de cachear este mes — igual que
+                # `cost` ya hacía con la tarifa de energía, un mes cerrado no se recalcula si el
+                # usuario cambia sus Opciones más tarde (ver docstring de la función).
                 self._year_to_date_month_cache[cache_key] = {
                     "imported_kwh": month_data.get("totalImportedKwh") or 0.0,
-                    "exported_kwh": month_data.get("totalExportedKwh") or 0.0,
+                    "exported_kwh": exported_kwh,
                     "cost": (breakdown.get("total") or 0.0) if breakdown else 0.0,
+                    "power_cost": power_cost(sp) * len(month_data.get("dailyTotals") or []),
+                    "surplus_compensation": surplus_compensation_value(sp, exported_kwh) or 0.0,
                 }
 
             # Suma SOLO los meses de ESTE cont_id y de ESTE año ya cacheados — filtrar por año
             # evita arrastrar totales de años anteriores si Home Assistant lleva corriendo sin
             # reiniciar más de un año (la caché en memoria no se limpia sola al cambiar de año).
-            totals = {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0}
+            totals = {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0}
             for (c_id, year, _month), values in self._year_to_date_month_cache.items():
                 if c_id == cont_id and year == now.year:
                     totals["imported_kwh"] += values["imported_kwh"]
                     totals["exported_kwh"] += values["exported_kwh"]
                     totals["cost"] += values["cost"]
+                    totals["power_cost"] += values.get("power_cost") or 0.0
+                    totals["surplus_compensation"] += values.get("surplus_compensation") or 0.0
             self._year_to_date_completed[cont_id] = totals
         self._year_to_date_fetched_day = today_key
 
     def year_to_date_completed_months(self, cont_id: str) -> dict[str, float]:
-        """kWh importado/exportado y coste estimado de los meses YA COMPLETADOS de este año para
-        este CUPS (cacheado una vez al día, ver `_async_update_year_to_date_if_needed`) — falta
-        sumarle el mes en curso, que cada sensor añade en vivo con lo que ya tiene a mano."""
-        return self._year_to_date_completed.get(cont_id, {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0})
+        """kWh importado/exportado, coste de energía, término de potencia y compensación de
+        excedentes de los meses YA COMPLETADOS de este año para este CUPS (cacheado una vez al día,
+        ver `_async_update_year_to_date_if_needed`) — falta sumarle el mes en curso, que cada
+        sensor añade en vivo con lo que ya tiene a mano."""
+        return self._year_to_date_completed.get(
+            cont_id,
+            {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0},
+        )
 
     def _track_value_freshness(self, cont_id: str, bundle: dict) -> None:
         """Registra cuándo cambió por última vez el importado/exportado "de hoy" de este CUPS —

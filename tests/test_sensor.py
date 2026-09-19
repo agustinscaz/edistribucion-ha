@@ -91,7 +91,10 @@ class FakeCoordinator:
         return lambda: None
 
     def year_to_date_completed_months(self, cont_id):
-        return self._year_to_date.get(cont_id, {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0})
+        return self._year_to_date.get(
+            cont_id,
+            {"imported_kwh": 0.0, "exported_kwh": 0.0, "cost": 0.0, "power_cost": 0.0, "surplus_compensation": 0.0},
+        )
 
     def last_value_change(self, cont_id, flow):
         return self._last_value_change.get(cont_id, {}).get(flow)
@@ -159,9 +162,83 @@ async def test_cost_sensors_created_when_price_configured(hass):
     entities = await _setup_with_fake_coordinator(hass, bundles)
     ids = _unique_ids(entities)
     assert "contA_estimated_cost_today" in ids
+    assert "contA_estimated_cost_week" in ids
     assert "contA_estimated_cost_month" in ids
     assert "contA_average_price_month" in ids
     assert "contA_year_to_date_cost" in ids
+
+
+async def test_week_year_coverage_matrix_completed(hass):
+    """Issue #22: power_cost, estimated_cost_with_power y surplus_compensation ahora tienen
+    cobertura semana/año, igual que ya tenían coste de energía y kWh importado/exportado."""
+    bundles = {
+        "contA": _bundle(
+            {
+                "tariff_type": "tramos",
+                "price_punta": 0.25,
+                "price_power_punta": 0.1,
+                "price_power_valle": 0.05,
+                "surplus_compensation": True,
+                "surplus_price": 0.05,
+            },
+            has_export=True,
+        )
+    }
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    ids = _unique_ids(entities)
+    for uid in (
+        "contA_power_cost_week",
+        "contA_power_cost_year",
+        "contA_estimated_cost_week_with_power",
+        "contA_estimated_cost_year_with_power",
+        "contA_surplus_compensation_year",
+    ):
+        assert uid in ids, uid
+
+
+async def test_power_cost_week_uses_week_bundle_days(hass):
+    bundles = {"contA": _bundle({"price_power_punta": 0.1, "price_power_valle": 0.05})}
+    bundles["contA"]["week"] = {"dailyTotals": [{"date": "17/09/2026"}, {"date": "18/09/2026"}, {"date": "19/09/2026"}]}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_power_cost_week"]
+    assert sensor._days_elapsed == 3
+    assert sensor.native_value == pytest.approx(0.525 * 3)  # (3.5*0.1 + 3.5*0.05) €/día x 3 días
+
+
+async def test_power_cost_year_adds_completed_months_and_current_month(hass):
+    bundles = {"contA": _bundle({"price_power_punta": 0.1, "price_power_valle": 0.05})}
+    bundles["contA"]["month"]["dailyTotals"] = [{"date": "01/09/2026"}, {"date": "02/09/2026"}]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = entities[0].coordinator
+    coordinator._year_to_date["contA"] = {
+        "imported_kwh": 0.0,
+        "exported_kwh": 0.0,
+        "cost": 0.0,
+        "power_cost": 1.05,
+        "surplus_compensation": 0.0,
+    }
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_power_cost_year"]
+    # 1.05 € ya completados + (3.5*0.1 + 3.5*0.05) €/día x 2 días del mes en curso
+    assert sensor.native_value == pytest.approx(1.05 + 0.525 * 2)
+
+
+async def test_surplus_compensation_year_adds_completed_months_and_current_month(hass):
+    bundles = {"contA": _bundle({"surplus_compensation": True, "surplus_price": 0.05}, has_export=True)}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = entities[0].coordinator
+    coordinator._year_to_date["contA"] = {
+        "imported_kwh": 0.0,
+        "exported_kwh": 0.0,
+        "cost": 0.0,
+        "power_cost": 0.0,
+        "surplus_compensation": 0.4,
+    }
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_surplus_compensation_year"]
+    # 0.4 € ya completados + 3.0 kWh exportados este mes (bundle "month" de _bundle(has_export=True)) x 0.05 €/kWh
+    assert sensor.native_value == pytest.approx(0.4 + 3.0 * 0.05)
 
 
 async def test_no_tramo_sensors_without_price_configured(hass):

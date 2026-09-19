@@ -92,17 +92,32 @@
       "estimated_cost_month": {
         "name": "Geschätzte Kosten (Monat)"
       },
+      "estimated_cost_week": {
+        "name": "Geschätzte Kosten (Woche)"
+      },
       "estimated_cost_today_with_power": {
         "name": "Kosten heute (mit Leistung)"
       },
       "estimated_cost_month_with_power": {
         "name": "Kosten diesen Monat (mit Leistung)"
       },
+      "estimated_cost_week_with_power": {
+        "name": "Kosten diese Woche (mit Leistung)"
+      },
+      "estimated_cost_year_with_power": {
+        "name": "Kumulierte Jahreskosten (mit Leistung)"
+      },
       "power_cost_today": {
         "name": "Leistungsterm (Tag)"
       },
+      "power_cost_week": {
+        "name": "Leistungsterm (Woche)"
+      },
       "power_cost_month": {
         "name": "Leistungsterm (Monat)"
+      },
+      "power_cost_year": {
+        "name": "Leistungsterm (Jahr)"
       },
       "surplus_price": {
         "name": "Verkaufspreis Überschuss"
@@ -115,6 +130,9 @@
       },
       "surplus_compensation_month": {
         "name": "Einspeisevergütung (Monat)"
+      },
+      "surplus_compensation_year": {
+        "name": "Einspeisevergütung (Jahr)"
       },
       "punta_exported_kwh_today": {
         "name": "Exportierte Energie Spitzenlast (heute)"
