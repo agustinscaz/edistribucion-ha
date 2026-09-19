@@ -30,6 +30,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             # comercializadora, tarifa — ya visibles igual como atributos del sensor de potencia
             # contratada) — útil para depurar ESE sensor sin acceso directo al log.
             "contract": bundle.get("contract"),
+            # Caché de acumulado del año (issue #29): antes de esto, depurar un total anual
+            # implausible (ver issue #25) exigía activar `logger.set_level: debug` y forzar un
+            # reload a mano solo para ver qué tenía cacheado el coordinator — ahora está en el
+            # propio volcado de diagnósticos, sin tocar la configuración de logging de nadie.
+            "year_to_date_completed_months": coordinator.year_to_date_completed_months(cont_id),
+            "year_to_date_month_details": coordinator.year_to_date_month_details(cont_id),
         }
 
     return {
