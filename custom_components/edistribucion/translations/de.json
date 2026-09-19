@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Einspeisevergütung (Jahr)"
       },
+      "net_balance_today": {
+        "name": "Nettobilanz heute"
+      },
+      "net_balance_week": {
+        "name": "Nettobilanz (Woche)"
+      },
+      "net_balance_month": {
+        "name": "Nettobilanz (Monat)"
+      },
+      "net_balance_year": {
+        "name": "Nettobilanz (Jahr)"
+      },
       "punta_exported_kwh_today": {
         "name": "Exportierte Energie Spitzenlast (heute)"
       },

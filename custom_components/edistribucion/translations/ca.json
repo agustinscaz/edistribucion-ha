@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Compensació per excedents (any)"
       },
+      "net_balance_today": {
+        "name": "Balanç net avui"
+      },
+      "net_balance_week": {
+        "name": "Balanç net (setmana)"
+      },
+      "net_balance_month": {
+        "name": "Balanç net (mes)"
+      },
+      "net_balance_year": {
+        "name": "Balanç net (any)"
+      },
       "punta_exported_kwh_today": {
         "name": "kWh exportats en punta (avui)"
       },

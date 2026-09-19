@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Surplus compensation (year)"
       },
+      "net_balance_today": {
+        "name": "Net balance today"
+      },
+      "net_balance_week": {
+        "name": "Net balance (week)"
+      },
+      "net_balance_month": {
+        "name": "Net balance (month)"
+      },
+      "net_balance_year": {
+        "name": "Net balance (year)"
+      },
       "punta_exported_kwh_today": {
         "name": "Peak exported energy (today)"
       },

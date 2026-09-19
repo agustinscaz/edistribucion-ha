@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Компенсация за излишки (год)"
       },
+      "net_balance_today": {
+        "name": "Чистый баланс сегодня"
+      },
+      "net_balance_week": {
+        "name": "Чистый баланс (неделя)"
+      },
+      "net_balance_month": {
+        "name": "Чистый баланс (месяц)"
+      },
+      "net_balance_year": {
+        "name": "Чистый баланс (год)"
+      },
       "punta_exported_kwh_today": {
         "name": "Экспортированная энергия в пиковый период (сегодня)"
       },

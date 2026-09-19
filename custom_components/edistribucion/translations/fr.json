@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Compensation des excédents (année)"
       },
+      "net_balance_today": {
+        "name": "Bilan net aujourd'hui"
+      },
+      "net_balance_week": {
+        "name": "Bilan net (semaine)"
+      },
+      "net_balance_month": {
+        "name": "Bilan net (mois)"
+      },
+      "net_balance_year": {
+        "name": "Bilan net (année)"
+      },
       "punta_exported_kwh_today": {
         "name": "Énergie exportée en heures pleines (aujourd'hui)"
       },

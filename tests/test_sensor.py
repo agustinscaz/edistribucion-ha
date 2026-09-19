@@ -241,6 +241,76 @@ async def test_surplus_compensation_year_adds_completed_months_and_current_month
     assert sensor.native_value == pytest.approx(0.4 + 3.0 * 0.05)
 
 
+_NET_BALANCE_OVERRIDES = {
+    "tariff_type": "fija",
+    "fixed_price": 0.2,
+    "price_power_punta": 0.1,
+    "price_power_valle": 0.05,
+    "surplus_compensation": True,
+    "surplus_price": 0.05,
+}
+
+
+async def test_net_balance_sensors_gated_on_energy_power_and_surplus(hass):
+    """Issue #23: net_balance_* solo se crea si hay coste de energía Y potencia configurados Y
+    compensación de excedentes activada — sin alguno de los tres, la resta no tiene con qué."""
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    ids = _unique_ids(entities)
+    for period in ("today", "week", "month", "year"):
+        assert f"contA_net_balance_{period}" in ids, period
+
+    hass.data[DOMAIN].clear()
+    overrides_no_surplus = {k: v for k, v in _NET_BALANCE_OVERRIDES.items() if k != "surplus_compensation"}
+    bundles_no_surplus = {"contA": _bundle(overrides_no_surplus, has_export=True)}
+    entities_no_surplus = await _setup_with_fake_coordinator(hass, bundles_no_surplus)
+    assert "contA_net_balance_today" not in _unique_ids(entities_no_surplus)
+
+
+async def test_net_balance_today_value(hass):
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    bundles["contA"]["consumption"] = {
+        "dailyTotals": [{"date": "19/09/2026", "importedKwh": 4.0, "exportedKwh": 2.0}],
+        "hourlyByDate": {},
+    }
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_net_balance_today"]
+    # coste: 4.0 kWh x 0.2 €/kWh = 0.8 € energía + (3.5*0.1 + 3.5*0.05) = 0.525 € potencia = 1.325 €
+    # compensación: 2.0 kWh x 0.05 €/kWh = 0.1 €
+    assert sensor.native_value == pytest.approx(0.1 - 1.325)
+
+
+async def test_net_balance_month_value(hass):
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    bundles["contA"]["month"]["dailyTotals"] = [{"date": "01/09/2026"}, {"date": "02/09/2026"}]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_net_balance_month"]
+    # coste: 10 kWh x 0.2 €/kWh = 2.0 € energía + 0.525 €/día x 2 días = 1.05 € potencia = 3.05 €
+    # compensación: 3.0 kWh x 0.05 €/kWh = 0.15 €
+    assert sensor.native_value == pytest.approx(0.15 - 3.05)
+
+
+async def test_net_balance_year_value(hass):
+    bundles = {"contA": _bundle(_NET_BALANCE_OVERRIDES, has_export=True)}
+    bundles["contA"]["month"]["dailyTotals"] = [{"date": "01/09/2026"}, {"date": "02/09/2026"}]
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    coordinator = entities[0].coordinator
+    coordinator._year_to_date["contA"] = {
+        "imported_kwh": 0.0,
+        "exported_kwh": 0.0,
+        "cost": 5.0,
+        "power_cost": 2.0,
+        "surplus_compensation": 1.0,
+    }
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    sensor = by_id["contA_net_balance_year"]
+    # coste año: (5.0 completado + 2.0 mes actual) energía + (2.0 completado + 1.05 mes actual) potencia = 10.05
+    # compensación año: 1.0 completado + 0.15 mes actual = 1.15
+    assert sensor.native_value == pytest.approx(1.15 - 10.05)
+
+
 async def test_no_tramo_sensors_without_price_configured(hass):
     bundles = {"contA": _bundle({"tariff_type": "tramos"})}  # sin ningún precio de tramos puesto
     entities = await _setup_with_fake_coordinator(hass, bundles)

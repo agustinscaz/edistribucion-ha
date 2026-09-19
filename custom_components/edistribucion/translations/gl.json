@@ -134,6 +134,18 @@
       "surplus_compensation_year": {
         "name": "Compensación por excedentes (ano)"
       },
+      "net_balance_today": {
+        "name": "Balance neto hoxe"
+      },
+      "net_balance_week": {
+        "name": "Balance neto (semana)"
+      },
+      "net_balance_month": {
+        "name": "Balance neto (mes)"
+      },
+      "net_balance_year": {
+        "name": "Balance neto (ano)"
+      },
       "punta_exported_kwh_today": {
         "name": "kWh exportados en punta (hoxe)"
       },
