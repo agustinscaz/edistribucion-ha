@@ -558,6 +558,35 @@ async def test_current_tramo_price_sensor_applies_iee_and_iva(hass, monkeypatch)
     assert by_id["contA_current_tramo_price"].native_value == pytest.approx(apply_iva(apply_iee(0.25, 5.11269632), 21))
 
 
+async def test_current_tramo_price_sensor_exposes_per_period_prices(hass, monkeypatch):
+    """Issue #31: precio_punta/llano/valle con IEE+IVA como atributos, no solo el vigente/min/medio/max."""
+    from datetime import datetime, timezone
+
+    from custom_components.edistribucion.costs import apply_iee, apply_iva
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 10, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle(
+        {
+            "tariff_type": "tramos",
+            "price_punta": 0.25,
+            "price_llano": 0.15,
+            "price_valle": 0.05,
+            "iee_percent": 5.11269632,
+            "iva_percent": 21,
+        }
+    )
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    attrs = by_id["contA_current_tramo_price"].extra_state_attributes
+
+    assert attrs["precio_punta"] == pytest.approx(apply_iva(apply_iee(0.25, 5.11269632), 21))
+    assert attrs["precio_llano"] == pytest.approx(apply_iva(apply_iee(0.15, 5.11269632), 21))
+    assert attrs["precio_valle"] == pytest.approx(apply_iva(apply_iee(0.05, 5.11269632), 21))
+
+
 async def test_next_tramo_period_change_sensor_value(hass, monkeypatch):
     """Lunes 09:30 (llano en PCB) -> el próximo cambio es a las 10:00 (empieza punta)."""
     from datetime import datetime, timezone

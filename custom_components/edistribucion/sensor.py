@@ -888,11 +888,19 @@ class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
         now = dt_util.now()
         period = current_period(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
         today_prices = list(tramo_prices_today(now, sp).values())
+        iee = sp.get("iee_percent") or 0
+        iva = sp.get("iva_percent") or 0
+        # precio_punta/llano/valle (issue #31): los 3 precios CON IEE+IVA, no solo el vigente — para
+        # gráficas/dashboards que reparten kWh por tramo sin tener que deducir llano (que solo sale
+        # bien en días laborables, no en festivos/fin de semana con holiday_region configurada).
         return {
             "periodo_actual": period,
             "precio_minimo_hoy": round(min(today_prices), 5),
             "precio_medio_hoy": round(sum(today_prices) / len(today_prices), 5),
             "precio_maximo_hoy": round(max(today_prices), 5),
+            "precio_punta": round(apply_iva(apply_iee(sp.get("price_punta") or 0, iee), iva), 5),
+            "precio_llano": round(apply_iva(apply_iee(sp.get("price_llano") or 0, iee), iva), 5),
+            "precio_valle": round(apply_iva(apply_iee(sp.get("price_valle") or 0, iee), iva), 5),
         }
 
 
