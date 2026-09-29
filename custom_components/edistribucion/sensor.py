@@ -379,7 +379,12 @@ class _EdistribucionPeriodEnergySensor(_EdistribucionBaseSensor):
             return {}
         field = f"{self._flow}Kwh"
         # `or []`: mismo motivo que en EdistribucionPowerCostMonthSensor._days_elapsed (issue #9).
-        return {"daily_totals": [{"date": d["date"], "kwh": d.get(field)} for d in period.get("dailyTotals") or []]}
+        attrs = {"daily_totals": [{"date": d["date"], "kwh": d.get(field)} for d in period.get("dailyTotals") or []]}
+        # rango_real (issue #21/#28): igual que en los sensores de coste, para poder confirmar desde
+        # HA si "semana"/"mes" es calendario a la fecha o una ventana rolling de N días — sin esto
+        # había que leer el código para saberlo, y el nombre del sensor por sí solo es engañoso.
+        attrs.update(_month_range_attributes(period))
+        return attrs
 
     @property
     def available(self) -> bool:
@@ -530,6 +535,13 @@ class EdistribucionEstimatedCostWeekSensor(_EdistribucionEstimatedCostSensor):
     @property
     def _hourly_source(self) -> dict | None:
         return self._bundle.get("week")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        # rango_real también en semana (issue #21), no solo en mes — mismo motivo: "semana" puede
+        # ser una ventana rolling de N días, no lunes-a-la-fecha, y sin esto había que inferirlo del
+        # número (coste_diario × 7 siempre, sin importar qué día de la semana es hoy).
+        return {**super().extra_state_attributes, **_month_range_attributes(self._bundle.get("week"))}
 
 
 class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
@@ -1220,8 +1232,9 @@ class _EdistribucionPowerCostPeriodSensor(_EdistribucionBaseSensor):
             "iee_percent": sp.get("iee_percent") or 0,
             "iva_percent": sp.get("iva_percent") or 0,
         }
-        if self._period_key == "month":
-            attrs.update(_month_range_attributes(self._period))
+        # rango_real en semana Y mes (issue #21/#28) — "semana"/"mes" pueden ser ventana rolling de
+        # N días en vez de calendario a la fecha, ver _month_range_attributes.
+        attrs.update(_month_range_attributes(self._period))
         return attrs
 
 
@@ -1362,8 +1375,7 @@ class _EdistribucionEstimatedCostWithPowerPeriodSensor(_EdistribucionBaseSensor)
     @property
     def extra_state_attributes(self) -> dict:
         attrs = {"coste_energia": self._energy_cost, "termino_potencia": self._power_cost}
-        if self._period_key == "month":
-            attrs.update(_month_range_attributes(self._period))
+        attrs.update(_month_range_attributes(self._period))
         return attrs
 
 
@@ -1573,8 +1585,7 @@ class _EdistribucionNetBalancePeriodSensor(_EdistribucionBaseSensor):
     @property
     def extra_state_attributes(self) -> dict:
         attrs = {"compensacion": self._compensation, "coste_con_potencia": self._cost_with_power}
-        if self._period_key == "month":
-            attrs.update(_month_range_attributes(self._period))
+        attrs.update(_month_range_attributes(self._period))
         return attrs
 
 
