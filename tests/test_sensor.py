@@ -1020,6 +1020,25 @@ async def test_month_sensors_expose_real_date_range(hass):
         assert by_id[uid].extra_state_attributes["rango_real"] == "2026-08-20 a 2026-09-19", uid
 
 
+async def test_surplus_compensation_week_month_expose_real_date_range(hass):
+    """Issue #28: la compensación por excedentes semana/mes depende de `bundle["week"]`/`["month"]`,
+    así que también expone `rango_real`."""
+    bundles = {"contA": _bundle({"price_punta": 0.25, "surplus_compensation": True, "surplus_price": 0.06})}
+    bundles["contA"]["week"] = {
+        "totalImportedKwh": 5.0,
+        "totalExportedKwh": 2.0,
+        "hourlyByDate": {},
+        "startDate": "2026-09-23",
+        "endDate": "2026-09-29",
+    }
+    bundles["contA"]["month"]["startDate"] = "2026-08-30"
+    bundles["contA"]["month"]["endDate"] = "2026-09-29"
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_surplus_compensation_week"].extra_state_attributes["rango_real"] == "2026-09-23 a 2026-09-29"
+    assert by_id["contA_surplus_compensation_month"].extra_state_attributes["rango_real"] == "2026-08-30 a 2026-09-29"
+
+
 async def test_month_range_attributes_missing_when_no_dates(hass):
     """Sin `startDate`/`endDate` en el bundle (add-on viejo, o "today"/"week"), no debe aparecer
     `rango_real` ni romper con KeyError."""

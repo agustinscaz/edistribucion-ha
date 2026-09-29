@@ -1040,6 +1040,10 @@ class EdistribucionSurplusCompensationWeekSensor(_EdistribucionSurplusCompensati
         week = self._bundle.get("week")
         return week.get("totalExportedKwh") if week else None
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _month_range_attributes(self._bundle.get("week"))
+
 
 class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensationSensor):
     _attr_state_class = SensorStateClass.TOTAL
@@ -1052,6 +1056,10 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
     def _exported_kwh(self) -> float | None:
         month = self._bundle.get("month")
         return month.get("totalExportedKwh") if month else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return _month_range_attributes(self._bundle.get("month"))
 
 
 class EdistribucionSurplusCompensationYearSensor(_EdistribucionSurplusCompensationSensor):
