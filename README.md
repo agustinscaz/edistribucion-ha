@@ -178,6 +178,10 @@ cards:
 
 Si además añades los sensores de energía al **Dashboard de Energía** (Ajustes → Dashboards → Energía → Añadir consumo de la red), tienes gráficas ya hechas sin montar nada a mano.
 
+**Qué poner en el Dashboard de Energía.** Para la red, lo más fiable son las estadísticas EXTERNAS que escribe la integración (se ven como «e-distribución <CUPS> — energía importada/exportada», `edistribucion:<cups>_imported_energy` / `_exported_energy`): son horarias y se reescriben cada día con las correcciones retroactivas de e-distribución. Los sensores `_hoy` también valen (desde la v1.31.26): llevan `last_reset` y HA ya no los cuenta como consumo negativo al cambiar de día.
+
+**`last_reset` (v1.31.26, issue #32).** Los sensores diarios (`_hoy`, `balance_neto_ayer`, tramos «de hoy», compensación y coste de hoy) tienen `state_class: total` y exponen `last_reset` = inicio del día LOCAL al que pertenecen los datos que muestran (el de `fecha_real`), no el de la medianoche del reloj: e-distribución publica con retraso y revisa valores ya publicados, así que una corrección dentro del mismo día se aplica como delta del mismo ciclo y el ciclo nuevo empieza cuando el sensor pasa de verdad al día siguiente. `termino_de_potencia_hoy` (valor fijo por día) usa el inicio del día natural, y los `_año` el 1 de enero. Los de semana/mes son ventanas móviles (no contadores) y no llevan `last_reset`. Las estadísticas históricas ya erróneas no se corrigen solas hacia atrás (usa Herramientas de desarrollo → Estadísticas).
+
 ## Cómo funciona
 
 1. Al arrancar el add-on (o cuando la sesión caduca), lanza Chromium en segundo plano, hace login real en `zonaprivada.edistribucion.com`, y captura la cookie de sesión (`sid`) y el token de la aplicación (`aura.token`) de una llamada real de la propia web — **después cierra el navegador por completo**.

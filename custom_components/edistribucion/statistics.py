@@ -452,8 +452,9 @@ async def async_backfill_cost_statistics(
     e-distribución (que solo retiene granularidad diaria ~1-2 meses hacia atrás, ver issue #25).
 
     Por qué estadísticas EXTERNAS propias y no las del propio sensor "_hoy" (`sensor.<cups>_
-    coste_estimado_hoy`, `_termino_de_potencia_hoy`, etc.): esos sensores usan `state_class=TOTAL`
-    SIN `last_reset`, y leyendo `compile_statistics` en
+    coste_estimado_hoy`, `_termino_de_potencia_hoy`, etc.): esos sensores usaban `state_class=TOTAL`
+    SIN `last_reset` (desde la v1.31.26, issue #32, los diarios ya lo llevan, pero se mantienen estas
+    estadísticas externas porque se reescriben con las correcciones retroactivas), y leyendo `compile_statistics` en
     `homeassistant/components/sensor/recorder.py` se confirma que esa combinación NO compensa el
     reseteo diario a medianoche — sin un reset explícito, el reset solo se detecta la PRIMERA vez
     que se compilan estadísticas para ese sensor; a partir de ahí, cada bajada (incluida la de

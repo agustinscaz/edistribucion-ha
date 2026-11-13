@@ -5,6 +5,8 @@ verifica vía CI, no en el sandbox de desarrollo local (sin pip)."""
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -1096,3 +1098,135 @@ async def test_today_date_attribute_missing_without_daily_totals(hass):
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     assert "fecha_real" not in by_id["contA_imported_energy_today"].extra_state_attributes
     assert "fecha_real" not in by_id["contA_self_consumption_today"].extra_state_attributes
+
+
+# ---------------------------------------------------------------------------------------------
+# last_reset (issue #32): sensores diarios/anuales state_class=TOTAL sin last_reset hacían que HA
+# viera la vuelta a un valor bajo como un descenso (consumo negativo en el panel de Energía).
+# ---------------------------------------------------------------------------------------------
+
+_DAILY_DATA_UIDS = (
+    "contA_imported_energy_today",
+    "contA_exported_energy_today",
+    "contA_estimated_cost_today",
+    "contA_estimated_cost_today_with_power",
+    "contA_punta_kwh_today",
+    "contA_punta_cost_today",
+    "contA_punta_exported_kwh_today",
+    "contA_punta_exported_compensation_today",
+    "contA_surplus_compensation_today",
+    "contA_net_balance_today",
+)
+
+
+def _lr_bundle(date_str="18/09/2026", imported=5.0):
+    bundle = _bundle(
+        {
+            "price_punta": 0.25,
+            "price_power_punta": 0.1,
+            "price_power_valle": 0.05,
+            "surplus_compensation": True,
+            "surplus_price": 0.05,
+        }
+    )
+    bundle["consumption"] = {
+        "dailyTotals": [{"date": date_str, "importedKwh": imported, "exportedKwh": 1.0}],
+        "hourlyByDate": {date_str: [{"hour": "10 - 11 h", "importedKwh": imported, "exportedKwh": 1.0}]},
+    }
+    return bundle
+
+
+async def test_daily_sensors_last_reset_is_local_midnight_of_data_day(hass):
+    from homeassistant.util import dt as dt_util
+
+    entities = await _setup_with_fake_coordinator(hass, {"contA": _lr_bundle()})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    expected = dt_util.start_of_local_day(date(2026, 9, 18))
+    for uid in _DAILY_DATA_UIDS:
+        last_reset = by_id[uid].last_reset
+        assert last_reset is not None, uid
+        assert last_reset.tzinfo is not None, uid
+        assert last_reset == expected, uid
+        # HA publica last_reset como atributo de estado solo con state_class TOTAL
+        assert by_id[uid].state_attributes["last_reset"] == expected.isoformat(), uid
+
+
+async def test_daily_last_reset_stable_when_value_is_revised_same_day(hass):
+    """e-distribución revisa valores con retraso: una corrección DENTRO del mismo día no puede abrir
+    un ciclo nuevo (last_reset igual), para que HA la aplique como delta del mismo ciclo."""
+    bundles = {"contA": _lr_bundle(imported=5.0)}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    sensor = next(e for e in entities if getattr(e, "_attr_unique_id", None) == "contA_imported_energy_today")
+    before = sensor.last_reset
+    bundles["contA"]["consumption"]["dailyTotals"][0]["importedKwh"] = 4.2
+    assert sensor.native_value == pytest.approx(4.2)
+    assert sensor.last_reset == before
+
+
+async def test_daily_last_reset_follows_data_day_not_wall_clock(hass):
+    """Si e-distribución aún no ha publicado el día nuevo, el sensor sigue mostrando el último día
+    cerrado y last_reset NO debe saltar con la medianoche del reloj; cambia cuando los datos pasan
+    al día siguiente."""
+    from homeassistant.util import dt as dt_util
+
+    bundles = {"contA": _lr_bundle(date_str="18/09/2026")}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    sensor = next(e for e in entities if getattr(e, "_attr_unique_id", None) == "contA_imported_energy_today")
+    assert sensor.last_reset == dt_util.start_of_local_day(date(2026, 9, 18))
+    bundles["contA"].update(_lr_bundle(date_str="19/09/2026", imported=0.3))
+    assert sensor.last_reset == dt_util.start_of_local_day(date(2026, 9, 19))
+
+
+async def test_daily_last_reset_none_without_data(hass):
+    bundles = {"contA": _bundle({"price_punta": 0.25})}
+    entities = await _setup_with_fake_coordinator(hass, bundles)
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_imported_energy_today"].last_reset is None
+    assert "last_reset" not in (by_id["contA_imported_energy_today"].state_attributes or {})
+
+
+async def test_power_cost_today_last_reset_is_calendar_day(hass):
+    from homeassistant.util import dt as dt_util
+
+    entities = await _setup_with_fake_coordinator(hass, {"contA": _lr_bundle()})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_power_cost_today"].last_reset == dt_util.start_of_local_day()
+
+
+async def test_net_balance_yesterday_last_reset_uses_second_latest_day(hass):
+    from homeassistant.util import dt as dt_util
+
+    bundle = _lr_bundle()
+    bundle["month"]["dailyTotals"] = [
+        {"date": "17/09/2026", "importedKwh": 1.0, "exportedKwh": 0.0},
+        {"date": "18/09/2026", "importedKwh": 2.0, "exportedKwh": 0.0},
+        {"date": "19/09/2026", "importedKwh": 0.0, "exportedKwh": 0.0},
+    ]
+    entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    assert by_id["contA_net_balance_yesterday"].last_reset == dt_util.start_of_local_day(date(2026, 9, 18))
+
+
+async def test_year_sensors_last_reset_is_january_first(hass):
+    from homeassistant.util import dt as dt_util
+
+    entities = await _setup_with_fake_coordinator(hass, {"contA": _lr_bundle()})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    expected = dt_util.start_of_local_day(date(dt_util.now().year, 1, 1))
+    for uid in (
+        "contA_year_to_date_cost",
+        "contA_surplus_compensation_year",
+        "contA_power_cost_year",
+        "contA_estimated_cost_year_with_power",
+        "contA_net_balance_year",
+    ):
+        assert by_id[uid].last_reset == expected, uid
+
+
+async def test_rolling_window_sensors_have_no_last_reset(hass):
+    """Semana/mes son ventanas móviles, no contadores: no admiten un last_reset correcto (cada día
+    el valor cambiaría de ciclo y se sumaría entero). Se dejan sin last_reset a propósito."""
+    entities = await _setup_with_fake_coordinator(hass, {"contA": _lr_bundle()})
+    by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+    for uid in ("contA_imported_energy_month", "contA_exported_energy_week", "contA_estimated_cost_month", "contA_punta_kwh_month"):
+        assert by_id[uid].last_reset is None, uid

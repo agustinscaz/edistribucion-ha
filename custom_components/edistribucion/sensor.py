@@ -3,7 +3,7 @@ estimado (con desglose por tramo, importado y exportado)."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -98,6 +98,63 @@ def _today_date_attributes(consumption: dict | None) -> dict:
     if not day:
         return {}
     return {"fecha_real": day["date"]}
+
+
+def _local_day_start(date_str: str | None) -> datetime | None:
+    """'DD/MM/YYYY' -> las 00:00 LOCALES de ese día (tz-aware), o None si no hay fecha válida."""
+    if not date_str:
+        return None
+    try:
+        day = datetime.strptime(date_str, "%d/%m/%Y").date()
+    except ValueError:
+        return None
+    return dt_util.start_of_local_day(day)
+
+
+class _DayDataLastResetMixin:
+    """`last_reset` de los sensores DIARIOS ("_hoy", "_ayer", tramos de hoy): el inicio del día local
+    AL QUE PERTENECEN LOS DATOS que muestra el sensor (`fecha_real`), no el del reloj.
+
+    Sin `last_reset`, `state_class=TOTAL` hace que el motor de estadísticas de HA vea la vuelta a un
+    valor bajo del día siguiente como un descenso real (consumo negativo; issue #32), y el panel de
+    Energía sale con sumas absurdas. Con `last_reset` HA abre un ciclo nuevo y suma el valor nuevo
+    desde 0 (ver `homeassistant/components/sensor/recorder.py`, compile_statistics).
+
+    Por qué la fecha de los datos y no la medianoche del reloj: e-distribución publica con retraso
+    (el sensor puede seguir mostrando el último día cerrado horas después de medianoche, #26) y
+    revisa valores ya publicados. Atando `last_reset` al día de los datos, una corrección dentro del
+    mismo día NO abre ciclo nuevo (HA la aplica como delta del mismo ciclo, que es lo correcto) y el
+    ciclo nuevo empieza justo cuando el sensor pasa de verdad a otro día.
+
+    El mixin va ANTES de `_EdistribucionBaseSensor` en las bases para que su `last_reset` gane."""
+
+    @property
+    def _reset_date_str(self) -> str | None:
+        day = _latest_daily_total(self._bundle.get("consumption"))
+        return day["date"] if day else None
+
+    @property
+    def last_reset(self) -> datetime | None:
+        return _local_day_start(self._reset_date_str)
+
+
+class _CalendarDayLastResetMixin:
+    """`last_reset` = inicio del día local natural. Para sensores cuyo valor es fijo por día y no
+    depende de los datos de e-distribución (término de potencia de hoy): cada día el valor
+    "vuelve" y HA debe contarlo como un día nuevo, no como una bajada."""
+
+    @property
+    def last_reset(self) -> datetime | None:
+        return dt_util.start_of_local_day()
+
+
+class _YearLastResetMixin:
+    """`last_reset` = 1 de enero local del año en curso, para los sensores acumulados `_año`: con él
+    el cambio de año se cuenta como ciclo nuevo y no como una caída del acumulado."""
+
+    @property
+    def last_reset(self) -> datetime | None:
+        return dt_util.start_of_local_day(date(dt_util.now().year, 1, 1))
 
 
 def _month_range_attributes(month: dict | None) -> dict:
@@ -284,7 +341,7 @@ def _freshness_attributes(coordinator: EdistribucionCoordinator, cont_id: str, f
     }
 
 
-class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
+class EdistribucionImportedEnergySensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     entity_description = SensorEntityDescription(
         key="imported_energy_today",
         translation_key="imported_energy_today",
@@ -315,7 +372,7 @@ class EdistribucionImportedEnergySensor(_EdistribucionBaseSensor):
         }
 
 
-class EdistribucionExportedEnergySensor(_EdistribucionBaseSensor):
+class EdistribucionExportedEnergySensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     entity_description = SensorEntityDescription(
         key="exported_energy_today",
         translation_key="exported_energy_today",
@@ -471,7 +528,7 @@ class _EdistribucionEstimatedCostSensor(_EdistribucionBaseSensor):
         return self._breakdown or {}
 
 
-class EdistribucionEstimatedCostTodaySensor(_EdistribucionEstimatedCostSensor):
+class EdistribucionEstimatedCostTodaySensor(_DayDataLastResetMixin, _EdistribucionEstimatedCostSensor):
     # device_class=MONETARY (heredado de _EdistribucionEstimatedCostSensor) solo admite None o
     # TOTAL como state_class — TOTAL_INCREASING es inválido para "monetary" y HA rechaza la
     # entidad entera al añadirla ("Error adding entity ... impossible considering device class").
@@ -544,7 +601,7 @@ class EdistribucionEstimatedCostWeekSensor(_EdistribucionEstimatedCostSensor):
         return {**super().extra_state_attributes, **_month_range_attributes(self._bundle.get("week"))}
 
 
-class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
+class _EdistribucionTramoSensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     """kWh o coste de UN tramo (punta/llano/valle) de la tarifa 'tramos' (ver costs.cost_breakdown)
     — mismo cálculo que ya usa EdistribucionEstimatedCostTodaySensor/MonthSensor (que lo trae solo
     como atributo anidado), pero como entidad propia por tramo, para poder graficar o automatizar
@@ -577,6 +634,13 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
             self._attr_state_class = SensorStateClass.TOTAL
 
     @property
+    def _reset_date_str(self) -> str | None:
+        # Solo "hoy" es un contador diario; el de "mes" es una ventana móvil, sin reset limpio.
+        if self._period_key != "today":
+            return None
+        return super()._reset_date_str
+
+    @property
     def _hourly_source(self) -> dict | None:
         if self._period_key == "today":
             return _latest_day_hourly(self._bundle.get("consumption"))
@@ -606,7 +670,7 @@ class _EdistribucionTramoSensor(_EdistribucionBaseSensor):
         return _today_date_attributes(self._bundle.get("consumption"))
 
 
-class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
+class _EdistribucionExportTramoSensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     """kWh exportados o compensación de UN tramo (punta/llano/valle) — mismo bucketing horario/
     festivo que `_EdistribucionTramoSensor`, pero sobre `exportedKwh` en vez de `importedKwh`. El
     precio de compensación es PLANO (mismo €/kWh todo el día, sin franjas horarias) — el € por
@@ -637,6 +701,13 @@ class _EdistribucionExportTramoSensor(_EdistribucionBaseSensor):
             self._attr_device_class = SensorDeviceClass.MONETARY
             self._attr_native_unit_of_measurement = "EUR"
             self._attr_state_class = SensorStateClass.TOTAL
+
+    @property
+    def _reset_date_str(self) -> str | None:
+        # Solo "hoy" es un contador diario; el de "mes" es una ventana móvil, sin reset limpio.
+        if self._period_key != "today":
+            return None
+        return super()._reset_date_str
 
     @property
     def _hourly_source(self) -> dict | None:
@@ -690,7 +761,7 @@ class EdistribucionAveragePriceMonthSensor(_EdistribucionBaseSensor):
         return average_price_per_kwh(cost_total, imported_kwh)
 
 
-class EdistribucionYearToDateCostSensor(_EdistribucionBaseSensor):
+class EdistribucionYearToDateCostSensor(_YearLastResetMixin, _EdistribucionBaseSensor):
     """Coste estimado acumulado en lo que va de año: meses ya completados (recalculados una vez al
     día, ver coordinator._async_update_year_to_date_if_needed) + el mes en curso (en vivo, con lo
     que ya se tiene en `bundle["month"]`). Para tarifa pvpc, los meses anteriores al actual pueden
@@ -1006,7 +1077,7 @@ class _EdistribucionSurplusCompensationSensor(_EdistribucionBaseSensor):
         return surplus_compensation_value(sp, self._exported_kwh)
 
 
-class EdistribucionSurplusCompensationTodaySensor(_EdistribucionSurplusCompensationSensor):
+class EdistribucionSurplusCompensationTodaySensor(_DayDataLastResetMixin, _EdistribucionSurplusCompensationSensor):
     # Igual que en EdistribucionEstimatedCostTodaySensor: device_class=MONETARY no admite
     # TOTAL_INCREASING como state_class.
     _attr_state_class = SensorStateClass.TOTAL
@@ -1062,7 +1133,7 @@ class EdistribucionSurplusCompensationMonthSensor(_EdistribucionSurplusCompensat
         return _month_range_attributes(self._bundle.get("month"))
 
 
-class EdistribucionSurplusCompensationYearSensor(_EdistribucionSurplusCompensationSensor):
+class EdistribucionSurplusCompensationYearSensor(_YearLastResetMixin, _EdistribucionSurplusCompensationSensor):
     """Como EdistribucionSurplusCompensationMonthSensor pero acumulado en lo que va de año: meses ya
     completados (cacheados con el precio de compensación vigente cuando se cacheó cada uno, ver
     coordinator._async_update_year_to_date_if_needed) + el mes en curso, en vivo."""
@@ -1157,7 +1228,7 @@ class EdistribucionSelfConsumptionMonthSensor(_EdistribucionSelfConsumptionSenso
         return month.get("totalExportedKwh") if month else None
 
 
-class EdistribucionPowerCostTodaySensor(_EdistribucionBaseSensor):
+class EdistribucionPowerCostTodaySensor(_CalendarDayLastResetMixin, _EdistribucionBaseSensor):
     """Término de potencia fijo del día de ESTE CUPS, CON IEE + IVA: kW contratados × precio
     €/kW/día, sumando punta y valle, con el IEE y el IVA de este CUPS aplicados encima EN ESE ORDEN
     (ver costs.power_cost) — se factura siempre, no depende del consumo ni de la franja horaria."""
@@ -1256,7 +1327,7 @@ class EdistribucionPowerCostMonthSensor(_EdistribucionPowerCostPeriodSensor):
         super().__init__(coordinator, cont_id, supply_point, "month", "power_cost_month")
 
 
-class EdistribucionPowerCostYearSensor(_EdistribucionBaseSensor):
+class EdistribucionPowerCostYearSensor(_YearLastResetMixin, _EdistribucionBaseSensor):
     """Término de potencia acumulado en lo que va de año: meses ya completados (issue #27, sumados
     de las estadísticas del recorder que esta integración mantiene con arrastre propio, ver
     coordinator._async_update_year_to_date_if_needed) + el mes en curso, en vivo (mismo cálculo que
@@ -1288,7 +1359,7 @@ class EdistribucionPowerCostYearSensor(_EdistribucionBaseSensor):
         return round((completed.get("power_cost") or 0.0) + self._current_month_power_cost, 4)
 
 
-class EdistribucionEstimatedCostTodayWithPowerSensor(_EdistribucionBaseSensor):
+class EdistribucionEstimatedCostTodayWithPowerSensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     """Coste total estimado de HOY: coste de energía (igual que EdistribucionEstimatedCostTodaySensor,
     con IEE + IVA si están configurados) + término de potencia del día (igual que
     EdistribucionPowerCostTodaySensor, también con IEE + IVA) — una única cifra de "cuánto llevo
@@ -1397,7 +1468,7 @@ class EdistribucionEstimatedCostMonthWithPowerSensor(_EdistribucionEstimatedCost
         super().__init__(coordinator, cont_id, supply_point, "month", "estimated_cost_month_with_power")
 
 
-class EdistribucionEstimatedCostYearWithPowerSensor(_EdistribucionBaseSensor):
+class EdistribucionEstimatedCostYearWithPowerSensor(_YearLastResetMixin, _EdistribucionBaseSensor):
     """Como EdistribucionEstimatedCostMonthWithPowerSensor pero acumulado en lo que va de año:
     coste de energía año (mismo cálculo que EdistribucionYearToDateCostSensor) + término de
     potencia año (mismo cálculo que EdistribucionPowerCostYearSensor)."""
@@ -1439,7 +1510,7 @@ class EdistribucionEstimatedCostYearWithPowerSensor(_EdistribucionBaseSensor):
         return {"coste_energia": self._energy_cost, "termino_potencia": self._power_cost}
 
 
-class EdistribucionNetBalanceTodaySensor(_EdistribucionBaseSensor):
+class EdistribucionNetBalanceTodaySensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     """Balance neto de HOY: compensación por excedentes − coste total (energía + potencia).
     Positivo = el periodo "regaló" dinero (compensación > coste), negativo = se pagó neto — la
     pregunta que en la práctica más importa, sin tener que restar dos sensores a mano (issue #23).
@@ -1491,7 +1562,7 @@ class EdistribucionNetBalanceTodaySensor(_EdistribucionBaseSensor):
         }
 
 
-class EdistribucionNetBalanceYesterdaySensor(_EdistribucionBaseSensor):
+class EdistribucionNetBalanceYesterdaySensor(_DayDataLastResetMixin, _EdistribucionBaseSensor):
     """Como EdistribucionNetBalanceTodaySensor pero para AYER de verdad, no lo que devuelva
     `consumption` (que puede ser el último día cerrado disfrazado de "hoy", issue #26) — se calcula
     a partir del día inmediatamente anterior al más reciente de `bundle["month"]`, que sí incluye
@@ -1509,6 +1580,11 @@ class EdistribucionNetBalanceYesterdaySensor(_EdistribucionBaseSensor):
         super().__init__(coordinator, cont_id, supply_point)
         self._attr_translation_key = "net_balance_yesterday"
         self._attr_unique_id = f"{cont_id}_net_balance_yesterday"
+
+    @property
+    def _reset_date_str(self) -> str | None:
+        day = _second_latest_daily_total(self._bundle.get("month"))
+        return day["date"] if day else None
 
     @property
     def _cost_with_power(self) -> float | None:
@@ -1607,7 +1683,7 @@ class EdistribucionNetBalanceMonthSensor(_EdistribucionNetBalancePeriodSensor):
         super().__init__(coordinator, cont_id, supply_point, "month", "net_balance_month")
 
 
-class EdistribucionNetBalanceYearSensor(_EdistribucionBaseSensor):
+class EdistribucionNetBalanceYearSensor(_YearLastResetMixin, _EdistribucionBaseSensor):
     """Como EdistribucionNetBalanceMonthSensor pero acumulado en lo que va de año: mismo cálculo
     que EdistribucionEstimatedCostYearWithPowerSensor (coste) y
     EdistribucionSurplusCompensationYearSensor (compensación) — meses completados (cacheados) + el
