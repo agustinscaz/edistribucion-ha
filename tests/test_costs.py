@@ -3,7 +3,7 @@ autosuficiencia y comparador de tarifas. No depende de Home Assistant."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -811,3 +811,54 @@ class TestTramoPricesToday:
         sp = {"price_punta": 0.30, "price_llano": 0.20, "pvpc_zone": "CYM"}
         prices = tramo_prices_today(datetime(2026, 7, 27, 12, 0), sp)  # lunes
         assert prices[10] == pytest.approx(0.20)  # llano en CYM, no punta
+
+
+class TestPeriod20TDSchedule:
+    """v1.32.0: horario 2.0TD (PCB) hora a hora en hora local española, incluidos los cambios de hora."""
+
+    MADRID = __import__("zoneinfo").ZoneInfo("Europe/Madrid")
+    WEEKDAY = {0: VALLE, 7: VALLE, 8: LLANO, 9: LLANO, 10: PUNTA, 13: PUNTA, 14: LLANO, 17: LLANO, 18: PUNTA, 21: PUNTA, 22: LLANO, 23: LLANO}
+
+    @pytest.mark.parametrize("day", [16, 17, 18, 19, 20])  # lunes a viernes, 16-20 nov 2026
+    def test_weekday_hours(self, day):
+        expected = [VALLE] * 8 + [LLANO] * 2 + [PUNTA] * 4 + [LLANO] * 4 + [PUNTA] * 4 + [LLANO] * 2
+        got = [current_period(datetime(2026, 11, day, h, 30, tzinfo=self.MADRID)) for h in range(24)]
+        assert got == expected
+
+    @pytest.mark.parametrize("day", [21, 22])  # sábado y domingo
+    def test_weekend_all_valle(self, day):
+        assert {current_period(datetime(2026, 11, day, h, 0, tzinfo=self.MADRID)) for h in range(24)} == {VALLE}
+
+    @pytest.mark.parametrize("day", [(2026, 3, 29), (2026, 10, 25)])  # domingos de cambio de hora
+    def test_dst_sundays_are_valle_every_hour(self, day):
+        from datetime import timezone
+
+        start = datetime(*day, 0, 0, tzinfo=self.MADRID).astimezone(timezone.utc)
+        # Recorre el día en UTC (23 h en marzo, 25 h en octubre) para pasar por la hora repetida/saltada.
+        for i in range(26):
+            local = (start + timedelta(hours=i)).astimezone(self.MADRID)
+            if local.day != day[2]:
+                break
+            assert current_period(local) == VALLE
+
+    @pytest.mark.parametrize("day", [(2026, 3, 30), (2026, 10, 26)])  # lunes tras el cambio de hora
+    def test_monday_after_dst_change(self, day):
+        assert current_period(datetime(*day, 7, 59, tzinfo=self.MADRID)) == VALLE
+        assert current_period(datetime(*day, 8, 0, tzinfo=self.MADRID)) == LLANO
+        assert current_period(datetime(*day, 10, 0, tzinfo=self.MADRID)) == PUNTA
+
+    @pytest.mark.parametrize("day", [(2026, 3, 29), (2026, 10, 25)])
+    def test_next_change_across_dst_weekend(self, day):
+        from datetime import timezone
+
+        now = datetime(*day, 1, 30, tzinfo=self.MADRID)
+        nxt = next_period_change(now)
+        assert nxt == datetime(day[0], day[1], day[2] + 1, 8, 0, tzinfo=self.MADRID)
+        # El instante absoluto es el correcto (08:00 CEST = 06:00 UTC; 08:00 CET = 07:00 UTC).
+        assert nxt.astimezone(timezone.utc).hour == (6 if day[1] == 3 else 7)
+
+    def test_friday_night_to_monday(self):
+        nxt = next_period_change(datetime(2026, 11, 20, 22, 15, tzinfo=self.MADRID))
+        assert nxt == datetime(2026, 11, 21, 0, 0, tzinfo=self.MADRID)
+        assert current_period(nxt) == VALLE
+        assert next_period_change(nxt) == datetime(2026, 11, 23, 8, 0, tzinfo=self.MADRID)

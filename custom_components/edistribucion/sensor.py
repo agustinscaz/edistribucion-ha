@@ -13,9 +13,10 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -43,6 +44,46 @@ from .device import hub_device_info
 from .esios import DEFAULT_PVPC_ZONE
 
 _TARIFF_LABELS = {TARIFF_FIJA: "fija", TARIFF_TRAMOS: "tramos", TARIFF_PVPC: "pvpc"}
+
+# Hora legal española con la que se calculan los periodos de la 2.0TD. Se usa la zona horaria de
+# Home Assistant si es una de las españolas (Canarias aplica el horario de tramos en SU hora local);
+# con cualquier otra (p.ej. HA configurado en UTC por error), Europe/Madrid.
+_SPANISH_TIME_ZONES = {"Europe/Madrid", "Atlantic/Canary", "Africa/Ceuta"}
+_DEFAULT_TARIFF_TIME_ZONE = "Europe/Madrid"
+
+
+def _tariff_now() -> datetime:
+    """Ahora mismo en la hora local española (ver `_SPANISH_TIME_ZONES`)."""
+    now = dt_util.now()
+    tz = dt_util.DEFAULT_TIME_ZONE
+    if str(getattr(tz, "key", tz)) not in _SPANISH_TIME_ZONES:
+        tz = dt_util.get_time_zone(_DEFAULT_TARIFF_TIME_ZONE)
+    return now.astimezone(tz)
+
+
+def _sp_without_holidays(sp: dict) -> dict:
+    """Los sensores de "tramo ahora" solo tratan sábado y domingo como valle: los festivos entre
+    semana cuentan como laborables (decisión del mantenedor, v1.32.0), aunque el CUPS tenga una
+    región de festivos configurada para el desglose histórico de costes."""
+    return {**sp, "holiday_region": None}
+
+
+class _ClockRefreshMixin:
+    """Reescribe el estado a cada hora en punto, sin esperar al siguiente sondeo del coordinator.
+
+    Para sensores cuyo valor depende de la HORA (periodo tarifario vigente, precio PVPC de la hora
+    en curso, próximo cambio de tramo) y no de los datos descargados: antes solo cambiaban cuando
+    llegaba un sondeo (cada `scan_interval`), así que el cambio de tramo podía llegar hasta 15 min
+    tarde. Todos los cambios de periodo de la 2.0TD (y de precio PVPC) caen en hora en punto, así
+    que basta un disparo horario; si el estado no cambia, Home Assistant no registra nada nuevo."""
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_track_time_change(self.hass, self._async_clock_tick, minute=0, second=0))
+
+    @callback
+    def _async_clock_tick(self, _now: datetime) -> None:
+        self.async_write_ha_state()
 
 
 def _latest_daily_total(consumption: dict | None) -> dict | None:
@@ -850,7 +891,7 @@ class EdistribucionSimulatedCostMonthSensor(_EdistribucionEstimatedCostSensor):
         return estimate_cost_as_tariff(sp, self._simulated_tariff, self._imported_kwh, self._hourly_source, self.coordinator.pvpc_prices)
 
 
-class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
+class EdistribucionCurrentPvpcPriceSensor(_ClockRefreshMixin, _EdistribucionBaseSensor):
     """Precio PVPC de la hora en curso, CON el IEE y el IVA de este CUPS aplicados EN ESE ORDEN —
     UN solo sensor (no 24 por hora): el resto de precios del día (y de mañana, si ya están
     publicados) van como atributo, no como entidades separadas. El precio sin impuestos (el que
@@ -931,7 +972,7 @@ class EdistribucionCurrentPvpcPriceSensor(_EdistribucionBaseSensor):
         return super().available and bool(self._zone_prices)
 
 
-class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
+class EdistribucionCurrentTramoPriceSensor(_ClockRefreshMixin, _EdistribucionBaseSensor):
     """Precio de energía CON impuestos vigente AHORA MISMO para tarifa 'tramos' — equivalente a
     EdistribucionCurrentPvpcPriceSensor pero para tramos (ver issue #4): un único sensor con el
     periodo actual (punta/llano/valle) y estadísticas del día como atributos, para no tener que
@@ -958,24 +999,33 @@ class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
         return self._bundle.get("supply_point") or {}
 
     @property
+    def available(self) -> bool:
+        # Precios y horario salen de las Opciones del CUPS, no de lo descargado: un sondeo fallido
+        # (add-on reiniciando, e-distribución caída) no debe dejar sin precio a plantillas,
+        # energy_prices o automatizaciones de carga. Basta con tener el suministro en memoria.
+        return self.coordinator.data is not None and bool(self._sp)
+
+    def _current_period(self, now: datetime) -> str:
+        sp = self._sp
+        return current_period(now, None, sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+
+    @property
     def native_value(self) -> float | None:
         sp = self._sp
-        now = dt_util.now()
-        period = current_period(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        period = self._current_period(_tariff_now())
         prices = {PUNTA: sp.get("price_punta") or 0, LLANO: sp.get("price_llano") or 0, VALLE: sp.get("price_valle") or 0}
         return apply_iva(apply_iee(prices.get(period, 0), sp.get("iee_percent") or 0), sp.get("iva_percent") or 0)
 
     @property
     def extra_state_attributes(self) -> dict:
         sp = self._sp
-        now = dt_util.now()
-        period = current_period(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
-        today_prices = list(tramo_prices_today(now, sp).values())
+        now = _tariff_now()
+        period = self._current_period(now)
+        today_prices = list(tramo_prices_today(now, _sp_without_holidays(sp)).values())
         iee = sp.get("iee_percent") or 0
         iva = sp.get("iva_percent") or 0
         # precio_punta/llano/valle (issue #31): los 3 precios CON IEE+IVA, no solo el vigente — para
-        # gráficas/dashboards que reparten kWh por tramo sin tener que deducir llano (que solo sale
-        # bien en días laborables, no en festivos/fin de semana con holiday_region configurada).
+        # gráficas/dashboards que reparten kWh por tramo sin tener que deducir llano.
         return {
             "periodo_actual": period,
             "precio_minimo_hoy": round(min(today_prices), 5),
@@ -987,7 +1037,7 @@ class EdistribucionCurrentTramoPriceSensor(_EdistribucionBaseSensor):
         }
 
 
-class EdistribucionNextTramoPeriodChangeSensor(_EdistribucionBaseSensor):
+class EdistribucionNextTramoPeriodChangeSensor(_ClockRefreshMixin, _EdistribucionBaseSensor):
     """Cuándo cambia el periodo tarifario (punta/llano/valle) respecto al vigente ahora mismo — para
     disparar automatizaciones de carga/consumo EXACTAMENTE en ese instante (con un `trigger: time`
     apuntando a este sensor, ver ejemplo en el README) en vez de a una hora fija a ciegas que asume
@@ -1010,18 +1060,21 @@ class EdistribucionNextTramoPeriodChangeSensor(_EdistribucionBaseSensor):
         return self._bundle.get("supply_point") or {}
 
     @property
+    def available(self) -> bool:
+        # Igual que EdistribucionCurrentTramoPriceSensor: depende del reloj, no del sondeo.
+        return self.coordinator.data is not None and bool(self._sp)
+
+    @property
     def native_value(self):
         sp = self._sp
-        now = dt_util.now()
-        return next_period_change(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
+        return next_period_change(_tariff_now(), None, sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
 
     @property
     def extra_state_attributes(self) -> dict:
         sp = self._sp
-        now = dt_util.now()
-        next_change = next_period_change(now, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
-        siguiente_periodo = current_period(next_change, sp.get("holiday_region"), sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE)
-        return {"siguiente_periodo": siguiente_periodo}
+        zone = sp.get("pvpc_zone") or DEFAULT_PVPC_ZONE
+        next_change = next_period_change(_tariff_now(), None, zone)
+        return {"siguiente_periodo": current_period(next_change, None, zone)}
 
 
 class EdistribucionSurplusPriceSensor(_EdistribucionBaseSensor):

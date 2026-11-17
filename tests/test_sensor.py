@@ -593,16 +593,20 @@ async def test_next_tramo_period_change_sensor_value(hass, monkeypatch):
     """Lunes 09:30 (llano en PCB) -> el próximo cambio es a las 10:00 (empieza punta)."""
     from datetime import datetime, timezone
 
+    from zoneinfo import ZoneInfo
+
+    madrid = ZoneInfo("Europe/Madrid")
+    # El tramo se calcula en hora española (v1.32.0): 07:30 UTC = 09:30 en Madrid (verano).
     monkeypatch.setattr(
         "custom_components.edistribucion.sensor.dt_util.now",
-        lambda: datetime(2026, 7, 27, 9, 30, tzinfo=timezone.utc),
+        lambda: datetime(2026, 7, 27, 7, 30, tzinfo=timezone.utc),
     )
     bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15})
     entities = await _setup_with_fake_coordinator(hass, {"contA": bundle})
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     sensor = by_id["contA_next_tramo_period_change"]
 
-    assert sensor.native_value == datetime(2026, 7, 27, 10, 0, tzinfo=timezone.utc)
+    assert sensor.native_value == datetime(2026, 7, 27, 10, 0, tzinfo=madrid)
     assert sensor.extra_state_attributes["siguiente_periodo"] == "punta"
 
 
@@ -1230,3 +1234,84 @@ async def test_rolling_window_sensors_have_no_last_reset(hass):
     by_id = {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
     for uid in ("contA_imported_energy_month", "contA_exported_energy_week", "contA_estimated_cost_month", "contA_punta_kwh_month"):
         assert by_id[uid].last_reset is None, uid
+
+
+def _by_id(entities):
+    return {e._attr_unique_id: e for e in entities if hasattr(e, "_attr_unique_id")}
+
+
+async def test_current_tramo_uses_spanish_local_time_not_utc(hass, monkeypatch):
+    """v1.32.0: 08:30 UTC de un lunes de verano son las 10:30 en Madrid -> punta (en UTC sería llano)."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 7, 27, 8, 30, tzinfo=timezone.utc),
+    )
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05})
+    sensor = _by_id(await _setup_with_fake_coordinator(hass, {"contA": bundle}))["contA_current_tramo_price"]
+    assert sensor.extra_state_attributes["periodo_actual"] == "punta"
+    assert sensor.native_value == pytest.approx(0.25)
+
+
+async def test_current_tramo_ignores_holidays_even_with_region(hass, monkeypatch):
+    """Decisión v1.32.0: solo sábado y domingo son valle todo el día; un festivo entre semana (6 de
+    enero de 2026, martes) cuenta como laborable aunque el CUPS tenga región de festivos."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(
+        "custom_components.edistribucion.sensor.dt_util.now",
+        lambda: datetime(2026, 1, 6, 10, 30, tzinfo=timezone.utc),  # 11:30 en Madrid (invierno)
+    )
+    bundle = _bundle(
+        {"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15, "price_valle": 0.05, "holiday_region": "MD"}
+    )
+    by_id = _by_id(await _setup_with_fake_coordinator(hass, {"contA": bundle}))
+    sensor = by_id["contA_current_tramo_price"]
+    assert sensor.extra_state_attributes["periodo_actual"] == "punta"
+    assert sensor.extra_state_attributes["precio_maximo_hoy"] == pytest.approx(0.25)
+    assert by_id["contA_next_tramo_period_change"].extra_state_attributes["siguiente_periodo"] == "llano"
+
+
+async def test_current_tramo_stays_available_when_poll_fails(hass):
+    """El precio sale de las Opciones del CUPS: un sondeo fallido no debe dejarlo sin valor."""
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25})
+    by_id = _by_id(await _setup_with_fake_coordinator(hass, {"contA": bundle}))
+    coordinator = next(iter(hass.data[DOMAIN].values()))
+    coordinator.last_update_success = False
+    assert by_id["contA_current_tramo_price"].available is True
+    assert by_id["contA_next_tramo_period_change"].available is True
+
+
+async def test_clock_driven_sensors_refresh_on_the_hour_without_poll(hass, monkeypatch):
+    """El sensor de tramo se reescribe a cada hora en punto aunque no haya sondeo."""
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.edistribucion import sensor as sensor_module
+
+    registered = []
+
+    def fake_track_time_change(hass_, action, hour=None, minute=None, second=None):
+        registered.append({"action": action, "minute": minute, "second": second})
+        return lambda: None
+
+    monkeypatch.setattr(sensor_module, "async_track_time_change", fake_track_time_change)
+    bundle = _bundle({"tariff_type": "tramos", "price_punta": 0.25, "price_llano": 0.15})
+    by_id = _by_id(await _setup_with_fake_coordinator(hass, {"contA": bundle}))
+
+    for unique_id in ("contA_current_tramo_price", "contA_next_tramo_period_change"):
+        sensor = by_id[unique_id]
+        sensor.hass = hass
+        written = []
+        monkeypatch.setattr(sensor, "async_write_ha_state", lambda w=written: w.append(True))
+        monkeypatch.setattr(sensor_module.CoordinatorEntity, "async_added_to_hass", _noop_async)
+        before = len(registered)
+        await sensor.async_added_to_hass()
+        assert len(registered) == before + 1
+        assert registered[-1]["minute"] == 0 and registered[-1]["second"] == 0
+        registered[-1]["action"](dt_util.utcnow())
+        assert written == [True]
+
+
+async def _noop_async(self):
+    return None
