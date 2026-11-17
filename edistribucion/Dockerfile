@@ -1,6 +1,7 @@
 FROM node:20-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TMPDIR=/tmp
 WORKDIR /app
 
 COPY package.json ./

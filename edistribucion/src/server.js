@@ -4,7 +4,7 @@ const { Bonjour } = require("bonjour-service");
 const { EdistribucionSession } = require("./session");
 const { getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand } = require("./dataApi");
 const { startChromiumWatchdog, getWatchdogStats } = require("./chromiumWatchdog");
-const { InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
+const { ActionError, InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
 
 const OPTIONS_PATH = "/data/options.json";
 let options = {};
@@ -18,6 +18,7 @@ const DNI = options.dni || process.env.EDISTRIBUCION_DNI;
 const PASSWORD = options.password || process.env.EDISTRIBUCION_PASSWORD;
 const BASE_URL = options.base_url || process.env.EDISTRIBUCION_BASE_URL || "https://zonaprivada.edistribucion.com";
 const PORT = Number(process.env.PORT || 8099);
+const KEEPALIVE_MINUTES = Number(options.keepalive_minutes ?? process.env.EDISTRIBUCION_KEEPALIVE_MINUTES ?? 10);
 const START_TIME = new Date();
 
 if (!DNI || !PASSWORD) {
@@ -34,7 +35,7 @@ process.on("uncaughtException", (e) => {
   process.exit(1);
 });
 
-const session = new EdistribucionSession({ dni: DNI, password: PASSWORD, baseUrl: BASE_URL });
+const session = new EdistribucionSession({ dni: DNI, password: PASSWORD, baseUrl: BASE_URL, keepaliveMinutes: KEEPALIVE_MINUTES });
 const app = express();
 
 /** Responde el error con el código adecuado: 401 + code distinguible si es de credenciales
@@ -46,6 +47,11 @@ function respondError(res, e) {
   }
   if (e instanceof PasswordChangeRequiredError) {
     return res.status(401).json({ error: e.message, code: "password_change_required" });
+  }
+  if (e instanceof ActionError) {
+    // La acción de e-distribución respondió con error (p.ej. sin datos para esa fecha): 4xx para
+    // que la integración no lo reintente (los 5xx los reintenta 3 veces).
+    return res.status(422).json({ error: e.message, code: "action_failed" });
   }
   return res.status(502).json({ error: e.message });
 }
@@ -119,6 +125,10 @@ app.post("/relogin", async (req, res) => {
   }
 });
 
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
 /** Mini panel de estado en HTML — útil para ver de un vistazo si todo va bien sin mirar logs ni
  * hacer peticiones JSON a mano. También accesible vía Ingress desde el propio menú de Home
  * Assistant (ver config.yaml). No expone ningún dato sensible (ni cookies, ni token, ni password). */
@@ -151,8 +161,13 @@ app.get("/", (req, res) => {
 <tr><td>Suministros cacheados</td><td>${supplyCount}</td></tr>
 <tr><td>Logins realizados desde el arranque</td><td>${s.loginCount}</td></tr>
 <tr><td>Último login correcto</td><td>${fmt(s.lastLoginAt)}</td></tr>
+<tr><td>Motivo del último login</td><td>${escapeHtml(s.lastLoginReason ?? "—")}</td></tr>
+<tr><td>Última llamada de datos correcta</td><td>${fmt(s.lastSuccessAt)}</td></tr>
+<tr><td>Keepalive de sesión (HTTP, sin navegador)</td><td>${
+    s.keepaliveMs ? `cada ${s.keepaliveMs / 60_000} min de inactividad — ${s.keepaliveCount} hechos${s.lastKeepaliveError ? ", último error: " + escapeHtml(s.lastKeepaliveError.slice(0, 120)) : ""}` : "desactivado"
+  }</td></tr>
 <tr><td>Último error de login</td><td class="${credError ? "bad" : ""}">${
-    s.lastLoginError ? (credError ? "⚠️ Credenciales incorrectas — revisa dni/password en la configuración del add-on" : s.lastLoginError.message) : "—"
+    s.lastLoginError ? (credError ? "⚠️ Credenciales incorrectas — revisa dni/password en la configuración del add-on" : escapeHtml(s.lastLoginError.message)) : "—"
   }</td></tr>
 <tr><td>Procesos Chromium huérfanos eliminados</td><td>${watchdog.totalKilled}</td></tr>
 <tr><td>Última revisión del watchdog</td><td>${fmt(watchdog.lastCheckAt)}</td></tr>
@@ -165,7 +180,25 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`API local de e-distribución escuchando en :${PORT}`);
 });
 
+/** Chromium escribe su perfil temporal en /tmp: avisar si no es tmpfs (RAM), porque entonces cada
+ * login escribe decenas de MB en el disco del host. */
+function logTmpStorage() {
+  try {
+    const tmpMount = fs
+      .readFileSync("/proc/mounts", "utf8")
+      .split("\n")
+      .map((l) => l.split(" "))
+      .find((f) => f[1] === "/tmp");
+    if (tmpMount?.[2] === "tmpfs") console.log("/tmp es tmpfs: el perfil temporal de Chromium va a RAM.");
+    else console.warn("/tmp NO es tmpfs: cada login de Chromium escribirá en disco (¿falta `tmpfs: true` en config.yaml?).");
+  } catch {
+    /* fuera de Linux */
+  }
+}
+logTmpStorage();
+
 startChromiumWatchdog();
+session.startKeepalive();
 
 /** Se anuncia por mDNS (_edistribucion._tcp.local) para que la integración de Home Assistant
  * pueda encontrarlo sola (config_flow con soporte de Zeroconf) sin tener que teclear host/puerto a

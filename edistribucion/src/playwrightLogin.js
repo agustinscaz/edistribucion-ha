@@ -1,6 +1,17 @@
 const { chromium } = require("playwright");
 const { InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
 
+const CHROMIUM_LOW_WRITE_ARGS = [
+  "--disk-cache-size=1",
+  "--media-cache-size=1",
+  "--disable-gpu-shader-disk-cache",
+  "--disable-application-cache",
+  "--no-first-run",
+  "--no-pings",
+  "--disable-sync",
+  "--metrics-recording-only",
+];
+
 /**
  * Hace login real contra la Zona Privada de e-distribución usando un navegador Chromium real
  * (Playwright) y devuelve todo lo necesario para hacer las llamadas de datos SIGUIENTES por HTTP
@@ -18,7 +29,11 @@ const { InvalidCredentialsError, PasswordChangeRequiredError } = require("./erro
  *   name: string, supplyPoints: Array<object> }>}
  */
 async function loginAndCaptureSession({ dni, password, baseUrl }) {
-  const browser = await chromium.launch({ headless: true });
+  // Todo lo que escribe Chromium (perfil temporal `playwright_chromiumdev_profile-*`, artefactos
+  // `playwright-artifacts-*` y, por el `--disable-dev-shm-usage` que Playwright pone por defecto,
+  // también la memoria compartida) va a os.tmpdir() = /tmp, que el add-on monta como tmpfs
+  // (`tmpfs: true` en config.yaml): RAM, no disco. Estas flags reducen además lo que ocupa ahí.
+  const browser = await chromium.launch({ headless: true, args: CHROMIUM_LOW_WRITE_ARGS });
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
