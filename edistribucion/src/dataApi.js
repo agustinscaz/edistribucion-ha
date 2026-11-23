@@ -1,6 +1,10 @@
-const { AuthError, ActionError, UpstreamError } = require("./errors");
+const { AuthError, ActionError, ApexAccessError, UpstreamError } = require("./errors");
 
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7922.34 Safari/537.36";
+
+// Salesforce: el usuario está logueado pero su perfil no tiene la clase Apex (permiso retirado o
+// clase renombrada). Se comprueba ANTES que la de sesión: el texto puede contener "/login" etc.
+const APEX_ACCESS_RE = /No tiene acceso a la clase de Apex|do(es)? not have access to (the )?Apex class|INSUFFICIENT_ACCESS.*Apex/i;
 
 // Señales de sesión caducada/inválida en las respuestas de Aura/Salesforce.
 const SESSION_INVALID_RE = /invalidSession|clientOutOfSync|INVALID_SESSION_ID|session (has )?expired|sesi[oó]n (ha )?caducad|not logged in|\/login/i;
@@ -46,6 +50,9 @@ async function callAuraAction(session, { descriptor, callingDescriptor, params, 
     // "*/" de Aura con un evento de sesión inválida.
     throw new AuthError(`Respuesta no-JSON de ${descriptor} (sesión probablemente caducada)`);
   }
+  if (APEX_ACCESS_RE.test(text.slice(0, 2000)) && !json.actions?.[0]?.returnValue) {
+    throw new ApexAccessError(`Acceso denegado a ${descriptor}: ${text.slice(0, 300)}`, descriptor);
+  }
   if (json.exceptionEvent || SESSION_INVALID_RE.test(JSON.stringify(json.event ?? ""))) {
     throw new AuthError(`Aura devolvió un evento de sesión en ${descriptor}: ${JSON.stringify(json.event ?? json).slice(0, 300)}`);
   }
@@ -53,6 +60,7 @@ async function callAuraAction(session, { descriptor, callingDescriptor, params, 
   if (!action) throw new AuthError(`Respuesta sin acciones de ${descriptor}: ${text.slice(0, 300)}`);
   if (action.state !== "SUCCESS") {
     const detail = JSON.stringify(action?.error ?? json).slice(0, 400);
+    if (APEX_ACCESS_RE.test(detail)) throw new ApexAccessError(`Acceso denegado a ${descriptor}: ${detail}`, descriptor);
     if (SESSION_INVALID_RE.test(detail)) throw new AuthError(`Acción ${descriptor} falló por sesión: ${detail}`);
     throw new ActionError(`Acción ${descriptor} falló: ${detail}`);
   }
@@ -163,4 +171,4 @@ async function getContractedPower(session, contId) {
   };
 }
 
-module.exports = { AuthError, ActionError, UpstreamError, getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand, getContractedPower };
+module.exports = { AuthError, ActionError, ApexAccessError, UpstreamError, getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand, getContractedPower };

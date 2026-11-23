@@ -8,6 +8,17 @@ class AuthError extends Error {}
  * nadie la ha usado con éxito hace poco, y como mucho una vez cada 30 min. */
 class ActionError extends Error {}
 
+/** Salesforce rechaza la clase Apex con "No tiene acceso a la clase de Apex denominada 'X'" (el
+ * usuario YA está autenticado: es un permiso/renombrado del lado de e-distribución, no una sesión
+ * caducada). Reloguear NO lo arregla (desde el 17-nov-2026 cada login con Chromium era inútil), así
+ * que no dispara login: se registra y se reintenta con backoff (ver session.js). */
+class ApexAccessError extends ActionError {
+  constructor(message, descriptor) {
+    super(message);
+    this.descriptor = descriptor;
+  }
+}
+
 /** Error HTTP 5xx/red del lado de e-distribución: transitorio, reloguear no lo arregla. */
 class UpstreamError extends Error {}
 
@@ -23,4 +34,4 @@ class InvalidCredentialsError extends Error {}
  * vivo el 05-sep-2026: antes de esto se veía como un timeout genérico de 20s sin pista de la causa. */
 class PasswordChangeRequiredError extends Error {}
 
-module.exports = { AuthError, ActionError, UpstreamError, InvalidCredentialsError, PasswordChangeRequiredError };
+module.exports = { AuthError, ActionError, ApexAccessError, UpstreamError, InvalidCredentialsError, PasswordChangeRequiredError };

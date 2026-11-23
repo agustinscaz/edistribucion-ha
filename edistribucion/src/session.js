@@ -1,7 +1,7 @@
 const fs = require("fs");
 const { loginAndCaptureSession } = require("./playwrightLogin");
 const { getContractedPower: fetchContractedPower } = require("./dataApi");
-const { AuthError, ActionError, InvalidCredentialsError } = require("./errors");
+const { AuthError, ActionError, ApexAccessError, InvalidCredentialsError } = require("./errors");
 
 const SESSION_FILE = process.env.EDISTRIBUCION_SESSION_FILE || "/data/session.json";
 
@@ -16,6 +16,12 @@ const AMBIGUOUS_RELOGIN_MIN_INTERVAL_MS = 30 * 60_000;
 // una llamada Aura ligera (potencia contratada) para que la sesión de Salesforce no caduque por
 // inactividad entre sondeos. 0 = desactivado.
 const KEEPALIVE_CHECK_MS = 60_000;
+
+// Backoff cuando e-distribución niega el acceso a una clase Apex (ApexAccessError): sin login, sin
+// Chromium. Pausa el keepalive 15 min, luego 30, 60... hasta 6 h; las peticiones reales de HA no se
+// bloquean (son un POST HTTP barato y así se recupera el servicio en cuanto vuelva a funcionar).
+const APEX_BACKOFF_MIN_MS = 15 * 60_000;
+const APEX_BACKOFF_MAX_MS = 6 * 60 * 60_000;
 
 /**
  * Gestiona UNA sesión (una cuenta e-distribución, la configurada en las opciones del add-on).
@@ -45,6 +51,7 @@ class EdistribucionSession {
     this.keepaliveMs = Math.max(0, Number(keepaliveMinutes) || 0) * 60_000;
     this.keepaliveCount = 0;
     this.lastKeepaliveError = null;
+    this.apexDenied = new Map(); // descriptor -> { until, failures, since, message }
     this._lastPersistedJson = this.state ? JSON.stringify({ ...this.state, dni: this.dni }) : null;
   }
 
@@ -113,14 +120,34 @@ class EdistribucionSession {
     return loginAge < RECENT_SUCCESS_MS || sinceSuccess < RECENT_SUCCESS_MS;
   }
 
+  _noteApexDenied(e) {
+    const prev = this.apexDenied.get(e.descriptor);
+    const failures = (prev?.failures ?? 0) + 1;
+    const delay = Math.min(APEX_BACKOFF_MAX_MS, APEX_BACKOFF_MIN_MS * 2 ** (failures - 1));
+    this.apexDenied.set(e.descriptor, { until: Date.now() + delay, failures, since: prev?.since ?? new Date(), message: e.message.slice(0, 200) });
+    console.warn(`Acceso a Apex denegado (${e.descriptor}), intento ${failures}; SIN relogin (sesión válida); keepalive en pausa ${Math.round(delay / 60_000)} min; las peticiones de HA siguen intentándolo (HTTP barato). ${e.message.slice(0, 200)}`);
+  }
+
+  /** Durante el backoff se responde el mismo error sin llamar a e-distribución. */
+  _apexBackoffError(descriptor) {
+    const d = this.apexDenied.get(descriptor);
+    if (!d || Date.now() >= d.until) return null;
+    return new ApexAccessError(`${d.message} (en backoff hasta ${new Date(d.until).toISOString()})`, descriptor);
+  }
+
   /** Ejecuta `fn(state)`; si falla por sesión caducada, hace un login fresco y reintenta UNA vez. */
   async withSession(fn) {
     const state = await this.ensureLoggedIn();
     try {
       const result = await fn(state);
       if (state === this.state) this.lastSuccessAt = new Date();
+      this.apexDenied.clear();
       return result;
     } catch (e) {
+      if (e instanceof ApexAccessError) {
+        this._noteApexDenied(e);
+        throw e; // nunca relogin por esto
+      }
       let reason;
       if (e instanceof AuthError) {
         reason = `sesión caducada: ${e.message.slice(0, 160)}`;
@@ -178,6 +205,7 @@ class EdistribucionSession {
     const sp = (this.state.supplyPoints ?? []).find((s) => s.active) ?? this.state.supplyPoints?.[0];
     if (!sp) return;
     const state = this.state;
+    if (this._apexBackoffError("apex://WP_ContractATRDetail_CTRL/ACTION$getATRDetail")) return;
     try {
       await fetchContractedPower(state, sp.contId);
       if (state === this.state) this.lastSuccessAt = new Date();
@@ -185,7 +213,9 @@ class EdistribucionSession {
       this.lastKeepaliveError = null;
     } catch (e) {
       this.lastKeepaliveError = e.message;
-      if (e instanceof AuthError) {
+      if (e instanceof ApexAccessError) {
+        this._noteApexDenied(e); // sesión válida (el portal contestó): ni se invalida ni se reloguea
+      } else if (e instanceof AuthError) {
         console.warn(`Keepalive: la sesión ya no es válida (${e.message.slice(0, 160)}); se relogueará en la próxima petición.`);
         if (state === this.state) this.state = null;
       }

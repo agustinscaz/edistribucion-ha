@@ -4,7 +4,7 @@ const { Bonjour } = require("bonjour-service");
 const { EdistribucionSession } = require("./session");
 const { getDefaultConsumption, getConsumptionByRange, getMaxPowerDemand } = require("./dataApi");
 const { startChromiumWatchdog, getWatchdogStats } = require("./chromiumWatchdog");
-const { ActionError, InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
+const { ActionError, ApexAccessError, InvalidCredentialsError, PasswordChangeRequiredError } = require("./errors");
 
 const OPTIONS_PATH = "/data/options.json";
 let options = {};
@@ -47,6 +47,9 @@ function respondError(res, e) {
   }
   if (e instanceof PasswordChangeRequiredError) {
     return res.status(401).json({ error: e.message, code: "password_change_required" });
+  }
+  if (e instanceof ApexAccessError) {
+    return res.status(422).json({ error: e.message, code: "apex_access_denied", descriptor: e.descriptor });
   }
   if (e instanceof ActionError) {
     // La acción de e-distribución respondió con error (p.ej. sin datos para esa fecha): 4xx para
@@ -168,6 +171,9 @@ app.get("/", (req, res) => {
   }</td></tr>
 <tr><td>Último error de login</td><td class="${credError ? "bad" : ""}">${
     s.lastLoginError ? (credError ? "⚠️ Credenciales incorrectas — revisa dni/password en la configuración del add-on" : escapeHtml(s.lastLoginError.message)) : "—"
+  }</td></tr>
+<tr><td>Acceso Apex denegado por e-distribución</td><td class="${s.apexDenied.size ? "bad" : ""}">${
+    s.apexDenied.size ? [...s.apexDenied].map(([d, v]) => `${escapeHtml(d)} (${v.failures} fallos desde ${fmt(v.since)})`).join("<br>") : "—"
   }</td></tr>
 <tr><td>Procesos Chromium huérfanos eliminados</td><td>${watchdog.totalKilled}</td></tr>
 <tr><td>Última revisión del watchdog</td><td>${fmt(watchdog.lastCheckAt)}</td></tr>
