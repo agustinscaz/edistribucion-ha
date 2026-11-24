@@ -14,6 +14,12 @@ const [contId, visId] = process.argv.slice(2);
     const msg = JSON.parse(new URLSearchParams(res.request().postData() ?? "").get("message") ?? "{}");
     let states = [];
     try { states = (await res.json()).actions?.map((a) => a.state) ?? []; } catch {}
+    if (process.env.EDISTRIBUCION_VERBOSE && /WP_Measure_CTRL|ContractATRDetail|getListCups|ServiceGrid/.test(res.request().postData() ?? "")) {
+      const u = new URL(res.url());
+      const form = new URLSearchParams(res.request().postData() ?? "");
+      console.log("REQ", u.pathname, u.search, "| form keys:", [...form.keys()].join(","), "| action keys:", (msg.actions ?? []).map((a) => Object.keys(a).join(",")).join(" ; "), "| ctx keys:", Object.keys(JSON.parse(form.get("aura.context") ?? "{}")).join(","));
+      try { console.log("RES keys:", Object.keys(await res.json()).join(",")); } catch {}
+    }
     for (const a of msg.actions ?? []) console.log(a.descriptor, "|", a.callingDescriptor, "| params:", Object.keys(a.params ?? {}).join(","), "|", states.join(","));
   });
   await page.goto(`${base}/areaprivada/s/login/?language=es`, { waitUntil: "domcontentloaded" });

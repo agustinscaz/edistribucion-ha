@@ -15,10 +15,12 @@ const SESSION_INVALID_RE = /invalidSession|clientOutOfSync|INVALID_SESSION_ID|se
  * no es válida (token/sid caducados), lanza AuthError para que quien llame decida hacer un login
  * fresco y reintentar.
  */
-async function callAuraAction(session, { descriptor, callingDescriptor, params, pageURI }) {
+async function callAuraAction(session, { descriptor, callingDescriptor, params, pageURI, extra = {} }) {
+  // `extra`: claves propias de la acción (p. ej. longRunning, que la SPA pone en los métodos Apex de tipo continuation).
   const message = {
-    actions: [{ id: "1;a", descriptor, callingDescriptor, params }],
+    actions: [{ id: "1;a", descriptor, callingDescriptor, params, ...extra }],
   };
+  const [, apexClass, apexMethod] = /^apex:\/\/([^/]+)\/ACTION\$(.+)$/.exec(descriptor) ?? [];
   const body = new URLSearchParams({
     message: JSON.stringify(message),
     "aura.context": JSON.stringify(session.auraContext),
@@ -26,7 +28,7 @@ async function callAuraAction(session, { descriptor, callingDescriptor, params, 
     "aura.token": session.auraToken,
   });
 
-  const res = await fetch(`${session.baseUrl}/areaprivada/s/sfsites/aura?r=1&apex.action=1`, {
+  const res = await fetch(`${session.baseUrl}/areaprivada/s/sfsites/aura?r=1&${apexClass ? `other.${apexClass}.${apexMethod}=1` : "apex.action=1"}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -97,7 +99,8 @@ async function getDefaultConsumption(session, contId) {
   const rv = await callAuraAction(session, {
     descriptor: "apex://WP_Measure_CTRL/ACTION$getInfo",
     callingDescriptor: "markup://c:WP_Measure_Detail",
-    params: { contId, visId: session.visId },
+    params: { contId },
+    extra: { longRunning: true },
     pageURI: `/areaprivada/s/wp-measure-detail?aId=${contId}&vis=${session.visId}`,
   });
   return normalizeConsumption(rv.data);
@@ -108,8 +111,9 @@ async function getConsumptionByRange(session, contId, rangeType, referenceDate) 
   const startDate = referenceDate ?? new Date().toISOString().slice(0, 10);
   const rv = await callAuraAction(session, {
     descriptor: "apex://WP_Measure_CTRL/ACTION$getChartPointsByRange",
-    callingDescriptor: "markup://c:WP_Measure_Detail_Filter_By_Dates_v3",
+    callingDescriptor: "markup://c:WP_Measure_Detail_Filter_By_Dates",
     params: { contId, type: String(rangeType), startDate },
+    extra: { version: null, longRunning: true },
     pageURI: `/areaprivada/s/wp-measure-detail?aId=${contId}&vis=${session.visId}`,
   });
   return normalizeConsumption(rv.data);
