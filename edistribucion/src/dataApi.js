@@ -95,10 +95,10 @@ function normalizeConsumption(data) {
 
 async function getDefaultConsumption(session, contId) {
   const rv = await callAuraAction(session, {
-    descriptor: "apex://WP_Measure_v3_CTRL/ACTION$getInfo",
-    callingDescriptor: "markup://c:WP_MeasureDetail",
+    descriptor: "apex://WP_Measure_CTRL/ACTION$getInfo",
+    callingDescriptor: "markup://c:WP_Measure_Detail",
     params: { contId, visId: session.visId },
-    pageURI: `/areaprivada/s/wp-measure-detail-v4?aId=${contId}&vis=${session.visId}`,
+    pageURI: `/areaprivada/s/wp-measure-detail?aId=${contId}&vis=${session.visId}`,
   });
   return normalizeConsumption(rv.data);
 }
@@ -107,10 +107,10 @@ async function getDefaultConsumption(session, contId) {
 async function getConsumptionByRange(session, contId, rangeType, referenceDate) {
   const startDate = referenceDate ?? new Date().toISOString().slice(0, 10);
   const rv = await callAuraAction(session, {
-    descriptor: "apex://WP_Measure_v3_CTRL/ACTION$getChartPointsByRange",
+    descriptor: "apex://WP_Measure_CTRL/ACTION$getChartPointsByRange",
     callingDescriptor: "markup://c:WP_Measure_Detail_Filter_By_Dates_v3",
     params: { contId, type: String(rangeType), startDate },
-    pageURI: `/areaprivada/s/wp-measure-detail-v4?aId=${contId}&vis=${session.visId}`,
+    pageURI: `/areaprivada/s/wp-measure-detail?aId=${contId}&vis=${session.visId}`,
   });
   return normalizeConsumption(rv.data);
 }
