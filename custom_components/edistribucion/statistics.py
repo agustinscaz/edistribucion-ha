@@ -56,7 +56,7 @@ def _hourly_points(month_data: dict, field: str) -> list[tuple[datetime, float]]
     for date_str, hours in hourly.items():
         for h in hours:
             hour = _leading_hour(h.get("hour", ""))
-            if hour is None:
+            if hour is None or hour > 23:  # "24 - 25 h": 25.ª hora del día del cambio de hora (otoño); ya está contada en su "02 - 03 h"
                 continue
             points.append((_parse_hour(date_str, hour), h.get(field) or 0.0))
     return points or None

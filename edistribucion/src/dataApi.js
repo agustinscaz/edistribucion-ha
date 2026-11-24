@@ -69,25 +69,66 @@ async function callAuraAction(session, { descriptor, callingDescriptor, params, 
   return action.returnValue;
 }
 
+/** Ruta nueva del portal (WP_Measure_CTRL): lstData solo trae un valor por hora (`value`, string con coma)
+ * y NO el exportado. El importado (magnitude A1) y el exportado (A2) por hora están en `data.response`,
+ * un string JSON: measureList[].dailyLoadProfileList[].sampleList[] {hour "HH:MM", consumption|null, obtainingMode}.
+ * Devuelve Map "DD/MM/YYYY HH" -> { imported, exported, real } (consumption null = aún sin dato). */
+function parseHourlyResponse(data) {
+  const out = new Map();
+  if (typeof data.response !== "string") return out;
+  let parsed;
+  try { parsed = JSON.parse(data.response); } catch { return out; }
+  for (const m of parsed.measureList ?? []) {
+    const field = m.magnitude === "A1" ? "imported" : m.magnitude === "A2" ? "exported" : null;
+    if (!field) continue;
+    for (const day of m.dailyLoadProfileList ?? []) {
+      const [y, mo, d] = String(day.measureDate).slice(0, 10).split("-");
+      for (const smp of day.sampleList ?? []) {
+        const key = `${d}/${mo}/${y} ${String(smp.hour).slice(0, 2)}`;
+        const cur = out.get(key) ?? { imported: null, exported: null, real: false };
+        if (typeof smp.consumption === "number") {
+          cur[field] = smp.consumption;
+          if (smp.obtainingMode === "R") cur.real = true;
+        }
+        out.set(key, cur);
+      }
+    }
+  }
+  return out;
+}
+
 function normalizeConsumption(data) {
   const hourlyByDate = {};
   const dailyTotalsMap = new Map();
+  const resp = parseHourlyResponse(data);
+  let params = {};
+  try { params = typeof data.mapParamsWS === "string" ? JSON.parse(data.mapParamsWS) : (data.mapParamsWS ?? {}); } catch {}
   for (const day of data.lstData ?? []) {
     for (const p of day) {
       const date = p.date;
+      let imported = p.valueDouble ?? null; // ruta antigua (WP_Measure_v3_CTRL)
+      let exported = p.a2Double ?? null;
+      let real = p.real;
+      if (resp.size) {
+        const r = resp.get(`${date} ${String(p.hour).slice(0, 2)}`); // "24 - 25 h" (25.ª hora del cambio de hora) no tiene muestra
+        if (!r || r.imported === null) continue; // hora sin dato todavía: no se inventa un 0
+        imported = r.imported;
+        exported = r.exported ?? 0;
+        real = r.real;
+      }
       if (!hourlyByDate[date]) hourlyByDate[date] = [];
-      hourlyByDate[date].push({ hour: p.hour, importedKwh: p.valueDouble, exportedKwh: p.a2Double, real: p.real, invoiced: p.invoiced });
+      hourlyByDate[date].push({ hour: p.hour, importedKwh: imported, exportedKwh: exported, real, invoiced: p.invoiced });
       const acc = dailyTotalsMap.get(date) ?? { importedKwh: 0, exportedKwh: 0 };
-      acc.importedKwh += p.valueDouble ?? 0;
-      acc.exportedKwh += p.a2Double ?? 0;
+      acc.importedKwh += imported ?? 0;
+      acc.exportedKwh += exported ?? 0;
       dailyTotalsMap.set(date, acc);
     }
   }
   const round = (n) => Math.round(n * 1000) / 1000;
   return {
     cups: data.cupsName,
-    startDate: data.mapParamsWS_v2?.startDate,
-    endDate: data.mapParamsWS_v2?.endDate,
+    startDate: data.mapParamsWS_v2?.startDate ?? params.startDate,
+    endDate: data.mapParamsWS_v2?.endDate ?? params.endDate,
     totalImportedKwh: Number(String(data.totalValue).replace(",", ".")),
     totalExportedKwh: round([...dailyTotalsMap.values()].reduce((s, d) => s + d.exportedKwh, 0)),
     dailyTotals: [...dailyTotalsMap.entries()].map(([date, d]) => ({ date, importedKwh: round(d.importedKwh), exportedKwh: round(d.exportedKwh) })),
